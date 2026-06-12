@@ -589,7 +589,7 @@ function OutletActivityPanel({detail,onClose,t}){
             <div style={{fontSize:11,color:t.muted,marginTop:3,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
               <span style={{color:t.muted,fontSize:10}}>ID: {outletId}</span>
               <span style={{background:SC+"20",color:SC,padding:"2px 10px",borderRadius:999,fontSize:10,fontWeight:700}}>{LABEL}</span>
-              <span style={{color:t.muted}}>· {rows.length} aktivitas</span>
+              <span style={{color:t.text,fontWeight:800,fontSize:14}}>· {rows.length.toLocaleString()} aktivitas</span>
             </div>
           </div>
           <button onClick={onClose} style={{background:t.cardAlt,border:`1px solid ${t.border}`,color:t.text,borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:13,fontWeight:700}}>✕</button>
@@ -755,7 +755,7 @@ function DrillDownPanel({drill,onClose,t,onCanvasserClick}){
           <div style={{width:12,height:12,borderRadius:3,background:drill.color,flexShrink:0}}/>
           <div style={{flex:1}}>
             <div style={{fontWeight:800,fontSize:15,color:t.text}}>{drill.label}</div>
-            <div style={{fontSize:11,color:t.muted,marginTop:1}}>{drill.rows.length} canvasser · {drill.total.toLocaleString()} aktivitas</div>
+            <div style={{fontSize:14,color:t.text,fontWeight:800,marginTop:1}}>{drill.rows.length.toLocaleString()} canvasser · {drill.total.toLocaleString()} aktivitas</div>
           </div>
           <button onClick={onClose} style={{background:t.cardAlt,border:`1px solid ${t.border}`,color:t.text,borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:13,fontWeight:700}}>✕</button>
         </div>
@@ -902,7 +902,7 @@ function CanvasserDetailPanel({detail,onClose,t}){
               <span style={{background:P.accent+"20",color:P.accent,padding:"1px 7px",borderRadius:6,fontSize:10,fontWeight:700}}>{canvasser?.region}</span>
               <span style={{color:t.muted}}>{canvasser?.cluster}</span>
               <span style={{background:color+"20",color,padding:"2px 10px",borderRadius:999,fontSize:10,fontWeight:700}}>· {drillLabel}</span>
-              <span style={{color:t.muted}}>· {sorted.length} aktivitas sesuai filter</span>
+              <span style={{color:t.text,fontWeight:800,fontSize:14}}>· {sorted.length.toLocaleString()} aktivitas sesuai filter</span>
             </div>
             <div style={{display:"flex",gap:4,marginTop:6}}>
               <button onClick={()=>setView("list")} style={{background:view==="list"?color:t.cardAlt,color:view==="list"?"#fff":t.muted,border:"1px solid "+t.border,borderRadius:6,padding:"3px 10px",fontSize:10,fontWeight:700,cursor:"pointer"}}>📋 Aktivitas ({filteredRows.length})</button>
