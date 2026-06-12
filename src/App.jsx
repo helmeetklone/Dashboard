@@ -135,6 +135,16 @@ function getRegionCode(cl) {
   const m=cl.match(/^([A-Z]{2,3})[- _]/); return m?m[1]:cl.slice(0,3).toUpperCase();
 }
 
+// Mapping kode region ke kepanjangannya
+const REGION_NAMES = {
+  "BN":"Bali Nusra","CJ":"Central Java","EJ":"East Java","JB":"Jabotabek",
+  "KM":"Kalimantan","NS":"North Sumatera","SS":"South Sumatera",
+  "SW":"Sulawesi","WJ":"West Java",
+};
+function regionFullName(code){
+  return REGION_NAMES[code]||code;
+}
+
 // ── READ FILE — reads critical cols by direct cell reference (100% reliable) ─────
 function readFileRows(buf, sheetName=null) {
   const wb = XLSX.read(buf, {type:"array", cellDates:true});
@@ -1604,7 +1614,11 @@ function Dashboard({files,onReset,dark,toggleDark,roMap={}}){
             <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"minmax(240px,1fr) minmax(300px,1.5fr)",gap:16}}>
               <div style={card()}>
                 <div style={{fontWeight:700,marginBottom:2}}>Activity Status</div>
-                <div style={{fontSize:11,color:t.muted,marginBottom:10}}>{view.label}</div>
+                <div style={{fontSize:11,color:t.muted,marginBottom:10}}>
+                  {view.label}
+                  {view.label&&view.label.length<=3&&REGION_NAMES[view.label]&&<span style={{color:t.muted}}> ({REGION_NAMES[view.label]})</span>}
+                  {view.label&&view.label.startsWith&&(()=>{const m=view.label.match(/^([A-Z]{2,3})-/);return m&&REGION_NAMES[m[1]]?<span style={{color:t.muted}}> · {REGION_NAMES[m[1]]}</span>:null;})()}
+                </div>
                 <ResponsiveContainer width="100%" height={170}>
                   <PieChart>
                     <Pie data={ACT.map(s=>({name:s.label,value:ac[s.key]||0,color:s.color,skey:s.key}))} cx="50%" cy="50%" outerRadius={75} innerRadius={32} dataKey="value" strokeWidth={0}
