@@ -205,13 +205,8 @@ function readFileRows(buf, sheetName=null) {
   });
 
   if(!rows.length) throw new Error("File kosong");
-  // Filter: hanya Regular Visit yang masuk ke dashboard
-  const regularOnly = rows.filter(r=>{
-    const at = String(r["Activity Type"]||"").trim().toLowerCase();
-    return !at || at === "regular visit";
-  });
-  // Apply validation computation
-  const processedRows = regularOnly.map(r => computeValidation(r));
+  // Apply validation computation for raw data (without green columns)
+  const processedRows = rows.map(r => computeValidation(r));
   return {rows: processedRows};
 }
 
@@ -225,10 +220,9 @@ function processRows(rows) {
   const disC={NEAR:0,MID:0,FAR:0,INCOMPLETE:0};
   const locC={MATCH:0,"NOT MATCH":0,INCOMPLETE:0};
   const inRangeC={YES:0,NO:0};
-  const outMap={},canvMap={},dateMap={},visitMap={};
+  const outMap={},canvMap={},dateMap={},visitMap={},vtMap={};
 
   rows.forEach(r=>{
-    // Regular Visit filter applied upstream in readFileRows
     // Use directly-read cell values (_VS, _AS1 etc.) — bypasses SheetJS duplicate key issues
     // _VS = Visit Status cell value (direct cell read, always correct)
     // _AS1 = last "Activity Status" col = A1/A2/A3 (fallback)
@@ -251,7 +245,13 @@ function processRows(rows) {
       }
     }
     const as1 = vs==="VALID"?"A1 - NORMAL":vs==="OBSERVE"||vs==="INVESTIGATE"?"A2 - ANOMALY":vs==="INCOMPLETE"?"A3 - INCOMPLETE":"";
-    r["_CAS1"]=as1; r["_CVS"]=vs; // store for getCanvasserRows & outlet drill
+    r["_CAS1"]=as1; r["_CVS"]=vs;
+    const vt=String(r["Activity Type"]||"Unknown").trim();
+    if(!vtMap[vt])vtMap[vt]={type:vt,total:0,A1:0,A2:0,A3:0};
+    vtMap[vt].total++;
+    if(as1==="A1 - NORMAL")vtMap[vt].A1++;
+    else if(as1==="A2 - ANOMALY")vtMap[vt].A2++;
+    else if(as1==="A3 - INCOMPLETE")vtMap[vt].A3++; // store for getCanvasserRows & outlet drill
     // Duration Status — read from cell first, then compute from timestamps or raw duration
     let dur = String(r["_DUR"]!=null?r["_DUR"]:r["Duration Status"]!=null?r["Duration Status"]:"").trim().toUpperCase();
     if(!["NORMAL","SHORT","LONG"].includes(dur)){
@@ -378,6 +378,7 @@ function processRows(rows) {
   const censusData = Object.values(outMap).filter(d=>d._isCensus).sort((a,b)=>b.total-a.total);
   return {
     total,actC,visC,durC,disC,locC,inRangeC,
+    visitTypeData:Object.values(vtMap).sort((a,b)=>b.total-a.total),
     outletData:Object.values(outMap).filter(d=>!d._isCensus).sort((a,b)=>b.total-a.total),
     censusData,
     canvassers,
@@ -418,6 +419,7 @@ function aggregateList(dataList) {
   return {
     total:dataList.reduce((s,r)=>s+(r.total||0),0),
     actC:sumC("actC"),visC:sumC("visC"),durC:sumC("durC"),disC:sumC("disC"),locC:sumC("locC"),inRangeC:sumC("inRangeC"),
+    visitTypeData:mergeArr("visitTypeData","type"),
     outletData:mergeArr("outletData","type"),
     censusData:mergeArr("censusData","type"),
     canvassers,
@@ -458,6 +460,88 @@ function Pagination({page,setPage,total,pageSize,t}){
         {ps.map(i=><button key={i} onClick={()=>setPage(i)} style={btn(i===page,false)}>{i+1}</button>)}
         <button onClick={()=>setPage(p=>Math.min(tp-1,p+1))} disabled={page>=tp-1} style={btn(false,page>=tp-1)}>›</button>
         <button onClick={()=>setPage(tp-1)} disabled={page>=tp-1} style={btn(false,page>=tp-1)}>»</button>
+      </div>
+    </div>
+  );
+}
+
+// ── VISIT TYPE DRILL PANEL ───────────────────────────────────────────────────
+function VisitTypeDrillPanel({drill,onClose,t,onCanvasserClick}){
+  const [pg,setPg]=useState(0);
+  const [sBy,setSBy]=useState("total");
+  const [sDir,setSDir]=useState("desc");
+  const [srch,setSrch]=useState("");
+  const PG=10;
+  const COLOR="#06b6d4";
+  useEffect(()=>{setPg(0);setSrch("");},[drill?.visitType,drill?.statusFilter]);
+  if(!drill) return null;
+  const {visitType,label,rows}=drill;
+  const SC=label==="A1"?P.a1:label==="A2"?P.a2:label==="A3"?P.a3:COLOR;
+  const filt=[...rows]
+    .filter(r=>srch?r.name.toLowerCase().includes(srch.toLowerCase())||(r.cluster||"").toLowerCase().includes(srch.toLowerCase()):true)
+    .sort((a,b)=>sDir==="desc"?b[sBy]-a[sBy]:a[sBy]-b[sBy]);
+  const list=filt.slice(pg*PG,(pg+1)*PG);
+  const sBtn=(lbl,sk)=>(
+    <button onClick={()=>{if(sBy===sk)setSDir(d=>d==="desc"?"asc":"desc");else{setSBy(sk);setSDir("desc");setPg(0);}}}
+      style={{background:sBy===sk?SC:t.cardAlt,color:sBy===sk?"#fff":t.muted,border:"1px solid "+t.border,borderRadius:6,padding:"3px 10px",fontSize:10,fontWeight:700,cursor:"pointer"}}>
+      {lbl}{sBy===sk?(sDir==="desc"?" ↓":" ↑"):""}
+    </button>
+  );
+  return(
+    <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:1050,display:"flex",alignItems:"flex-end",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)"}} onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxHeight:"85vh",background:t.card,borderRadius:"20px 20px 0 0",border:`1px solid ${t.border}`,overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 -8px 40px rgba(0,0,0,0.5)",fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
+        <div style={{padding:"14px 18px 10px",borderBottom:`1px solid ${t.border}`,display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:800,fontSize:15,color:t.text}}>{visitType==="Regular Visit"?"🚗":visitType==="Ad-Hoc Visit"?"⚡":"📦"} {visitType}</div>
+            <div style={{fontSize:11,color:t.muted,marginTop:2,display:"flex",gap:8,alignItems:"center"}}>
+              {label!=="Semua"&&<span style={{background:SC+"20",color:SC,padding:"1px 8px",borderRadius:999,fontSize:10,fontWeight:700}}>{label==="A1"?"A1 - Normal":label==="A2"?"A2 - Anomaly":"A3 - Incomplete"}</span>}
+              <span>{rows.length} canvasser · {rows.reduce((s,r)=>s+r.total,0).toLocaleString()} aktivitas</span>
+            </div>
+          </div>
+          <button onClick={onClose} style={{background:t.cardAlt,border:`1px solid ${t.border}`,color:t.text,borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:13,fontWeight:700}}>✕</button>
+        </div>
+        <div style={{padding:"8px 18px",borderBottom:`1px solid ${t.border}`,flexShrink:0}}>
+          <input placeholder="🔍 Cari canvasser / cluster..." value={srch} onChange={e=>{setSrch(e.target.value);setPg(0);}}
+            style={{width:"100%",background:t.cardAlt,border:`1px solid ${t.border}`,color:t.text,borderRadius:8,padding:"7px 12px",fontSize:12,outline:"none",boxSizing:"border-box"}}/>
+          <div style={{display:"flex",gap:6,marginTop:6,flexWrap:"wrap",alignItems:"center"}}>
+            <span style={{fontSize:10,color:t.muted,fontWeight:600}}>Sort:</span>
+            {sBtn("Total","total")}{sBtn("A1","A1")}{sBtn("A2","A2")}{sBtn("A3","A3")}{sBtn("Outlet","outletCount")}
+          </div>
+        </div>
+        <div style={{overflowY:"auto",flex:1}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
+            <thead style={{position:"sticky",top:0,background:t.card,zIndex:1}}>
+              <tr style={{background:t.cardAlt}}>
+                {["#","Canvasser","Region","Cluster","Total","A1","A2","A3","Outlet (jml)","Outlet"].map(h=>(
+                  <th key={h} style={{padding:"9px 10px",textAlign:"left",fontSize:11,fontWeight:700,color:t.muted,whiteSpace:"nowrap",borderBottom:`1px solid ${t.border}`}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {list.map((r,i)=>(
+                <tr key={r.id||i} style={{borderBottom:`1px solid ${t.border}`,background:i%2===0?"transparent":t.rowAlt}}>
+                  <td style={{padding:"7px 10px",color:t.muted,fontSize:10}}>{pg*PG+i+1}</td>
+                  <td style={{padding:"7px 10px",fontWeight:600,color:t.text,whiteSpace:"nowrap"}}>{r.name}</td>
+                  <td style={{padding:"7px 10px"}}><span style={{background:P.accent+"20",color:P.accent,padding:"1px 7px",borderRadius:6,fontSize:10,fontWeight:700}}>{r.region||"–"}</span></td>
+                  <td style={{padding:"7px 10px",color:t.muted,fontSize:11}}>{r.cluster||"–"}</td>
+                  <td style={{padding:"7px 10px",fontWeight:700,color:SC}}>{r.total}</td>
+                  <td style={{padding:"7px 10px"}}>
+                    {r.A1>0?<span onClick={()=>onCanvasserClick&&onCanvasserClick(r,"A1")} style={{color:P.a1,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.a1}}>{r.A1}</span>:<span style={{color:t.muted}}>0</span>}
+                  </td>
+                  <td style={{padding:"7px 10px"}}>
+                    {r.A2>0?<span onClick={()=>onCanvasserClick&&onCanvasserClick(r,"A2")} style={{color:P.a2,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.a2}}>{r.A2}</span>:<span style={{color:t.muted}}>0</span>}
+                  </td>
+                  <td style={{padding:"7px 10px"}}>
+                    {r.A3>0?<span onClick={()=>onCanvasserClick&&onCanvasserClick(r,"A3")} style={{color:P.a3,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.a3}}>{r.A3}</span>:<span style={{color:t.muted}}>0</span>}
+                  </td>
+                  <td style={{padding:"7px 10px",color:t.muted,fontWeight:600}}>{r.outletCount}</td>
+                  <td style={{padding:"7px 10px",color:t.muted,fontSize:10,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.outletList||"–"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <Pagination page={pg} setPage={setPg} total={filt.length} pageSize={PG} t={t}/>
+        </div>
       </div>
     </div>
   );
@@ -739,8 +823,11 @@ function CanvasserDetailPanel({detail,onClose,t}){
   const [pg,setPg]=useState(0);
   const [view,setView]=useState("list");
   const [oPg,setOPg]=useState(0);
+  const [vtFilter,setVtFilter]=useState("ALL");
+  const [sortCol,setSortCol]=useState("date");
+  const [sortDir,setSortDir]=useState("asc");
   const PG=10;
-  useEffect(()=>{setPg(0);setOPg(0);setView("list");},[detail?.canvasser?.id]);
+  useEffect(()=>{setPg(0);setOPg(0);setView("list");setVtFilter("ALL");setSortCol("date");setSortDir("asc");},[detail?.canvasser?.id]);
   if(!detail) return null;
   const {canvasser,drillLabel,color,rows}=detail;
   const allRows=rows._all||rows;
@@ -772,7 +859,24 @@ function CanvasserDetailPanel({detail,onClose,t}){
     if(inR==="no"||inR==="n") f.push("🎯 Out of range");
     return f.length>0 ? f.join(" · ") : (vs==="VALID"?"✅ Normal":"❓ "+vs);
   };
-  const sorted=rows||[];
+  // Get unique visit types for filter buttons
+  const vtTypes=["ALL",...new Set((rows||[]).map(r=>String(r["Activity Type"]||"Unknown").trim()))];
+  // Apply filter
+  const filteredRows=(rows||[]).filter(r=>{
+    if(vtFilter==="ALL") return true;
+    return String(r["Activity Type"]||"Unknown").trim()===vtFilter;
+  });
+  // Apply sort
+  const sortFn=(a,b)=>{
+    const dir=sortDir==="asc"?1:-1;
+    if(sortCol==="date") return dir*(new Date(a["Planned Visit Date"]||0)-new Date(b["Planned Visit Date"]||0));
+    if(sortCol==="outlet") return dir*(String(a["Outlet"]||"").localeCompare(String(b["Outlet"]||"")));
+    if(sortCol==="status") return dir*(String(a["_CAS1"]||"").localeCompare(String(b["_CAS1"]||"")));
+    if(sortCol==="dist") return dir*((parseFloat(a["Distance Check In (Meter)"])||0)-(parseFloat(b["Distance Check In (Meter)"])||0));
+    if(sortCol==="dur") return dir*((parseFloat(a["Visit Duration (Menit)"])||0)-(parseFloat(b["Visit Duration (Menit)"])||0));
+    return 0;
+  };
+  const sorted=[...filteredRows].sort(sortFn);
   const outletMap={};
   (allRows||[]).forEach(r=>{
     const oid=String(r["Outlet ID"]||r["Outlet"]||"").trim();
@@ -793,6 +897,7 @@ function CanvasserDetailPanel({detail,onClose,t}){
         <div style={{padding:"14px 18px 10px",borderBottom:`1px solid ${t.border}`,display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
           <div style={{flex:1}}>
             <div style={{fontWeight:800,fontSize:15,color:t.text}}>👤 {canvasser?.name}</div>
+            {canvasser?.id&&<div style={{fontSize:10,color:t.muted,marginTop:1}}>ID: <span style={{color:t.text,fontWeight:600}}>{canvasser.id}</span></div>}
             <div style={{fontSize:11,color:t.muted,marginTop:3,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
               <span style={{background:P.accent+"20",color:P.accent,padding:"1px 7px",borderRadius:6,fontSize:10,fontWeight:700}}>{canvasser?.region}</span>
               <span style={{color:t.muted}}>{canvasser?.cluster}</span>
@@ -800,13 +905,37 @@ function CanvasserDetailPanel({detail,onClose,t}){
               <span style={{color:t.muted}}>· {sorted.length} aktivitas sesuai filter</span>
             </div>
             <div style={{display:"flex",gap:4,marginTop:6}}>
-              <button onClick={()=>setView("list")} style={{background:view==="list"?color:t.cardAlt,color:view==="list"?"#fff":t.muted,border:"1px solid "+t.border,borderRadius:6,padding:"3px 10px",fontSize:10,fontWeight:700,cursor:"pointer"}}>📋 Aktivitas ({sorted.length})</button>
+              <button onClick={()=>setView("list")} style={{background:view==="list"?color:t.cardAlt,color:view==="list"?"#fff":t.muted,border:"1px solid "+t.border,borderRadius:6,padding:"3px 10px",fontSize:10,fontWeight:700,cursor:"pointer"}}>📋 Aktivitas ({filteredRows.length})</button>
               <button onClick={()=>setView("outlet")} style={{background:view==="outlet"?color:t.cardAlt,color:view==="outlet"?"#fff":t.muted,border:"1px solid "+t.border,borderRadius:6,padding:"3px 10px",fontSize:10,fontWeight:700,cursor:"pointer"}}>🏪 Per Outlet ({outletRows.length})</button>
             </div>
           </div>
           <button onClick={onClose} style={{background:t.cardAlt,border:`1px solid ${t.border}`,color:t.text,borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:13,fontWeight:700}}>✕</button>
         </div>
-        <div style={{overflowY:"auto",flex:1}}>
+           {/* Visit Type Filter */}
+          {view==="list"&&(
+          <div style={{padding:"8px 16px",borderBottom:`1px solid ${t.border}`,display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",flexShrink:0,background:t.cardAlt}}>
+            <span style={{fontSize:10,color:t.muted,fontWeight:600}}>Filter:</span>
+            {vtTypes.map(vt=>(
+              <button key={vt} onClick={()=>{setVtFilter(vt);setPg(0);}}
+                style={{background:vtFilter===vt?(vt==="ALL"?color:vt==="Regular Visit"?P.a1:vt==="Ad-Hoc Visit"?P.a2:"#06b6d4"):t.card,color:vtFilter===vt?"#fff":t.muted,border:"1px solid "+(vtFilter===vt?"transparent":t.border),borderRadius:6,padding:"2px 9px",fontSize:10,fontWeight:700,cursor:"pointer"}}>
+                {vt==="ALL"?"Semua":vt}
+              </button>
+            ))}
+            <span style={{marginLeft:"auto",fontSize:10,color:t.muted}}>{sorted.length} aktivitas</span>
+          </div>
+          )}
+          {view==="list"&&(
+          <div style={{padding:"6px 16px",borderBottom:`1px solid ${t.border}`,display:"flex",gap:4,flexWrap:"wrap",alignItems:"center",flexShrink:0}}>
+            <span style={{fontSize:10,color:t.muted,fontWeight:600}}>Sort:</span>
+            {[["date","Tanggal"],["outlet","Outlet"],["status","Status"],["dist","Jarak"],["dur","Durasi"]].map(([sk,lbl])=>(
+              <button key={sk} onClick={()=>{if(sortCol===sk)setSortDir(d=>d==="asc"?"desc":"asc");else{setSortCol(sk);setSortDir("asc");setPg(0);}}}
+                style={{background:sortCol===sk?color:t.cardAlt,color:sortCol===sk?"#fff":t.muted,border:"1px solid "+t.border,borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:700,cursor:"pointer"}}>
+                {lbl}{sortCol===sk?(sortDir==="asc"?" ↑":" ↓"):""}
+              </button>
+            ))}
+          </div>
+          )}
+       <div style={{overflowY:"auto",flex:1}}>
           {view==="outlet"?(<>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
               <thead style={{position:"sticky",top:0,background:t.card,zIndex:1}}>
@@ -835,7 +964,7 @@ function CanvasserDetailPanel({detail,onClose,t}){
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
             <thead style={{position:"sticky",top:0,background:t.card,zIndex:1}}>
               <tr style={{background:t.cardAlt}}>
-                {["#","Tanggal","Outlet","Status","In Range","Jarak ke Outlet*","Durasi","Alasan"].map(h=>(
+                {["#","Tanggal","Visit Type","Outlet ID","Outlet","Status","In Range","Jarak ke Outlet*","Durasi","Alasan"].map(h=>(
                   <th key={h} style={{padding:"9px 12px",textAlign:"left",fontSize:11,fontWeight:700,color:t.muted,whiteSpace:"nowrap",borderBottom:`1px solid ${t.border}`}}>{h}</th>
                 ))}
               </tr>
@@ -850,7 +979,9 @@ function CanvasserDetailPanel({detail,onClose,t}){
                 <tr key={i} style={{borderBottom:`1px solid ${t.border}`,background:i%2===0?"transparent":t.rowAlt}}>
                   <td style={{padding:"7px 10px",color:t.muted,fontSize:10}}>{i+1}</td>
                   <td style={{padding:"7px 10px",color:t.text,whiteSpace:"nowrap"}}>{fmtDate(r["Planned Visit Date"])}</td>
+                  <td style={{padding:"7px 10px"}}>{(()=>{const vt=r["Activity Type"]||"";const vc=vt==="Regular Visit"?P.a1:vt==="Ad-Hoc Visit"?P.a2:"#06b6d4";return vt?<span style={{background:vc+"22",color:vc,padding:"1px 7px",borderRadius:999,fontSize:9,fontWeight:700,whiteSpace:"nowrap"}}>{vt}</span>:<span style={{color:t.muted}}>–</span>;})()}</td>
                   <td style={{padding:"7px 10px",color:t.text,maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r["Outlet"]||"–"}</td>
+                  <td style={{padding:"7px 10px",color:t.muted,fontSize:10,whiteSpace:"nowrap"}}>{r["Outlet ID"]||"–"}</td>
                   <td style={{padding:"7px 10px"}}>
                     <span style={{background:vc+"20",color:vc,padding:"2px 8px",borderRadius:999,fontSize:10,fontWeight:700}}>{vs||"–"}</span>
                   </td>
@@ -1084,6 +1215,7 @@ function Dashboard({files,onReset,dark,toggleDark,roMap={}}){
   const [canvDetail,setCanvDetail]=useState(null);
   const [outletDrill,setOutletDrill]=useState(null);
   const [trendDrill,setTrendDrill]=useState(null);
+  const [vtDrill,setVtDrill]=useState(null);
   const [outletActivity,setOutletActivity]=useState(null); // {canvasser, drillLabel, color}
   // Responsive
   const [winW,setWinW]=useState(typeof window!=="undefined"?window.innerWidth:1200);
@@ -1218,6 +1350,29 @@ function Dashboard({files,onReset,dark,toggleDark,roMap={}}){
 
   const handleSort=key=>{if(sk===key)setSd(d=>d==="desc"?"asc":"desc");else{setSk(key);setSd("desc");}};
   const mkTip=p=><Tip {...p} t={t}/>;
+
+  const openVtDrill=(visitType,statusFilter)=>{
+    const map={};
+    clusters.forEach(cl=>(cl.rawRows||[]).forEach(r=>{
+      const vt=String(r["Activity Type"]||"Unknown").trim();
+      if(vt!==visitType) return;
+      const as1=r["_CAS1"]||"";
+      if(statusFilter&&as1!==statusFilter) return;
+      const cid=String(r["Canvasser ID"]||r["Canvasser"]||"").trim();
+      const nm=String(r["Canvasser"]||"").trim();
+      const outId=String(r["Outlet ID"]||"").trim();
+      const outNm=String(r["Outlet"]||outId).trim();
+      if(!map[cid])map[cid]={id:cid,name:nm,region:cl.regionCode||"",cluster:cl.label||"",total:0,A1:0,A2:0,A3:0,outlets:new Set()};
+      map[cid].total++;
+      if(as1==="A1 - NORMAL")map[cid].A1++;
+      else if(as1==="A2 - ANOMALY")map[cid].A2++;
+      else if(as1==="A3 - INCOMPLETE")map[cid].A3++;
+      if(outId)map[cid].outlets.add(outNm||outId);
+    }));
+    const rows=Object.values(map).map(d=>({...d,outletList:[...d.outlets].join(", "),outletCount:d.outlets.size,outlets:undefined})).sort((a,b)=>b.total-a.total);
+    const label=statusFilter?(statusFilter==="A1 - NORMAL"?"A1":statusFilter==="A2 - ANOMALY"?"A2":"A3"):"Semua";
+    setVtDrill({visitType,statusFilter,label,rows});
+  };
 
   const handleOutletActivity=(row,status)=>{
     if(!outletDrill||!outletDrill.rawByOutlet)return;
@@ -1504,6 +1659,13 @@ function Dashboard({files,onReset,dark,toggleDark,roMap={}}){
                     {icon:"🔵",color:P.a3,title:"A3 Incomplete Terbanyak",onClick:wA3?()=>openInsight(wA3,"A3","A3 - Incomplete",P.a3):null,desc:wA3?`${wA3.name} [${wA3.cluster}]: ${wA3.A3.toLocaleString()} aktivitas (${wA3.a3p.toFixed(1)}% dari totalnya)`:"–"},
                     {icon:"🔍",color:P.investigate,title:"Investigate Terbanyak",onClick:wInv?()=>openInsight(wInv,"INVESTIGATE","Investigate",P.investigate):null,desc:wInv?`${wInv.name} [${wInv.cluster}]: ${wInv.INVESTIGATE.toLocaleString()} aktivitas (${wInv.invP.toFixed(1)}% dari totalnya)`:"–"},
                     {icon:"⏱",color:"#f97316",title:"Durasi Singkat (SHORT)",desc:`${(dc["SHORT"]||0).toLocaleString()} aktivitas durasi singkat — perlu verifikasi.`},
+                    ...((view.visitTypeData||[]).map(vt=>({
+                      icon:vt.type==="Regular Visit"?"🚗":vt.type==="Ad-Hoc Visit"?"⚡":"📦",
+                      color:vt.type==="Regular Visit"?P.a1:vt.type==="Ad-Hoc Visit"?P.a2:"#06b6d4",
+                      title:vt.type,
+                      onClick:()=>openVtDrill(vt.type,null),
+                      desc:`Total: ${vt.total.toLocaleString()} · A1: ${vt.A1.toLocaleString()} · A2: ${vt.A2.toLocaleString()} · A3: ${vt.A3.toLocaleString()}`,
+                    }))),
                     {icon:"📅",color:"#34d399",title:"Hari Tersibuk",onClick:topDay?()=>setTrendDrill(topDay.date):null,desc:topDay?`${topDay.date}: ${topDay.total.toLocaleString()} aktivitas (A1: ${pctS(topDay.A1,topDay.total)})`:"–"},
                   ].map((f,i)=>(
                     <div key={i} onClick={f.onClick} style={{display:"flex",gap:10,padding:"9px 12px",cursor:f.onClick?"pointer":"default",transition:"background 0.15s",background:f.onClick?"transparent":"transparent",borderRadius:10,background:t.cardAlt,border:`1px solid ${t.border}`,marginBottom:8,alignItems:"flex-start"}}>
@@ -1616,6 +1778,41 @@ function Dashboard({files,onReset,dark,toggleDark,roMap={}}){
                 </div>
               </div>
               )
+            )}
+
+
+            {/* ── Visit Type chart ── */}
+            {(view.visitTypeData||[]).length>0&&(
+            <div style={card()}>
+              <div style={{fontWeight:700,fontSize:13,marginBottom:4}}>📊 Volume per Visit Type</div>
+              <div style={{fontSize:11,color:t.muted,marginBottom:10}}>Perbandingan A1 · A2 · A3 per tipe kunjungan</div>
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={(view.visitTypeData||[]).map(d=>({name:d.type.replace(" Visit",""),A1:d.A1,A2:d.A2,A3:d.A3,_type:d.type}))} margin={{top:5,right:10,bottom:5,left:0}}
+                  onClick={d=>{if(d?.activePayload?.[0]?.payload?._type){const p=d.activePayload[0];const sk=p.dataKey;const sfMap={"A1":"A1 - NORMAL","A2":"A2 - ANOMALY","A3":"A3 - INCOMPLETE"};openVtDrill(p.payload._type,sfMap[sk]||null);}}}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={t.border}/>
+                  <XAxis dataKey="name" tick={{fill:t.muted,fontSize:11}} tickLine={false}/>
+                  <YAxis tick={{fill:t.muted,fontSize:10}} tickLine={false} axisLine={false}/>
+                  <Tooltip contentStyle={{background:t.card,border:`1px solid ${t.border}`,borderRadius:8,fontSize:11}}/>
+                  <Legend iconSize={8} wrapperStyle={{fontSize:10}}/>
+                  <Bar dataKey="A1" name="A1 Normal" fill={P.a1} stackId="a"/>
+                  <Bar dataKey="A2" name="A2 Anomaly" fill={P.a2} stackId="a"/>
+                  <Bar dataKey="A3" name="A3 Incomplete" fill={P.a3} stackId="a" radius={[3,3,0,0]}/>
+                </BarChart>
+              </ResponsiveContainer>
+              <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap"}}>
+                {(view.visitTypeData||[]).map(d=>(
+                  <div key={d.type} onClick={()=>openVtDrill(d.type,null)} style={{flex:1,minWidth:100,background:t.cardAlt,borderRadius:8,padding:"8px 12px",border:`1px solid ${t.border}`,cursor:"pointer"}}>
+                    <div style={{fontWeight:700,fontSize:11,color:t.text,marginBottom:2}}>{d.type}</div>
+                    <div style={{fontSize:10,color:t.muted}}>Total: <b style={{color:t.text}}>{d.total.toLocaleString()}</b></div>
+                    <div style={{display:"flex",gap:6,marginTop:3,fontSize:10,flexWrap:"wrap"}}>
+                      <span onClick={e=>{e.stopPropagation();openVtDrill(d.type,"A1 - NORMAL");}} style={{color:P.a1,cursor:"pointer",borderBottom:"1px dotted "+P.a1}}>A1: {d.A1.toLocaleString()}</span>
+                      <span onClick={e=>{e.stopPropagation();openVtDrill(d.type,"A2 - ANOMALY");}} style={{color:P.a2,cursor:"pointer",borderBottom:"1px dotted "+P.a2}}>A2: {d.A2.toLocaleString()}</span>
+                      <span onClick={e=>{e.stopPropagation();openVtDrill(d.type,"A3 - INCOMPLETE");}} style={{color:P.a3,cursor:"pointer",borderBottom:"1px dotted "+P.a3}}>A3: {d.A3.toLocaleString()}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
             )}
 
           </div>
@@ -2052,6 +2249,13 @@ function Dashboard({files,onReset,dark,toggleDark,roMap={}}){
         </div>
       </div>
     )}
+    <VisitTypeDrillPanel drill={vtDrill} onClose={()=>setVtDrill(null)} t={t}
+      onCanvasserClick={(r,key)=>{
+        const drillMap={"A1":"A1 - Normal","A2":"A2 - Anomaly","A3":"A3 - Incomplete"};
+        const colorMap={"A1":P.a1,"A2":P.a2,"A3":P.a3};
+        const rows=getCanvasserRows(r.name,r.cluster,key);
+        setCanvDetail({canvasser:r,drillLabel:drillMap[key],color:colorMap[key],rows,drillKey:key});
+      }}/>
     <OutletActivityPanel detail={outletActivity} onClose={()=>setOutletActivity(null)} t={t}/>
     <DrillDownPanel drill={drill} onClose={()=>setDrill(null)} t={t}
       onCanvasserClick={(r)=>{
