@@ -223,7 +223,8 @@ function readFileRows(buf, sheetName=null) {
 
 // ── PROCESS ROWS ──────────────────────────────────────────────────────────────
 function processRows(rows) {
-  const total=rows.length;
+  // total dihitung tanpa Consignment Visit (konsisten dengan KPI A1/A2/A3)
+  const total=rows.filter(r=>String(r["Activity Type"]||"").trim()!=="Consignment Visit").length;
   const actC={"A1 - NORMAL":0,"A2 - ANOMALY":0,"A3 - INCOMPLETE":0};
   const visC={VALID:0,OBSERVE:0,INVESTIGATE:0,INCOMPLETE:0};
   const durC={NORMAL:0,SHORT:0,LONG:0};
@@ -262,6 +263,9 @@ function processRows(rows) {
     if(as1==="A1 - NORMAL")vtMap[vt].A1++;
     else if(as1==="A2 - ANOMALY")vtMap[vt].A2++;
     else if(as1==="A3 - INCOMPLETE")vtMap[vt].A3++; // store for getCanvasserRows & outlet drill
+    // Consignment Visit dikecualikan dari KPI utama (A1/A2/A3 overview, pie chart, key insights),
+    // tapi tetap dihitung di vtMap (Visit Type breakdown) di atas.
+    if(vt==="Consignment Visit") return;
     // Duration Status — read from cell first, then compute from timestamps or raw duration
     let dur = String(r["_DUR"]!=null?r["_DUR"]:r["Duration Status"]!=null?r["Duration Status"]:"").trim().toUpperCase();
     if(!["NORMAL","SHORT","LONG"].includes(dur)){
@@ -1613,7 +1617,7 @@ function Dashboard({files,onReset,dark,toggleDark,roMap={}}){
             {/* ── ROW 1: Activity Status Pie (left) + Key Insights (right) ── */}
             <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"minmax(240px,1fr) minmax(300px,1.5fr)",gap:16}}>
               <div style={card()}>
-                <div style={{fontWeight:700,marginBottom:2}}>Activity Status</div>
+                <div style={{fontWeight:700,marginBottom:2}}>Activity Status <span style={{fontSize:10,fontWeight:500,color:t.muted}}>(Regular + Ad-Hoc)</span></div>
                 <div style={{fontSize:11,color:t.muted,marginBottom:10}}>
                   {view.label}
                   {view.label&&view.label.length<=3&&REGION_NAMES[view.label]&&<span style={{color:t.muted}}> ({REGION_NAMES[view.label]})</span>}
