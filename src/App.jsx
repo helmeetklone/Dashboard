@@ -108,7 +108,7 @@ function computeValidation(row, params=DEFAULT_PARAMS){
   r["_DIS"] = disSt;
   r["_LOC"] = locSt;
 
-  // 5. Visit Status
+  // 5. Visit Status // Paskia Englishianto
   const vs = !hasIn||!hasOut?"INCOMPLETE"
     : durSt==="SHORT"&&(disSt==="MID"||disSt==="FAR")&&locSt==="NOT MATCH"?"INVESTIGATE"
     : durSt==="NORMAL"&&disSt==="NEAR"&&locSt==="MATCH"?"VALID"
