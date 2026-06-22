@@ -108,7 +108,7 @@ function computeValidation(row, params=DEFAULT_PARAMS){
   r["_DIS"] = disSt;
   r["_LOC"] = locSt;
 
-  // 5. Visit Status // Paskia Englishianto
+  // 5. Visit Status
   const vs = !hasIn||!hasOut?"INCOMPLETE"
     : durSt==="SHORT"&&(disSt==="MID"||disSt==="FAR")&&locSt==="NOT MATCH"?"INVESTIGATE"
     : durSt==="NORMAL"&&disSt==="NEAR"&&locSt==="MATCH"?"VALID"
@@ -141,6 +141,13 @@ const REGION_NAMES = {
   "KM":"Kalimantan","NS":"North Sumatera","SS":"South Sumatera",
   "SW":"Sulawesi","WJ":"West Java",
 };
+function fmtPeriod(dr){
+  if(!dr||!dr.min) return null;
+  const fmt=d=>new Date(d).toLocaleDateString("id-ID",{day:"2-digit",month:"short",year:"numeric"});
+  if(dr.min===dr.max) return fmt(dr.min);
+  const days=Math.round((new Date(dr.max)-new Date(dr.min))/(1000*60*60*24))+1;
+  return `${fmt(dr.min)} – ${fmt(dr.max)} (${days} hari)`;
+}
 function regionFullName(code){
   return REGION_NAMES[code]||code;
 }
@@ -232,6 +239,7 @@ function processRows(rows) {
   const locC={MATCH:0,"NOT MATCH":0,INCOMPLETE:0};
   const inRangeC={YES:0,NO:0};
   const outMap={},canvMap={},dateMap={},visitMap={},vtMap={};
+  let minDate=null,maxDate=null;
 
   rows.forEach(r=>{
     // Use directly-read cell values (_VS, _AS1 etc.) — bypasses SheetJS duplicate key issues
@@ -367,6 +375,8 @@ function processRows(rows) {
     else if(loc==="INCOMPLETE")canvMap[cid].LOC_INC++;
 
     if(dt){
+      if(!minDate||dt<minDate) minDate=dt;
+      if(!maxDate||dt>maxDate) maxDate=dt;
       if(!dateMap[dt]) dateMap[dt]={date:dt,total:0,A1:0,A2:0,A3:0};
       dateMap[dt].total++;
       if(as1==="A1 - NORMAL")    dateMap[dt].A1++;
@@ -396,6 +406,7 @@ function processRows(rows) {
     outletData:Object.values(outMap).filter(d=>!d._isCensus).sort((a,b)=>b.total-a.total),
     censusData,
     canvassers,
+    dateRange:{min:minDate,max:maxDate},
     trend:Object.values(dateMap).sort((a,b)=>a.date.localeCompare(b.date)),
     duplicates:Object.values(visitMap).filter(v=>Array.isArray(v.visits)&&v.visits.length>1).sort((a,b)=>b.visits.length-a.visits.length),
   };
@@ -437,6 +448,11 @@ function aggregateList(dataList) {
     outletData:mergeArr("outletData","type"),
     censusData:mergeArr("censusData","type"),
     canvassers,
+    dateRange:(()=>{
+      const mins=dataList.map(r=>r.dateRange?.min).filter(Boolean).sort();
+      const maxs=dataList.map(r=>r.dateRange?.max).filter(Boolean).sort();
+      return mins.length?{min:mins[0],max:maxs[maxs.length-1]}:null;
+    })(),
     trend:Object.values(tMap).sort((a,b)=>a.date.localeCompare(b.date)),
     duplicates:dataList.flatMap(r=>(r.duplicates||[])).sort((a,b)=>b.visits.length-a.visits.length),
   };
@@ -1519,6 +1535,7 @@ function Dashboard({files,onReset,dark,toggleDark,roMap={}}){
           <div style={{fontSize:11,color:t.muted,background:t.cardAlt,border:`1px solid ${t.border}`,borderRadius:8,padding:"5px 10px"}}>
             {clusters.length} cluster · {regionCodes.length} region · {(national.total||0).toLocaleString()} aktivitas
           </div>
+            {national.dateRange?.min&&<div style={{fontSize:13,color:P.accent,fontWeight:700,background:P.accent+"18",border:`1px solid ${P.accent}40`,borderRadius:8,padding:"5px 14px"}}>📅 {fmtPeriod(national.dateRange)}</div>}
           <button onClick={()=>setShowParams(p=>!p)} style={{background:showParams?"#f59e0b22":t.cardAlt,border:"1px solid "+(showParams?"#f59e0b":t.border),color:showParams?"#f59e0b":t.muted,borderRadius:8,padding:"6px 10px",cursor:"pointer",fontSize:11,fontWeight:700,marginRight:4}}>⚙️ Parameter</button>
           <button onClick={toggleDark} style={{background:t.cardAlt,border:`1px solid ${t.border}`,color:t.text,borderRadius:8,padding:"5px 12px",fontSize:13,cursor:"pointer",fontWeight:700}}>
             {dark?"☀️":"🌙"}
@@ -1573,6 +1590,7 @@ function Dashboard({files,onReset,dark,toggleDark,roMap={}}){
         {selCluster&&<><span>›</span><span style={{color:view.color||t.text}}>{selCluster}</span></>}
         <span style={{marginLeft:"auto",background:`${P.accent}20`,color:P.accent,padding:"2px 10px",borderRadius:999,fontWeight:700,fontSize:10}}>
           {levelLabel} · {T.toLocaleString()} aktivitas
+              {view.dateRange?.min&&<span style={{display:"block",fontSize:12,fontWeight:700,marginTop:2}}>📅 {fmtPeriod(view.dateRange)}</span>}
         </span>
       </div>
 
