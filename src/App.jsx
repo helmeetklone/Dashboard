@@ -854,10 +854,13 @@ function CanvasserDetailPanel({detail,onClose,t}){
   const [view,setView]=useState("list");
   const [oPg,setOPg]=useState(0);
   const [vtFilter,setVtFilter]=useState("ALL");
+  const [outletFilter,setOutletFilter]=useState(null);
+  const [outletFilterName,setOutletFilterName]=useState(null);
+  const [statusFilter,setStatusFilter]=useState(null);
   const [sortCol,setSortCol]=useState("date");
   const [sortDir,setSortDir]=useState("asc");
   const PG=10;
-  useEffect(()=>{setPg(0);setOPg(0);setView("list");setVtFilter("ALL");setSortCol("date");setSortDir("asc");},[detail?.canvasser?.id]);
+  useEffect(()=>{setPg(0);setOPg(0);setView("list");setVtFilter("ALL");setOutletFilter(null);setOutletFilterName(null);setStatusFilter(null);setSortCol("date");setSortDir("asc");},[detail?.canvasser?.id]);
   if(!detail) return null;
   const {canvasser,drillLabel,color,rows}=detail;
   const allRows=rows._all||rows;
@@ -892,9 +895,13 @@ function CanvasserDetailPanel({detail,onClose,t}){
   // Get unique visit types for filter buttons
   const vtTypes=["ALL",...new Set((rows||[]).map(r=>String(r["Activity Type"]||"Unknown").trim()))];
   // Apply filter
-  const filteredRows=(rows||[]).filter(r=>{
-    if(vtFilter==="ALL") return true;
-    return String(r["Activity Type"]||"Unknown").trim()===vtFilter;
+  // Saat filter outlet+status aktif, pakai allRows supaya count cocok dengan Per Outlet
+  const baseRows = (outletFilter&&statusFilter) ? (allRows||rows||[]) : (rows||[]);
+  const filteredRows=baseRows.filter(r=>{
+    if(vtFilter!=="ALL"&&String(r["Activity Type"]||"Unknown").trim()!==vtFilter) return false;
+    if(outletFilter&&String(r["Outlet ID"]||"").trim()!==outletFilter) return false;
+    if(statusFilter&&(r["_CAS1"]||"")!==statusFilter) return false;
+    return true;
   });
   // Apply sort
   const sortFn=(a,b)=>{
@@ -945,6 +952,16 @@ function CanvasserDetailPanel({detail,onClose,t}){
           {view==="list"&&(
           <div style={{padding:"8px 16px",borderBottom:`1px solid ${t.border}`,display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",flexShrink:0,background:t.cardAlt}}>
             <span style={{fontSize:10,color:t.muted,fontWeight:600}}>Filter:</span>
+            {(outletFilter||statusFilter)&&<button onClick={()=>{setOutletFilter(null);setOutletFilterName(null);setStatusFilter(null);setPg(0);}} style={{background:"#ef444422",color:"#ef4444",border:"1px solid #ef444440",borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:700,cursor:"pointer"}}>✕ Reset Filter</button>}
+            {outletFilter&&<span style={{background:P.accent+"22",color:P.accent,padding:"3px 10px",borderRadius:6,fontSize:10,fontWeight:700}}>
+              📍 Outlet: {outletFilterName||outletFilter}
+              <span style={{opacity:0.7,marginLeft:4}}>({outletFilter})</span>
+            </span>}
+            {statusFilter&&(()=>{
+              const sc=statusFilter==="A1 - NORMAL"?P.a1:statusFilter==="A2 - ANOMALY"?P.a2:P.a3;
+              const sl=statusFilter==="A1 - NORMAL"?"A1 - Normal":statusFilter==="A2 - ANOMALY"?"A2 - Anomaly":"A3 - Incomplete";
+              return <span style={{background:sc+"22",color:sc,padding:"3px 10px",borderRadius:6,fontSize:10,fontWeight:700}}>Status: {sl}</span>;
+            })()}
             {vtTypes.map(vt=>(
               <button key={vt} onClick={()=>{setVtFilter(vt);setPg(0);}}
                 style={{background:vtFilter===vt?(vt==="ALL"?color:vt==="Regular Visit"?P.a1:vt==="Ad-Hoc Visit"?P.a2:"#06b6d4"):t.card,color:vtFilter===vt?"#fff":t.muted,border:"1px solid "+(vtFilter===vt?"transparent":t.border),borderRadius:6,padding:"2px 9px",fontSize:10,fontWeight:700,cursor:"pointer"}}>
@@ -982,9 +999,15 @@ function CanvasserDetailPanel({detail,onClose,t}){
                     <td style={{padding:"7px 10px",color:t.muted,fontSize:10,whiteSpace:"nowrap"}}>{r.id||"–"}</td>
                     <td style={{padding:"7px 10px",fontWeight:600,color:t.text,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name}</td>
                     <td style={{padding:"7px 10px",fontWeight:800,color:t.text}}>{r.total}</td>
-                    <td style={{padding:"7px 10px",color:r.A1>0?P.a1:t.muted,fontWeight:r.A1>0?700:400}}>{r.A1}</td>
-                    <td style={{padding:"7px 10px",color:r.A2>0?P.a2:t.muted,fontWeight:r.A2>0?700:400}}>{r.A2}</td>
-                    <td style={{padding:"7px 10px",color:r.A3>0?P.a3:t.muted,fontWeight:r.A3>0?700:400}}>{r.A3}</td>
+                    <td style={{padding:"7px 10px"}}>
+                      {r.A1>0?<span onClick={()=>{setOutletFilter(r.id);setOutletFilterName(r.name);setStatusFilter("A1 - NORMAL");setVtFilter("ALL");setPg(0);setView("list");}} style={{color:P.a1,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.a1}}>{r.A1}</span>:<span style={{color:t.muted}}>0</span>}
+                    </td>
+                    <td style={{padding:"7px 10px"}}>
+                      {r.A2>0?<span onClick={()=>{setOutletFilter(r.id);setOutletFilterName(r.name);setStatusFilter("A2 - ANOMALY");setVtFilter("ALL");setPg(0);setView("list");}} style={{color:P.a2,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.a2}}>{r.A2}</span>:<span style={{color:t.muted}}>0</span>}
+                    </td>
+                    <td style={{padding:"7px 10px"}}>
+                      {r.A3>0?<span onClick={()=>{setOutletFilter(r.id);setOutletFilterName(r.name);setStatusFilter("A3 - INCOMPLETE");setVtFilter("ALL");setPg(0);setView("list");}} style={{color:P.a3,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.a3}}>{r.A3}</span>:<span style={{color:t.muted}}>0</span>}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1590,7 +1613,6 @@ function Dashboard({files,onReset,dark,toggleDark,roMap={}}){
         {selCluster&&<><span>›</span><span style={{color:view.color||t.text}}>{selCluster}</span></>}
         <span style={{marginLeft:"auto",background:`${P.accent}20`,color:P.accent,padding:"2px 10px",borderRadius:999,fontWeight:700,fontSize:10}}>
           {levelLabel} · {T.toLocaleString()} aktivitas
-              {view.dateRange?.min&&<span style={{display:"block",fontSize:12,fontWeight:700,marginTop:2}}>📅 {fmtPeriod(view.dateRange)}</span>}
         </span>
       </div>
 
