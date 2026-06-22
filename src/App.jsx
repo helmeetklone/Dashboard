@@ -1308,7 +1308,7 @@ function Dashboard({files,onReset,dark,toggleDark,roMap={}}){
   // ── National aggregate ───────────────────────────────────────────────────
   const national=useMemo(()=>({
     ...aggregateList(clusters),
-    label:"Nasional",
+    label:regionCodes.length===1?`${regionCodes[0]} — ${regionFullName(regionCodes[0])}`:"Nasional",
     color:P.accent,
   }),[clusters,regionCodes]);
 
@@ -1507,7 +1507,7 @@ function Dashboard({files,onReset,dark,toggleDark,roMap={}}){
   const lc=view.locC||{};
 
   // Current level label
-  const levelLabel=selCluster?"Cluster":selRegion?"Region":"Nasional";
+  const levelLabel=selCluster?"Cluster":selRegion?"Region":regionCodes.length===1?`${regionCodes[0]} — ${regionFullName(regionCodes[0])}`:"Nasional";
   const compLabel=selCluster?`Outlet Type — ${selCluster}`:selRegion?`Cluster dalam ${selRegion}`:regionCodes.length>1?`Perbandingan Region`:`Cluster dalam Region ${regionCodes[0]||""}`;
 
   const tabs=[
@@ -1548,7 +1548,7 @@ function Dashboard({files,onReset,dark,toggleDark,roMap={}}){
       <div style={{background:t.card,borderBottom:`1px solid ${t.border}`}}>
         <div style={{padding:"0 20px",display:"flex",gap:0,overflowX:"auto"}}>
           <button onClick={()=>{setSelRegion(null);setSelCluster(null);}} style={{padding:"10px 16px",border:"none",cursor:"pointer",fontSize:12,fontWeight:700,background:"transparent",whiteSpace:"nowrap",color:!selRegion&&!selCluster?"#3b82f6":t.muted,borderBottom:`3px solid ${!selRegion&&!selCluster?"#3b82f6":"transparent"}`,transition:"all 0.15s"}}>
-            🌐 Nasional
+            {regionCodes.length===1?`${regionCodes[0]} — ${regionFullName(regionCodes[0])}`:"🌐 Nasional"}
           </button>
           <div style={{width:1,background:t.border,margin:"8px 4px",flexShrink:0}}/>
           <span style={{padding:"10px 8px",fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.08em",alignSelf:"center"}}>REGION:</span>
