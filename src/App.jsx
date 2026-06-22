@@ -914,18 +914,39 @@ function CanvasserDetailPanel({detail,onClose,t}){
     return 0;
   };
   const sorted=[...filteredRows].sort(sortFn);
+  // Precompute drill count per outlet from rows (drill-filtered activities)
+  const drillCountMap={};
+  (rows||[]).forEach(r=>{
+    const oid=String(r["Outlet ID"]||"").trim();
+    if(!oid) return;
+    if(!drillCountMap[oid]) drillCountMap[oid]={total:0,obs:0,inv:0};
+    drillCountMap[oid].total++;
+    const vs=String(r["_CVS"]||r["Visit Status"]||"").toUpperCase();
+    if(vs==="OBSERVE") drillCountMap[oid].obs++;
+    else if(vs==="INVESTIGATE") drillCountMap[oid].inv++;
+  });
+
   const outletMap={};
   (allRows||[]).forEach(r=>{
     const oid=String(r["Outlet ID"]||r["Outlet"]||"").trim();
     const onm=String(r["Outlet"]||oid).trim();
     const as1=r["_CAS1"]||"";
-    if(!outletMap[oid])outletMap[oid]={id:oid,name:onm,total:0,A1:0,A2:0,A3:0};
+    if(!outletMap[oid])outletMap[oid]={id:oid,name:onm,total:0,A1:0,A2:0,A3:0,drill:0,drillObs:0,drillInv:0};
     outletMap[oid].total++;
     if(as1==="A1 - NORMAL")outletMap[oid].A1++;
     else if(as1==="A2 - ANOMALY")outletMap[oid].A2++;
     else if(as1==="A3 - INCOMPLETE")outletMap[oid].A3++;
+    // Assign drill count from precomputed map
+    const dc=drillCountMap[oid]||{total:0,obs:0,inv:0};
+    outletMap[oid].drill=dc.total;
+    outletMap[oid].drillObs=dc.obs;
+    outletMap[oid].drillInv=dc.inv;
   });
-  const outletRows=Object.values(outletMap).sort((a,b)=>b.total-a.total);
+  const outletRows=Object.values(outletMap).sort((a,b)=>{
+    // Sort by drill count first (outlets with drill activities on top), then by total
+    if(b.drill!==a.drill) return b.drill-a.drill;
+    return b.total-a.total;
+  });
 
   return(
     <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:1100,display:"flex",alignItems:"flex-end",background:"rgba(0,0,0,0.75)",backdropFilter:"blur(4px)"}}
@@ -939,7 +960,11 @@ function CanvasserDetailPanel({detail,onClose,t}){
               <span style={{background:P.accent+"20",color:P.accent,padding:"1px 7px",borderRadius:6,fontSize:10,fontWeight:700}}>{canvasser?.region}</span>
               <span style={{color:t.muted}}>{canvasser?.cluster}</span>
               <span style={{background:color+"20",color,padding:"2px 10px",borderRadius:999,fontSize:10,fontWeight:700}}>· {drillLabel}</span>
-              <span style={{color:t.text,fontWeight:800,fontSize:14}}>· {sorted.length.toLocaleString()} aktivitas sesuai filter</span>
+              <span style={{color:t.text,fontWeight:800,fontSize:14}}>
+                {view==="outlet"
+                  ?`· ${outletRows.length} outlet dikunjungi · ${allRows.length.toLocaleString()} total aktivitas`
+                  :`· ${sorted.length.toLocaleString()} aktivitas sesuai filter`}
+              </span>
             </div>
             <div style={{display:"flex",gap:4,marginTop:6}}>
               <button onClick={()=>setView("list")} style={{background:view==="list"?color:t.cardAlt,color:view==="list"?"#fff":t.muted,border:"1px solid "+t.border,borderRadius:6,padding:"3px 10px",fontSize:10,fontWeight:700,cursor:"pointer"}}>📋 Aktivitas ({filteredRows.length})</button>
@@ -987,14 +1012,14 @@ function CanvasserDetailPanel({detail,onClose,t}){
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
               <thead style={{position:"sticky",top:0,background:t.card,zIndex:1}}>
                 <tr style={{background:t.cardAlt}}>
-                  {["#","Outlet ID","Outlet","Total","A1","A2","A3"].map(h=>(
+                  {["#","Outlet ID","Outlet","Total","A1","A2","A3",drillLabel||"Drill"].map(h=>(
                     <th key={h} style={{padding:"9px 12px",textAlign:"left",fontSize:11,fontWeight:700,color:t.muted,whiteSpace:"nowrap",borderBottom:`1px solid ${t.border}`}}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {outletRows.slice(oPg*PG,(oPg+1)*PG).map((r,i)=>(
-                  <tr key={r.id||i} style={{borderBottom:`1px solid ${t.border}`,background:i%2===0?"transparent":t.rowAlt}}>
+                  <tr key={r.id||i} style={{borderBottom:`1px solid ${t.border}`,background:r.drill>0?(color+"12"):i%2===0?"transparent":t.rowAlt}}>
                     <td style={{padding:"7px 10px",color:t.muted,fontSize:10}}>{oPg*PG+i+1}</td>
                     <td style={{padding:"7px 10px",color:t.muted,fontSize:10,whiteSpace:"nowrap"}}>{r.id||"–"}</td>
                     <td style={{padding:"7px 10px",fontWeight:600,color:t.text,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name}</td>
@@ -1007,6 +1032,17 @@ function CanvasserDetailPanel({detail,onClose,t}){
                     </td>
                     <td style={{padding:"7px 10px"}}>
                       {r.A3>0?<span onClick={()=>{setOutletFilter(r.id);setOutletFilterName(r.name);setStatusFilter("A3 - INCOMPLETE");setVtFilter("ALL");setPg(0);setView("list");}} style={{color:P.a3,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.a3}}>{r.A3}</span>:<span style={{color:t.muted}}>0</span>}
+                    </td>
+                    <td style={{padding:"7px 10px"}}>
+                      {r.drill>0?(
+                        <div onClick={()=>{setOutletFilter(r.id);setOutletFilterName(r.name);setStatusFilter(null);setVtFilter("ALL");setPg(0);setView("list");}} style={{cursor:"pointer",display:"flex",flexDirection:"column",gap:2}}>
+                          <span style={{background:color+"22",color,fontWeight:800,padding:"1px 7px",borderRadius:5,fontSize:11,textAlign:"center"}}>{r.drill}</span>
+                          {(r.drillObs>0||r.drillInv>0)&&<div style={{display:"flex",gap:3,justifyContent:"center"}}>
+                            {r.drillObs>0&&<span style={{background:"#f59e0b22",color:"#f59e0b",fontSize:9,padding:"0px 5px",borderRadius:4,fontWeight:700}}>{r.drillObs}obs</span>}
+                            {r.drillInv>0&&<span style={{background:"#ef444422",color:"#ef4444",fontSize:9,padding:"0px 5px",borderRadius:4,fontWeight:700}}>{r.drillInv}inv</span>}
+                          </div>}
+                        </div>
+                      ):<span style={{color:t.muted,fontSize:11}}>0</span>}
                     </td>
                   </tr>
                 ))}
