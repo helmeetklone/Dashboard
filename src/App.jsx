@@ -275,6 +275,9 @@ function processRows(rows) {
   const inRangeC={YES:0,NO:0};
   const outMap={},canvMap={},dateMap={},visitMap={},vtMap={};
   let minDate=null,maxDate=null;
+  // Reason aggregation for Investigate & Observe
+  const reasonMap={investigate:{},observe:{}};
+  const addReason=(bucket,label)=>{ reasonMap[bucket][label]=(reasonMap[bucket][label]||0)+1; };
 
   rows.forEach(r=>{
     // Use directly-read cell values (_VS, _AS1 etc.) — bypasses SheetJS duplicate key issues
@@ -306,6 +309,23 @@ function processRows(rows) {
     if(as1==="A1 - NORMAL")vtMap[vt].A1++;
     else if(as1==="A2 - ANOMALY")vtMap[vt].A2++;
     else if(as1==="A3 - INCOMPLETE")vtMap[vt].A3++; // store for getCanvasserRows & outlet drill
+    // Track anomaly reasons for Investigate & Observe
+    if(vs==="INVESTIGATE"||vs==="OBSERVE"){
+      const bucket=vs==="INVESTIGATE"?"investigate":"observe";
+      const durSt2=String(r["_DUR"]||r["Duration Status"]||"").toUpperCase();
+      const disSt2=String(r["_DIS"]||r["Distance Status"]||"").toUpperCase();
+      const locSt2=String(r["_LOC"]||r["Location Status"]||"").toUpperCase();
+      const inR2=String(r["In Range"]||"").toLowerCase();
+      const dur2=parseFloat(r["Visit Duration (Menit)"]);
+      const dIn2=parseFloat(r["Distance Check In (Meter)"]);
+      const dOt2=parseFloat(r["Distance Check Out (Meter)"]);
+      if(durSt2==="SHORT"||(dur2>0&&dur2<5)) addReason(bucket,"⏱ Durasi singkat");
+      if(durSt2==="LONG"||(dur2>30)) addReason(bucket,"⏱ Durasi panjang");
+      if(dIn2>5000||dOt2>5000) addReason(bucket,"🚨 Jarak sangat jauh");
+      else if(dIn2>200||dOt2>200) addReason(bucket,"📍 Jarak jauh");
+      if(locSt2==="NOT MATCH") addReason(bucket,"📌 Lokasi tidak match");
+      if(inR2==="no"||inR2==="n") addReason(bucket,"🎯 Out of range");
+    }
     // Consignment Visit dikecualikan dari KPI utama (A1/A2/A3 overview, pie chart, key insights),
     // tapi tetap dihitung di vtMap (Visit Type breakdown) di atas.
     if(vt==="Consignment Visit") return;
@@ -442,6 +462,7 @@ function processRows(rows) {
     censusData,
     canvassers,
     dateRange:{min:minDate,max:maxDate},
+    reasonMap,
     trend:Object.values(dateMap).sort((a,b)=>a.date.localeCompare(b.date)),
     duplicates:Object.values(visitMap).filter(v=>Array.isArray(v.visits)&&v.visits.length>1).sort((a,b)=>b.visits.length-a.visits.length),
   };
@@ -483,6 +504,15 @@ function aggregateList(dataList) {
     outletData:mergeArr("outletData","type"),
     censusData:mergeArr("censusData","type"),
     canvassers,
+    reasonMap:(()=>{
+      const merged={investigate:{},observe:{}};
+      dataList.forEach(d=>{
+        ["investigate","observe"].forEach(b=>{
+          Object.entries(d.reasonMap?.[b]||{}).forEach(([k,v])=>{ merged[b][k]=(merged[b][k]||0)+v; });
+        });
+      });
+      return merged;
+    })(),
     dateRange:(()=>{
       const mins=dataList.map(r=>r.dateRange?.min).filter(Boolean).sort();
       const maxs=dataList.map(r=>r.dateRange?.max).filter(Boolean).sort();
@@ -1216,22 +1246,31 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
         const m=[...prev];
         const skipped=[];
         const flatResults=results.flatMap(r=>r.multi?r.results:[r]);
+        const merged=[];
         flatResults.forEach(r=>{
           const byName=m.findIndex(x=>x.name===r.name);
-          const byLabel=m.findIndex(x=>x.label===r.label&&x.name!==r.name);
+          const byLabel=m.findIndex(x=>x.label===r.label);
           if(byName>=0){
-            // same filename - silently replace (re-upload same file)
+            // Same filename → replace
             m[byName]=r;
           } else if(byLabel>=0){
-            // different filename but same cluster label - skip & warn
-            skipped.push(r.label);
+            // Same cluster, different file → MERGE rows
+            const existing=m[byLabel];
+            const existIds=new Set((existing.rows||[]).map(row=>String(row["Activity ID"]||"")));
+            const newRows=(r.rows||[]).filter(row=>!existIds.has(String(row["Activity ID"]||"")));
+            m[byLabel]={
+              ...existing,
+              rows:[...(existing.rows||[]),...newRows],
+              name:existing.name.includes("+")?existing.name:`${existing.name} + ${r.name.split("|").pop()}`,
+            };
+            if(newRows.length>0) merged.push(`${r.label} (+${newRows.length} baris)`);
           } else {
             m.push(r);
           }
         });
-        if(skipped.length>0){
-          setError(`⚠️ Cluster berikut sudah ada, dilewati: ${skipped.join(", ")}`);
-          setTimeout(()=>setError(null),4000);
+        if(merged.length>0){
+          setError(`✅ Data di-merge: ${merged.join(", ")}`);
+          setTimeout(()=>setError(null),5000);
         }
         return m;
       });
@@ -1338,7 +1377,7 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
 // ─────────────────────────────────────────────────────────────────────────────
 // DASHBOARD
 // ─────────────────────────────────────────────────────────────────────────────
-function Dashboard({files,onReset,dark,toggleDark,roMap={}}){
+function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
   const t=dark?DARK:LIGHT;
   const [params,setParams]=useState({...DEFAULT_PARAMS});
   const [showParams,setShowParams]=useState(false);
@@ -1646,6 +1685,67 @@ function Dashboard({files,onReset,dark,toggleDark,roMap={}}){
             {dark?"☀️":"🌙"}
           </button>
           <button onClick={onReset} style={{background:"rgba(239,68,68,0.15)",border:"1px solid rgba(239,68,68,0.3)",color:"#f87171",borderRadius:8,padding:"5px 12px",fontSize:11,cursor:"pointer",fontWeight:700}}>↩ Ganti File</button>
+          <label style={{background:"rgba(34,197,94,0.15)",border:"1px solid rgba(34,197,94,0.4)",color:"#4ade80",borderRadius:8,padding:"5px 12px",fontSize:11,cursor:"pointer",fontWeight:700,display:"inline-flex",alignItems:"center",gap:5}}>
+            ➕ Add Files
+            <input type="file" accept=".xlsx,.xls" multiple style={{display:"none"}} onClick={e=>e.target.value=""} onChange={async e=>{
+              if(!e.target.files?.length) return;
+              const fileList=Array.from(e.target.files);
+              const results=await Promise.all(fileList.map(f=>new Promise((res,rej)=>{
+                const reader=new FileReader();
+                reader.onload=e=>{
+                  try{
+                    const wb2=XLSX.read(e.target.result,{type:"array",cellDates:true});
+                    const sheets=wb2.SheetNames;
+                    const fileResults=[];
+                    for(const sn of sheets){
+                      const ws2=wb2.Sheets[sn]; if(!ws2||!ws2["!ref"]) continue;
+                      const {rows}=readFileRows(e.target.result,sn);
+                      if(!rows||!rows.length) continue;
+                      const clusterNames=[...new Set(rows.map(r=>r["Cluster"]).filter(Boolean))];
+                      if(clusterNames.length>1){
+                        clusterNames.forEach(cl=>{
+                          const clRows=rows.filter(r=>String(r["Cluster"]||"").trim()===cl);
+                          if(!clRows.length) return;
+                          fileResults.push({name:f.name+"|"+cl,label:cl,regionCode:getRegionCode(cl),rows:clRows});
+                        });
+                      } else {
+                        const label=clusterNames[0]||(sheets.length>1?sn:f.name.replace(/\.[^.]+$/,""));
+                        fileResults.push({name:sheets.length>1?f.name+"|"+sn:f.name,label,regionCode:getRegionCode(clusterNames[0]||sn||""),rows});
+                      }
+                    }
+                    if(!fileResults.length) throw new Error(`${f.name}: tidak ada data`);
+                    res(fileResults.length===1?fileResults[0]:{multi:true,results:fileResults,name:f.name});
+                  }catch(err){rej(err);}
+                };
+                reader.readAsArrayBuffer(f);
+              })));
+              const flat=results.flatMap(r=>r.multi?r.results:[r]);
+              onAddFiles&&onAddFiles(prev=>{
+                const m=[...(prev||[])];
+                const merged=[];
+                flat.forEach(r=>{
+                  const reRows=r.rows.map(row=>{
+                    const rid=String(row["Outlet ID"]||"").trim();
+                    const ro=roMap[rid];
+                    const enriched=ro?{...row,"RO Latitude":row["RO Latitude"]??ro.lat,"RO Longitude":row["RO Longitude"]??ro.lon,"RO Census":row["RO Census"]??(ro.census?"YES":"NO"),"Outlet Type":row["Outlet Type"]||ro.type}:row;
+                    return enriched;
+                  });
+                  const withValidation={...r,rows:reRows};
+                  const byName=m.findIndex(x=>x.name===r.name);
+                  const byLabel=m.findIndex(x=>x.label===r.label);
+                  if(byName>=0){ m[byName]=withValidation; }
+                  else if(byLabel>=0){
+                    const existing=m[byLabel];
+                    const existIds=new Set((existing.rows||[]).map(row=>String(row["Activity ID"]||"")));
+                    const newRows=reRows.filter(row=>!existIds.has(String(row["Activity ID"]||"")));
+                    m[byLabel]={...existing,rows:[...(existing.rows||[]),...newRows],name:existing.name.includes("+")?existing.name:`${existing.name}+`};
+                    if(newRows.length>0) merged.push(`${r.label}(+${newRows.length})`);
+                  } else { m.push(withValidation); }
+                });
+                return m;
+              });
+            }}/>
+          </label>
         </div>
       </div>
 
@@ -1806,6 +1906,28 @@ function Dashboard({files,onReset,dark,toggleDark,roMap={}}){
                       onClick:()=>openVtDrill(vt.type,null),
                       desc:`Total: ${vt.total.toLocaleString()} · A1: ${vt.A1.toLocaleString()} · A2: ${vt.A2.toLocaleString()} · A3: ${vt.A3.toLocaleString()}`,
                     }))),
+                    ...(()=>{
+                      const rm=view.reasonMap||{};
+                      const topReason=(bucket)=>{
+                        const entries=Object.entries(rm[bucket]||{});
+                        if(!entries.length) return null;
+                        return entries.sort((a,b)=>b[1]-a[1]).slice(0,3).map(([k,v])=>`${k} (${v}x)`).join(" · ");
+                      };
+                      const invTotal=Object.values(rm.investigate||{}).reduce((s,v)=>s+v,0);
+                      const obsTotal=Object.values(rm.observe||{}).reduce((s,v)=>s+v,0);
+                      const items=[];
+                      if(invTotal>0) items.push({
+                        icon:"🔍",color:P.investigate,
+                        title:`Penyebab Investigate (${invTotal.toLocaleString()} kasus)`,
+                        desc:topReason("investigate")||"–"
+                      });
+                      if(obsTotal>0) items.push({
+                        icon:"⚠️",color:P.a2,
+                        title:`Penyebab Observe (${obsTotal.toLocaleString()} kasus)`,
+                        desc:topReason("observe")||"–"
+                      });
+                      return items;
+                    })(),
                     {icon:"📅",color:"#34d399",title:"Hari Tersibuk",onClick:topDay?()=>setTrendDrill(topDay.date):null,desc:topDay?`${topDay.date}: ${topDay.total.toLocaleString()} aktivitas (A1: ${pctS(topDay.A1,topDay.total)})`:"–"},
                   ].map((f,i)=>(
                     <div key={i} onClick={f.onClick} style={{display:"flex",gap:10,padding:"9px 12px",cursor:f.onClick?"pointer":"default",transition:"background 0.15s",background:f.onClick?"transparent":"transparent",borderRadius:10,background:t.cardAlt,border:`1px solid ${t.border}`,marginBottom:8,alignItems:"flex-start"}}>
@@ -2424,6 +2546,6 @@ export default function App(){
   const [dark,setDark]=useState(true);
   const t=dark?DARK:LIGHT;
   return files
-    ?<Dashboard files={files} onReset={()=>setFiles(null)} dark={dark} toggleDark={()=>setDark(d=>!d)} roMap={roMap}/>
+    ?<Dashboard files={files} onReset={()=>setFiles(null)} onAddFiles={setFiles} dark={dark} toggleDark={()=>setDark(d=>!d)} roMap={roMap}/>
     :<UploadScreen onLoad={setFiles} roMap={roMap} onRoLoad={setRoMap} t={t}/>;
 }
