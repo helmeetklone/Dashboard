@@ -1,3 +1,5 @@
+
+
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import * as XLSX from "xlsx";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -1389,6 +1391,8 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
   const [outletDrill,setOutletDrill]=useState(null);
   const [trendDrill,setTrendDrill]=useState(null);
   const [trendPeriod,setTrendPeriod]=useState("daily");
+  const [addLoading,setAddLoading]=useState(null);
+  const [showFileManager,setShowFileManager]=useState(false);
   const [vtDrill,setVtDrill]=useState(null);
   const [outletActivity,setOutletActivity]=useState(null); // {canvasser, drillLabel, color}
   // Responsive
@@ -1524,6 +1528,49 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
 
   const handleSort=key=>{if(sk===key)setSd(d=>d==="desc"?"asc":"desc");else{setSk(key);setSd("desc");}};
   const mkTip=p=><Tip {...p} t={t}/>;
+  const handleAddFiles=async(fileList)=>{
+    if(!fileList?.length) return;
+    const fArr=Array.from(fileList);
+    setAddLoading({current:0,total:fArr.length,name:"Memulai..."});
+    try{
+      const results=await Promise.all(fArr.map((f,fi)=>new Promise((res,rej)=>{
+        setAddLoading(p=>p?{...p,current:fi,name:f.name.split(".")[0]}:null);
+        const rd=new FileReader();
+        rd.onload=ev=>{
+          try{
+            const wb2=XLSX.read(ev.target.result,{type:"array",cellDates:true});
+            const fileResults=[];
+            for(const sn of wb2.SheetNames){
+              const ws2=wb2.Sheets[sn]; if(!ws2||!ws2["!ref"]) continue;
+              const {rows}=readFileRows(ev.target.result,sn);
+              if(!rows?.length) continue;
+              const cls=[...new Set(rows.map(r=>r["Cluster"]).filter(Boolean))];
+              if(cls.length>1){cls.forEach(cl=>{const r2=rows.filter(r=>String(r["Cluster"]||"").trim()===cl);if(r2.length)fileResults.push({name:f.name+"|"+cl,label:cl,regionCode:getRegionCode(cl),rows:r2});});}
+              else{const lbl=cls[0]||(wb2.SheetNames.length>1?sn:f.name.split(".")[0]);fileResults.push({name:wb2.SheetNames.length>1?f.name+"|"+sn:f.name,label:lbl,regionCode:getRegionCode(lbl),rows});}
+            }
+            if(!fileResults.length) throw new Error(f.name+": kosong");
+            res(fileResults.length===1?fileResults[0]:{multi:true,results:fileResults,name:f.name});
+          }catch(e){rej(e);}
+        };
+        rd.readAsArrayBuffer(f);
+      })));
+      const flat=results.flatMap(r=>r.multi?r.results:[r]);
+      onAddFiles&&onAddFiles(prev=>{
+        const m=[...(prev||[])];
+        flat.forEach(r=>{
+          const reRows=r.rows.map(row=>{const rid=String(row["Outlet ID"]||"").trim();const ro=roMap[rid];return ro?{...row,"RO Latitude":row["RO Latitude"]??ro.lat,"RO Longitude":row["RO Longitude"]??ro.lon,"RO Census":row["RO Census"]??(ro.census?"YES":"NO"),"Outlet Type":row["Outlet Type"]||ro.type}:row;});
+          const byName=m.findIndex(x=>x.name===r.name);
+          const byLabel=m.findIndex(x=>x.label===r.label);
+          if(byName>=0){m[byName]={...r,rows:reRows};}
+          else if(byLabel>=0){const ex=m[byLabel];const exIds=new Set((ex.rows||[]).map(x=>String(x["Activity ID"]||"")));const newR=reRows.filter(x=>!exIds.has(String(x["Activity ID"]||"")));m[byLabel]={...ex,rows:[...(ex.rows||[]),...newR]};}
+          else{m.push({...r,rows:reRows});}
+        });
+        return m;
+      });
+    }catch(e){console.error(e);}
+    setAddLoading({current:fArr.length,total:fArr.length,name:"Selesai!"});
+    setTimeout(()=>setAddLoading(null),1500);
+  };
 
   const openVtDrill=(visitType,statusFilter)=>{
     const map={};
@@ -1685,66 +1732,12 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
             {dark?"☀️":"🌙"}
           </button>
           <button onClick={onReset} style={{background:"rgba(239,68,68,0.15)",border:"1px solid rgba(239,68,68,0.3)",color:"#f87171",borderRadius:8,padding:"5px 12px",fontSize:11,cursor:"pointer",fontWeight:700}}>↩ Ganti File</button>
+          <button onClick={()=>setShowFileManager(true)} style={{background:t.cardAlt,border:`1px solid ${t.border}`,color:t.muted,borderRadius:8,padding:"5px 12px",fontSize:11,cursor:"pointer",fontWeight:700}}>
+            📋 {clusters.length} File
+          </button>
           <label style={{background:"rgba(34,197,94,0.15)",border:"1px solid rgba(34,197,94,0.4)",color:"#4ade80",borderRadius:8,padding:"5px 12px",fontSize:11,cursor:"pointer",fontWeight:700,display:"inline-flex",alignItems:"center",gap:5}}>
             ➕ Add Files
-            <input type="file" accept=".xlsx,.xls" multiple style={{display:"none"}} onClick={e=>e.target.value=""} onChange={async e=>{
-              if(!e.target.files?.length) return;
-              const fileList=Array.from(e.target.files);
-              const results=await Promise.all(fileList.map(f=>new Promise((res,rej)=>{
-                const reader=new FileReader();
-                reader.onload=e=>{
-                  try{
-                    const wb2=XLSX.read(e.target.result,{type:"array",cellDates:true});
-                    const sheets=wb2.SheetNames;
-                    const fileResults=[];
-                    for(const sn of sheets){
-                      const ws2=wb2.Sheets[sn]; if(!ws2||!ws2["!ref"]) continue;
-                      const {rows}=readFileRows(e.target.result,sn);
-                      if(!rows||!rows.length) continue;
-                      const clusterNames=[...new Set(rows.map(r=>r["Cluster"]).filter(Boolean))];
-                      if(clusterNames.length>1){
-                        clusterNames.forEach(cl=>{
-                          const clRows=rows.filter(r=>String(r["Cluster"]||"").trim()===cl);
-                          if(!clRows.length) return;
-                          fileResults.push({name:f.name+"|"+cl,label:cl,regionCode:getRegionCode(cl),rows:clRows});
-                        });
-                      } else {
-                        const label=clusterNames[0]||(sheets.length>1?sn:f.name.replace(/\.[^.]+$/,""));
-                        fileResults.push({name:sheets.length>1?f.name+"|"+sn:f.name,label,regionCode:getRegionCode(clusterNames[0]||sn||""),rows});
-                      }
-                    }
-                    if(!fileResults.length) throw new Error(`${f.name}: tidak ada data`);
-                    res(fileResults.length===1?fileResults[0]:{multi:true,results:fileResults,name:f.name});
-                  }catch(err){rej(err);}
-                };
-                reader.readAsArrayBuffer(f);
-              })));
-              const flat=results.flatMap(r=>r.multi?r.results:[r]);
-              onAddFiles&&onAddFiles(prev=>{
-                const m=[...(prev||[])];
-                const merged=[];
-                flat.forEach(r=>{
-                  const reRows=r.rows.map(row=>{
-                    const rid=String(row["Outlet ID"]||"").trim();
-                    const ro=roMap[rid];
-                    const enriched=ro?{...row,"RO Latitude":row["RO Latitude"]??ro.lat,"RO Longitude":row["RO Longitude"]??ro.lon,"RO Census":row["RO Census"]??(ro.census?"YES":"NO"),"Outlet Type":row["Outlet Type"]||ro.type}:row;
-                    return enriched;
-                  });
-                  const withValidation={...r,rows:reRows};
-                  const byName=m.findIndex(x=>x.name===r.name);
-                  const byLabel=m.findIndex(x=>x.label===r.label);
-                  if(byName>=0){ m[byName]=withValidation; }
-                  else if(byLabel>=0){
-                    const existing=m[byLabel];
-                    const existIds=new Set((existing.rows||[]).map(row=>String(row["Activity ID"]||"")));
-                    const newRows=reRows.filter(row=>!existIds.has(String(row["Activity ID"]||"")));
-                    m[byLabel]={...existing,rows:[...(existing.rows||[]),...newRows],name:existing.name.includes("+")?existing.name:`${existing.name}+`};
-                    if(newRows.length>0) merged.push(`${r.label}(+${newRows.length})`);
-                  } else { m.push(withValidation); }
-                });
-                return m;
-              });
-            }}/>
+            <input type="file" accept=".xlsx,.xls" multiple style={{display:"none"}} onClick={e=>e.target.value=""} onChange={e=>handleAddFiles(e.target.files)}/>
           </label>
         </div>
       </div>
@@ -1763,8 +1756,13 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
             const clCount=(regionGroups[code]||[]).length;
             return(
               <button key={code} onClick={()=>{setSelRegion(code);setSelCluster(null);}} style={{padding:"10px 16px",border:"none",cursor:"pointer",fontSize:12,fontWeight:700,background:"transparent",whiteSpace:"nowrap",color:isActive?rc:t.muted,borderBottom:`3px solid ${isActive?rc:"transparent"}`,transition:"all 0.15s",display:"flex",alignItems:"center",gap:5}}>
-                <span>{code}</span>
-                <span style={{fontSize:10,background:isActive?rc+"22":t.cardAlt,color:isActive?rc:t.muted,padding:"1px 6px",borderRadius:999,fontWeight:600}}>{clCount}</span>
+                <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:1}}>
+                  <div style={{display:"flex",alignItems:"center",gap:5}}>
+                    <span>{code}</span>
+                    <span style={{fontSize:10,background:isActive?rc+"22":t.cardAlt,color:isActive?rc:t.muted,padding:"1px 6px",borderRadius:999,fontWeight:600}}>{clCount}</span>
+                  </div>
+                  {regionAgg[code]?.dateRange?.min&&<span style={{fontSize:8,color:isActive?rc:t.muted,fontWeight:500,opacity:0.8}}>{fmtPeriod(regionAgg[code].dateRange)}</span>}
+                </div>
               </button>
             );
           })}
@@ -1780,7 +1778,10 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
               const isActive=selCluster===cl.label;
               return(
                 <button key={cl.label} onClick={()=>setSelCluster(cl.label)} style={{padding:"8px 14px",border:"none",cursor:"pointer",fontSize:11,fontWeight:700,background:"transparent",whiteSpace:"nowrap",color:isActive?cl.color:t.muted,borderBottom:`2px solid ${isActive?cl.color:"transparent"}`,transition:"all 0.15s"}}>
-                  {cl.label.replace(new RegExp(`^${selRegion}[-_ ]?`,"i"),"").trim()||cl.label}
+                  <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:1}}>
+                    <span>{cl.label.replace(new RegExp(`^${selRegion}[-_ ]?`,"i"),"").trim()||cl.label}</span>
+                    {cl.dateRange?.min&&<span style={{fontSize:8,color:isActive?cl.color:t.muted,fontWeight:500,opacity:0.8}}>{fmtPeriod(cl.dateRange)}</span>}
+                  </div>
                 </button>
               );
             })}
@@ -2517,6 +2518,189 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
           <div style={{display:"flex",gap:8,marginTop:8}}>
             <button onClick={()=>setParams({...DEFAULT_PARAMS})} style={{flex:1,background:t.cardAlt,border:`1px solid ${t.border}`,color:t.muted,borderRadius:8,padding:"8px",cursor:"pointer",fontSize:12,fontWeight:700}}>↺ Reset Default</button>
             <button onClick={()=>setShowParams(false)} style={{flex:1,background:P.accent,border:"none",color:"#fff",borderRadius:8,padding:"8px",cursor:"pointer",fontSize:12,fontWeight:700}}>✓ Simpan</button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* ── FILE MANAGER PANEL ── */}
+    {showFileManager&&(
+      <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:2500,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)"}} onClick={()=>setShowFileManager(false)}>
+        <div onClick={e=>e.stopPropagation()} style={{background:t.card,borderRadius:16,border:`1px solid ${t.border}`,width:"min(560px,95vw)",maxHeight:"80vh",overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 8px 40px rgba(0,0,0,0.5)",fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
+          <div style={{padding:"16px 20px",borderBottom:`1px solid ${t.border}`,display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontWeight:800,fontSize:15,color:t.text,flex:1}}>📋 File Manager</span>
+            <span style={{fontSize:11,color:t.muted}}>{clusters.length} cluster loaded</span>
+            <button onClick={()=>setShowFileManager(false)} style={{background:t.cardAlt,border:`1px solid ${t.border}`,color:t.text,borderRadius:8,padding:"4px 10px",cursor:"pointer",fontSize:12,fontWeight:700}}>✕</button>
+          </div>
+          <div style={{overflowY:"auto",flex:1,padding:"8px 0"}}>
+            {clusters.map((cl,i)=>(
+              <div key={cl.label} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 20px",borderBottom:`1px solid ${t.border}`,background:i%2===0?"transparent":t.rowAlt}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
+                    <span style={{background:cl.color+"22",color:cl.color,padding:"1px 8px",borderRadius:999,fontSize:10,fontWeight:700}}>{cl.regionCode||"?"}</span>
+                    <span style={{fontWeight:700,fontSize:12,color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cl.label}</span>
+                  </div>
+                  <div style={{fontSize:10,color:t.muted,display:"flex",gap:8}}>
+                    {cl.dateRange?.min&&<span>📅 {fmtPeriod(cl.dateRange)}</span>}
+                    <span>📊 {(cl.rawRows||[]).length.toLocaleString()} baris</span>
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:6,flexShrink:0}}>
+                  <label style={{background:P.accent+"22",color:P.accent,border:`1px solid ${P.accent}40`,borderRadius:7,padding:"4px 10px",fontSize:10,fontWeight:700,cursor:"pointer"}}>
+                    🔄 Ganti
+                    <input type="file" accept=".xlsx,.xls" style={{display:"none"}} onClick={e=>e.target.value=""} onChange={async e=>{
+                      const file=e.target.files?.[0]; if(!file) return;
+                      setAddLoading({current:0,total:1,name:file.name.replace(/\.[^.]+$/,"")});
+                      const reader=new FileReader();
+                      reader.onload=ev=>{
+                        try{
+                          const wb2=XLSX.read(ev.target.result,{type:"array",cellDates:true});
+                          const sheets=wb2.SheetNames;
+                          const newResults=[];
+                          for(const sn of sheets){
+                            const ws2=wb2.Sheets[sn]; if(!ws2||!ws2["!ref"]) continue;
+                            const {rows}=readFileRows(ev.target.result,sn);
+                            if(!rows?.length) continue;
+                            const clusterNames=[...new Set(rows.map(r=>r["Cluster"]).filter(Boolean))];
+                            if(clusterNames.length>1){
+                              clusterNames.forEach(cln=>{
+                                const clRows=rows.filter(r=>String(r["Cluster"]||"").trim()===cln);
+                                if(clRows.length) newResults.push({name:file.name+"|"+cln,label:cln,regionCode:getRegionCode(cln),rows:clRows});
+                              });
+                            } else {
+                              const label=clusterNames[0]||sn;
+                              newResults.push({name:file.name,label,regionCode:getRegionCode(label),rows});
+                            }
+                          }
+                          onAddFiles(prev=>{
+                            const m=[...(prev||[])];
+                            newResults.forEach(r=>{
+                              const reRows=r.rows.map(row=>{
+                                const rid=String(row["Outlet ID"]||"").trim();
+                                const ro=roMap[rid];
+                                return ro?{...row,"RO Latitude":row["RO Latitude"]??ro.lat,"RO Longitude":row["RO Longitude"]??ro.lon,"RO Census":row["RO Census"]??(ro.census?"YES":"NO"),"Outlet Type":row["Outlet Type"]||ro.type}:row;
+                              });
+                              // REPLACE — find by label and overwrite
+                              const byLabel=m.findIndex(x=>x.label===r.label||x.label===cl.label);
+                              if(byLabel>=0) m[byLabel]={...r,rows:reRows};
+                              else m.push({...r,rows:reRows});
+                            });
+                            return m;
+                          });
+                          setAddLoading({current:1,total:1,name:"Selesai!"});
+                          setTimeout(()=>{setAddLoading(null);setShowFileManager(false);},1200);
+                        }catch(err){setAddLoading(null);alert("Error: "+err.message);}
+                      };
+                      reader.readAsArrayBuffer(file);
+                    }}/>
+                  </label>
+                  <button onClick={()=>{
+                    onAddFiles(prev=>(prev||[]).filter(x=>x.label!==cl.label));
+                    if(clusters.length<=1) setShowFileManager(false);
+                  }} style={{background:"#ef444422",color:"#ef4444",border:"1px solid #ef444440",borderRadius:7,padding:"4px 10px",fontSize:10,fontWeight:700,cursor:"pointer"}}>
+                    🗑
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{padding:"12px 20px",borderTop:`1px solid ${t.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontSize:10,color:t.muted}}>🔄 Ganti = replace data cluster tersebut · 🗑 = hapus cluster</span>
+          </div>
+        </div>
+      </div>
+    )}
+{showFileManager&&(
+      <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:2500,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)"}} onClick={()=>setShowFileManager(false)}>
+        <div onClick={e=>e.stopPropagation()} style={{background:t.card,borderRadius:16,border:`1px solid ${t.border}`,width:"min(560px,95vw)",maxHeight:"80vh",overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 8px 40px rgba(0,0,0,0.5)",fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
+          <div style={{padding:"16px 20px",borderBottom:`1px solid ${t.border}`,display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontWeight:800,fontSize:15,color:t.text,flex:1}}>📋 File Manager</span>
+            <span style={{fontSize:11,color:t.muted}}>{clusters.length} cluster loaded</span>
+            <button onClick={()=>setShowFileManager(false)} style={{background:t.cardAlt,border:`1px solid ${t.border}`,color:t.text,borderRadius:8,padding:"4px 10px",cursor:"pointer",fontSize:12,fontWeight:700}}>✕</button>
+          </div>
+          <div style={{overflowY:"auto",flex:1,padding:"8px 0"}}>
+            {clusters.map((cl,i)=>(
+              <div key={cl.label} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 20px",borderBottom:`1px solid ${t.border}`,background:i%2===0?"transparent":t.rowAlt}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
+                    <span style={{background:cl.color+"22",color:cl.color,padding:"1px 8px",borderRadius:999,fontSize:10,fontWeight:700}}>{cl.regionCode||"?"}</span>
+                    <span style={{fontWeight:700,fontSize:12,color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cl.label}</span>
+                  </div>
+                  <div style={{fontSize:10,color:t.muted,display:"flex",gap:8,flexWrap:"wrap"}}>
+                    {cl.dateRange?.min&&<span>📅 {fmtPeriod(cl.dateRange)}</span>}
+                    <span>📊 {(cl.rawRows||[]).length.toLocaleString()} baris</span>
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:6,flexShrink:0}}>
+                  <label style={{background:P.accent+"22",color:P.accent,border:`1px solid ${P.accent}40`,borderRadius:7,padding:"4px 10px",fontSize:10,fontWeight:700,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:4}}>
+                    🔄 Ganti
+                    <input type="file" accept=".xlsx,.xls" style={{display:"none"}} onClick={e=>e.target.value=""} onChange={async e=>{
+                      const file=e.target.files?.[0]; if(!file) return;
+                      const targetLabel=cl.label;
+                      setAddLoading({current:0,total:1,name:file.name.split(".")[0]});
+                      const rd=new FileReader();
+                      rd.onload=ev=>{
+                        try{
+                          const wb2=XLSX.read(ev.target.result,{type:"array",cellDates:true});
+                          const newR=[];
+                          for(const sn of wb2.SheetNames){
+                            const ws2=wb2.Sheets[sn]; if(!ws2||!ws2["!ref"]) continue;
+                            const {rows}=readFileRows(ev.target.result,sn);
+                            if(!rows?.length) continue;
+                            const cls2=[...new Set(rows.map(r=>r["Cluster"]).filter(Boolean))];
+                            if(cls2.length>1){cls2.forEach(c2=>{const r2=rows.filter(r=>String(r["Cluster"]||"").trim()===c2);if(r2.length)newR.push({name:file.name+"|"+c2,label:c2,regionCode:getRegionCode(c2),rows:r2});});}
+                            else{const lbl=cls2[0]||sn;newR.push({name:file.name,label:lbl,regionCode:getRegionCode(lbl),rows});}
+                          }
+                          if(!newR.length) throw new Error("File kosong");
+                          onAddFiles(prev=>{
+                            const m=[...(prev||[])];
+                            newR.forEach(r=>{
+                              const reRows=r.rows.map(row=>{const rid=String(row["Outlet ID"]||"").trim();const ro=roMap[rid];return ro?{...row,"RO Latitude":row["RO Latitude"]??ro.lat,"RO Longitude":row["RO Longitude"]??ro.lon}:row;});
+                              const byLabel=m.findIndex(x=>x.label===targetLabel||x.label===r.label);
+                              if(byLabel>=0)m[byLabel]={...r,rows:reRows};
+                              else m.push({...r,rows:reRows});
+                            });
+                            return m;
+                          });
+                          setAddLoading({current:1,total:1,name:"Selesai!"});
+                          setTimeout(()=>{setAddLoading(null);setShowFileManager(false);},1200);
+                        }catch(err){setAddLoading(null);alert("Error: "+err.message);}
+                      };
+                      rd.readAsArrayBuffer(file);
+                    }}/>
+                  </label>
+                  <button onClick={()=>{onAddFiles(prev=>(prev||[]).filter(x=>x.label!==cl.label));}} style={{background:"#ef444422",color:"#ef4444",border:"1px solid #ef444440",borderRadius:7,padding:"4px 10px",fontSize:10,fontWeight:700,cursor:"pointer"}}>🗑</button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{padding:"12px 20px",borderTop:`1px solid ${t.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+            <span style={{fontSize:10,color:t.muted}}>🔄 Ganti = replace · 🗑 = hapus cluster</span>
+            <label style={{display:"inline-flex",alignItems:"center",gap:6,background:"rgba(34,197,94,0.15)",border:"1px solid rgba(34,197,94,0.4)",color:"#4ade80",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:11,fontWeight:700}}>
+              ➕ Add Files
+              <input type="file" accept=".xlsx,.xls" multiple style={{display:"none"}} onClick={e=>e.target.value=""} onChange={e=>{setShowFileManager(false);handleAddFiles(e.target.files);}}/>
+            </label>
+          </div>
+        </div>
+      </div>
+    )}
+        {addLoading&&(
+      <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:3000,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)"}}>
+        <div style={{background:"#1e293b",borderRadius:16,padding:"28px 36px",minWidth:320,boxShadow:"0 8px 40px rgba(0,0,0,0.6)",fontFamily:"'Segoe UI',system-ui,sans-serif",textAlign:"center"}}>
+          <div style={{fontSize:28,marginBottom:12}}>📂</div>
+          <div style={{fontWeight:800,fontSize:15,color:"#f1f5f9",marginBottom:6}}>
+            {addLoading.current>=addLoading.total?"✅ Selesai!":"Memproses File..."}
+          </div>
+          <div style={{fontSize:12,color:"#94a3b8",marginBottom:16,maxWidth:260,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+            {addLoading.name}
+          </div>
+          {/* Progress bar */}
+          <div style={{background:"#334155",borderRadius:999,height:8,width:260,margin:"0 auto 10px"}}>
+            <div style={{background:P.accent,borderRadius:999,height:8,width:`${Math.round((addLoading.current/addLoading.total)*100)}%`,transition:"width 0.3s ease"}}/>
+          </div>
+          <div style={{fontSize:11,color:"#64748b"}}>
+            {addLoading.current} / {addLoading.total} file
+            {addLoading.current>0&&<span style={{marginLeft:6,color:P.accent,fontWeight:600}}>({Math.round((addLoading.current/addLoading.total)*100)}%)</span>}
           </div>
         </div>
       </div>
