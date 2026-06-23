@@ -148,6 +148,41 @@ function fmtPeriod(dr){
   const days=Math.round((new Date(dr.max)-new Date(dr.min))/(1000*60*60*24))+1;
   return `${fmt(dr.min)} – ${fmt(dr.max)} (${days} hari)`;
 }
+
+// ── GROUP TREND DATA ──────────────────────────────────────────────────────────
+function groupTrend(trend, period) {
+  if(!trend||!trend.length) return [];
+  if(period==="daily") return trend.map(d=>({...d,name:d.date.slice(5),_date:d.date}));
+  const map={};
+  trend.forEach(d=>{
+    const dt=new Date(d.date);
+    let key="";
+    if(period==="weekly"){
+      // ISO week: Monday-based
+      const tmp=new Date(dt); tmp.setHours(0,0,0,0);
+      tmp.setDate(tmp.getDate()-((tmp.getDay()+6)%7));
+      key=tmp.toISOString().slice(0,10);
+    } else if(period==="monthly"){
+      key=d.date.slice(0,7); // YYYY-MM
+    } else if(period==="quarterly"){
+      const q=Math.ceil((dt.getMonth()+1)/3);
+      key=`${dt.getFullYear()}-Q${q}`;
+    } else if(period==="half"){
+      const h=dt.getMonth()<6?1:2;
+      key=`${dt.getFullYear()}-H${h}`;
+    } else if(period==="yearly"){
+      key=`${dt.getFullYear()}`;
+    }
+    if(!map[key]) map[key]={key,total:0,A1:0,A2:0,A3:0,_date:key};
+    map[key].total+=d.total; map[key].A1+=d.A1;
+    map[key].A2+=d.A2; map[key].A3+=d.A3;
+  });
+  return Object.values(map).sort((a,b)=>a.key.localeCompare(b.key)).map(d=>({
+    ...d,
+    name:d.key.length===10?d.key.slice(5):d.key // show MM-DD for daily, full for others
+  }));
+}
+
 function regionFullName(code){
   return REGION_NAMES[code]||code;
 }
@@ -860,7 +895,7 @@ function CanvasserDetailPanel({detail,onClose,t}){
   const [sortCol,setSortCol]=useState("date");
   const [sortDir,setSortDir]=useState("asc");
   const PG=10;
-  useEffect(()=>{setPg(0);setOPg(0);setView("list");setVtFilter("ALL");setOutletFilter(null);setOutletFilterName(null);setStatusFilter(null);setSortCol("date");setSortDir("asc");},[detail?.canvasser?.id]);
+  useEffect(()=>{setPg(0);setOPg(0);setView("list");setVtFilter("ALL");setOutletFilter(null);setOutletFilterName(null);setStatusFilter(null);setSortCol("date");setSortDir("asc");},[detail?.sessionKey]);
   if(!detail) return null;
   const {canvasser,drillLabel,color,rows}=detail;
   const allRows=rows._all||rows;
@@ -1157,9 +1192,19 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
               const {rows}=readFileRows(e.target.result,sn);
               if(!rows||!rows.length) continue;
               const clusterNames=[...new Set(rows.map(r=>r["Cluster"]).filter(Boolean))];
-              const label=clusterNames.length===1?clusterNames[0]:(sheets.length>1?sn:f.name.replace(/\.[^.]+$/,""));
-              const regionCode=getRegionCode(clusterNames[0]||sn||"");
-              fileResults.push({name:sheets.length>1?f.name+"|"+sn:f.name,label,regionCode,rows});
+              if(clusterNames.length>1){
+                // Multi-cluster file: split rows per cluster
+                clusterNames.forEach(cl=>{
+                  const clRows=rows.filter(r=>String(r["Cluster"]||"").trim()===cl);
+                  if(!clRows.length) return;
+                  const rc=getRegionCode(cl);
+                  fileResults.push({name:f.name+"|"+cl,label:cl,regionCode:rc,rows:clRows});
+                });
+              } else {
+                const label=clusterNames.length===1?clusterNames[0]:(sheets.length>1?sn:f.name.replace(/\.[^.]+$/,""));
+                const regionCode=getRegionCode(clusterNames[0]||sn||"");
+                fileResults.push({name:sheets.length>1?f.name+"|"+sn:f.name,label,regionCode,rows});
+              }
             }
             if(!fileResults.length) throw new Error(`${f.name}: tidak ada data`);
             res(fileResults.length===1?fileResults[0]:{multi:true,results:fileResults,name:f.name});
@@ -1304,6 +1349,7 @@ function Dashboard({files,onReset,dark,toggleDark,roMap={}}){
   const [canvDetail,setCanvDetail]=useState(null);
   const [outletDrill,setOutletDrill]=useState(null);
   const [trendDrill,setTrendDrill]=useState(null);
+  const [trendPeriod,setTrendPeriod]=useState("daily");
   const [vtDrill,setVtDrill]=useState(null);
   const [outletActivity,setOutletActivity]=useState(null); // {canvasser, drillLabel, color}
   // Responsive
@@ -1745,7 +1791,7 @@ function Dashboard({files,onReset,dark,toggleDark,roMap={}}){
                   const openInsight=(canv,key,label,color)=>{
                     if(!canv) return;
                     const rows=getCanvasserRows(canv.name,canv.cluster,key);
-                    setCanvDetail({canvasser:canv,drillLabel:label,color,rows,drillKey:key});
+                    setCanvDetail({canvasser:canv,drillLabel:label,color,rows,drillKey:key,sessionKey:Date.now()});
                   };
                   return[
                     {icon:"✅",color:P.a1,title:"A1 Normal Rate",desc:`${pctS(ac["A1 - NORMAL"],T)} (${(ac["A1 - NORMAL"]||0).toLocaleString()}) aktivitas berjalan normal.`},
@@ -1916,11 +1962,21 @@ function Dashboard({files,onReset,dark,toggleDark,roMap={}}){
         {tab==="trend"&&(
           <div style={{display:"grid",gap:16}}>
             <div style={card()}>
-              <div style={{fontWeight:700,marginBottom:4}}>Volume Aktivitas per Hari</div>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4,flexWrap:"wrap"}}>
+                <span style={{fontWeight:700}}>Volume Aktivitas</span>
+                <div style={{display:"flex",gap:4,marginLeft:"auto",flexWrap:"wrap"}}>
+                  {[["daily","Harian"],["weekly","Mingguan"],["monthly","Bulanan"],["quarterly","Kuartalan"],["half","Semesteran"],["yearly","Tahunan"]].map(([val,lbl])=>(
+                    <button key={val} onClick={()=>setTrendPeriod(val)}
+                      style={{background:trendPeriod===val?P.accent:t.cardAlt,color:trendPeriod===val?"#fff":t.muted,border:"1px solid "+(trendPeriod===val?P.accent:t.border),borderRadius:6,padding:"3px 9px",fontSize:10,fontWeight:700,cursor:"pointer"}}>
+                      {lbl}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div style={{fontSize:11,color:t.muted,marginBottom:14}}>Planned Visit Date · {view.label}</div>
               <ResponsiveContainer width="100%" height={270}>
-                <BarChart data={view.trend.map(d=>({name:d.date.slice(5),A1:d.A1,A2:d.A2,A3:d.A3,_date:d.date}))} margin={{top:10,right:10,bottom:20,left:0}}
-                  onClick={d=>{if(d?.activePayload?.[0]?.payload?._date)setTrendDrill(d.activePayload[0].payload._date);}}>
+                <BarChart data={groupTrend(view.trend,trendPeriod)} margin={{top:10,right:10,bottom:20,left:0}}
+                  onClick={d=>{if(d?.activePayload?.[0]?.payload?._date&&trendPeriod==="daily")setTrendDrill(d.activePayload[0].payload._date);}}>
                   <CartesianGrid strokeDasharray="3 3" stroke={t.border}/>
                   <XAxis dataKey="name" tick={{fill:t.muted,fontSize:10}}/>
                   <YAxis tick={{fill:t.muted,fontSize:10}} tickFormatter={fmtK}/>
@@ -1935,7 +1991,7 @@ function Dashboard({files,onReset,dark,toggleDark,roMap={}}){
             <div style={card()}>
               <div style={{fontWeight:700,marginBottom:4}}>Tren Rate per Hari (%)</div>
               <ResponsiveContainer width="100%" height={200}>
-                <LineChart data={view.trend.map(d=>({name:d.date.slice(5),a1:pct(d.A1,d.total),a2:pct(d.A2,d.total),a3:pct(d.A3,d.total)}))} margin={{top:10,right:10,bottom:20,left:0}}>
+                <LineChart data={groupTrend(view.trend,trendPeriod).map(d=>({name:d.name,a1:pct(d.A1,d.total),a2:pct(d.A2,d.total),a3:pct(d.A3,d.total)}))} margin={{top:10,right:10,bottom:20,left:0}}>
                   <CartesianGrid strokeDasharray="3 3" stroke={t.border}/>
                   <XAxis dataKey="name" tick={{fill:t.muted,fontSize:10}}/>
                   <YAxis tick={{fill:t.muted,fontSize:10}} unit="%" domain={[0,100]}/>
@@ -2217,17 +2273,17 @@ function Dashboard({files,onReset,dark,toggleDark,roMap={}}){
                         <td style={{padding:"7px 10px",fontWeight:700}}>{c.total.toLocaleString()}</td>
                         <td style={{padding:"7px 10px"}}>
                           {c.A1>0
-                            ?<span onClick={()=>{const rows=getCanvasserRows(c.name,c.cluster,"A1");setCanvDetail({canvasser:c,drillLabel:"A1 - Normal",color:P.a1,rows,drillKey:"A1"});}} style={{color:P.a1,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.a1}}>{c.A1.toLocaleString()}</span>
+                            ?<span onClick={()=>{const rows=getCanvasserRows(c.name,c.cluster,"A1");setCanvDetail({canvasser:c,drillLabel:"A1 - Normal",color:P.a1,rows,drillKey:"A1",sessionKey:Date.now()});}} style={{color:P.a1,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.a1}}>{c.A1.toLocaleString()}</span>
                             :<span style={{color:t.muted}}>0</span>}
                         </td>
                         <td style={{padding:"7px 10px"}}>
                           {c.A2>0
-                            ?<span onClick={()=>{const rows=getCanvasserRows(c.name,c.cluster,"A2");setCanvDetail({canvasser:c,drillLabel:"A2 - Anomaly",color:P.a2,rows,drillKey:"A2"});}} style={{color:P.a2,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.a2}}>{c.A2.toLocaleString()}</span>
+                            ?<span onClick={()=>{const rows=getCanvasserRows(c.name,c.cluster,"A2");setCanvDetail({canvasser:c,drillLabel:"A2 - Anomaly",color:P.a2,rows,drillKey:"A2",sessionKey:Date.now()});}} style={{color:P.a2,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.a2}}>{c.A2.toLocaleString()}</span>
                             :<span style={{color:t.muted}}>0</span>}
                         </td>
                         <td style={{padding:"7px 10px"}}>
                           {c.A3>0
-                            ?<span onClick={()=>{const rows=getCanvasserRows(c.name,c.cluster,"A3");setCanvDetail({canvasser:c,drillLabel:"A3 - Incomplete",color:P.a3,rows,drillKey:"A3"});}} style={{color:P.a3,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.a3}}>{c.A3.toLocaleString()}</span>
+                            ?<span onClick={()=>{const rows=getCanvasserRows(c.name,c.cluster,"A3");setCanvDetail({canvasser:c,drillLabel:"A3 - Incomplete",color:P.a3,rows,drillKey:"A3",sessionKey:Date.now()});}} style={{color:P.a3,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.a3}}>{c.A3.toLocaleString()}</span>
                             :<span style={{color:t.muted}}>0</span>}
                         </td>
                         <td style={{padding:"7px 10px",color:c.INVESTIGATE>0?P.investigate:t.muted,fontWeight:c.INVESTIGATE>0?700:400}}>{c.INVESTIGATE}</td>
@@ -2348,13 +2404,13 @@ function Dashboard({files,onReset,dark,toggleDark,roMap={}}){
         const drillMap={"A1":"A1 - Normal","A2":"A2 - Anomaly","A3":"A3 - Incomplete"};
         const colorMap={"A1":P.a1,"A2":P.a2,"A3":P.a3};
         const rows=getCanvasserRows(r.name,r.cluster,key);
-        setCanvDetail({canvasser:r,drillLabel:drillMap[key],color:colorMap[key],rows,drillKey:key});
+        setCanvDetail({canvasser:r,drillLabel:drillMap[key],color:colorMap[key],rows,drillKey:key,sessionKey:Date.now()});
       }}/>
     <OutletActivityPanel detail={outletActivity} onClose={()=>setOutletActivity(null)} t={t}/>
     <DrillDownPanel drill={drill} onClose={()=>setDrill(null)} t={t}
       onCanvasserClick={(r)=>{
         const rows=getCanvasserRows(r.name,r.cluster,drill.countKey);
-        setCanvDetail({canvasser:r,drillLabel:drill.label,color:drill.color,rows,drillKey:drill.countKey});
+        setCanvDetail({canvasser:r,drillLabel:drill.label,color:drill.color,rows,drillKey:drill.countKey,sessionKey:Date.now()});
       }}/>
     <CanvasserDetailPanel detail={canvDetail} onClose={()=>setCanvDetail(null)} t={t}/>
     </>
