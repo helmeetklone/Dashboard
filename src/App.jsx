@@ -1,5 +1,3 @@
-
-
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import * as XLSX from "xlsx";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -605,7 +603,7 @@ function VisitTypeDrillPanel({drill,onClose,t,onCanvasserClick}){
             {sBtn("Total","total")}{sBtn("A1","A1")}{sBtn("A2","A2")}{sBtn("A3","A3")}{sBtn("Outlet","outletCount")}
           </div>
         </div>
-        <div style={{overflowY:"auto",flex:1}}>
+        <div style={{overflowY:"auto",flex:1,scrollbarWidth:"none",msOverflowStyle:"none"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
             <thead style={{position:"sticky",top:0,background:t.card,zIndex:1}}>
               <tr style={{background:t.cardAlt}}>
@@ -691,7 +689,7 @@ function OutletActivityPanel({detail,onClose,t}){
           </div>
           <button onClick={onClose} style={{background:t.cardAlt,border:`1px solid ${t.border}`,color:t.text,borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:13,fontWeight:700}}>✕</button>
         </div>
-        <div style={{overflowY:"auto",flex:1}}>
+        <div style={{overflowY:"auto",flex:1,scrollbarWidth:"none",msOverflowStyle:"none"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
             <thead style={{position:"sticky",top:0,background:t.card,zIndex:1}}>
               <tr style={{background:t.cardAlt}}>
@@ -723,6 +721,7 @@ function OutletActivityPanel({detail,onClose,t}){
                   <td style={{padding:"7px 10px",color:!isNaN(dur)&&dur>0&&dur<3?P.short:t.muted}}>
                     {fmtDur(r["Visit Duration (Menit)"])}{!isNaN(dur)&&dur>0&&dur<1&&<span style={{fontSize:9,color:P.investigate,marginLeft:3}}>⚡</span>}
                   </td>
+                  <td style={{padding:"6px 8px",textAlign:"center"}}>{["AVA Poster XL/AXIS Comply?","AVA Poster Smartfren Comply?","AVA SP XL Comply?","AVA SP AXIS Comply?","AVA SP Smartfren Comply?","AVA Voucher XL Comply?","AVA Voucher AXIS Comply?","AVA Voucher Smartfren Comply?"].filter(k=>String(r[k]||"").toLowerCase()==="yes").length===8?<span style={{background:"#22c55e22",color:"#22c55e",padding:"2px 6px",borderRadius:999,fontSize:10,fontWeight:700}}>8/8</span>:["AVA Poster XL/AXIS Comply?","AVA Poster Smartfren Comply?","AVA SP XL Comply?","AVA SP AXIS Comply?","AVA SP Smartfren Comply?","AVA Voucher XL Comply?","AVA Voucher AXIS Comply?","AVA Voucher Smartfren Comply?"].filter(k=>String(r[k]||"").toLowerCase()==="yes").length>=4?<span style={{background:"#f59e0b22",color:"#f59e0b",padding:"2px 6px",borderRadius:999,fontSize:10,fontWeight:700}}>{["AVA Poster XL/AXIS Comply?","AVA Poster Smartfren Comply?","AVA SP XL Comply?","AVA SP AXIS Comply?","AVA SP Smartfren Comply?","AVA Voucher XL Comply?","AVA Voucher AXIS Comply?","AVA Voucher Smartfren Comply?"].filter(k=>String(r[k]||"").toLowerCase()==="yes").length}/8</span>:<span style={{background:"#ef444422",color:"#ef4444",padding:"2px 6px",borderRadius:999,fontSize:10,fontWeight:700}}>{["AVA Poster XL/AXIS Comply?","AVA Poster Smartfren Comply?","AVA SP XL Comply?","AVA SP AXIS Comply?","AVA SP Smartfren Comply?","AVA Voucher XL Comply?","AVA Voucher AXIS Comply?","AVA Voucher Smartfren Comply?"].filter(k=>String(r[k]||"").toLowerCase()==="yes").length}/8</span>}</td>
                   <td style={{padding:"7px 10px",fontSize:11,color:t.muted}}>{getReason(r)}</td>
                 </tr>
               );})}
@@ -783,7 +782,7 @@ function OutletDrillPanel({drill,onClose,t,onDrill}){
             {sortBtn("Census","census")}
           </div>
         </div>
-        <div style={{overflowY:"auto",flex:1}}>
+        <div style={{overflowY:"auto",flex:1,scrollbarWidth:"none",msOverflowStyle:"none"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
             <thead style={{position:"sticky",top:0,background:t.card,zIndex:1}}>
               <tr style={{background:t.cardAlt}}>
@@ -871,7 +870,7 @@ function DrillDownPanel({drill,onClose,t,onCanvasserClick}){
             <span style={{marginLeft:"auto",fontSize:10,color:t.muted}}>{filt.length} canvasser</span>
           </div>
         </div>
-        <div style={{overflowY:"auto",flex:1}}>
+        <div style={{overflowY:"auto",flex:1,scrollbarWidth:"none",msOverflowStyle:"none"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
             <thead style={{position:"sticky",top:0,background:t.card,zIndex:1}}>
               <tr style={{background:t.cardAlt}}>
@@ -926,8 +925,9 @@ function CanvasserDetailPanel({detail,onClose,t}){
   const [statusFilter,setStatusFilter]=useState(null);
   const [sortCol,setSortCol]=useState("date");
   const [sortDir,setSortDir]=useState("asc");
+  const [avaDrill,setAvaDrill]=useState(null);
   const PG=10;
-  useEffect(()=>{setPg(0);setOPg(0);setView("list");setVtFilter("ALL");setOutletFilter(null);setOutletFilterName(null);setStatusFilter(null);setSortCol("date");setSortDir("asc");},[detail?.sessionKey]);
+  useEffect(()=>{setPg(0);setOPg(0);setView("list");setVtFilter("ALL");setOutletFilter(null);setOutletFilterName(null);setStatusFilter(null);setSortCol("date");setSortDir("asc");setAvaDrill(null);},[detail?.sessionKey]);
   if(!detail) return null;
   const {canvasser,drillLabel,color,rows}=detail;
   const allRows=rows._all||rows;
@@ -1036,6 +1036,7 @@ function CanvasserDetailPanel({detail,onClose,t}){
             <div style={{display:"flex",gap:4,marginTop:6}}>
               <button onClick={()=>setView("list")} style={{background:view==="list"?color:t.cardAlt,color:view==="list"?"#fff":t.muted,border:"1px solid "+t.border,borderRadius:6,padding:"3px 10px",fontSize:10,fontWeight:700,cursor:"pointer"}}>📋 Aktivitas ({filteredRows.length})</button>
               <button onClick={()=>setView("outlet")} style={{background:view==="outlet"?color:t.cardAlt,color:view==="outlet"?"#fff":t.muted,border:"1px solid "+t.border,borderRadius:6,padding:"3px 10px",fontSize:10,fontWeight:700,cursor:"pointer"}}>🏪 Per Outlet ({outletRows.length})</button>
+              <button onClick={()=>setView("ava")} style={{background:view==="ava"?"#f59e0b":t.cardAlt,color:view==="ava"?"#fff":t.muted,border:"1px solid "+t.border,borderRadius:6,padding:"3px 10px",fontSize:10,fontWeight:700,cursor:"pointer"}}>🏷 AVA</button>
             </div>
           </div>
           <button onClick={onClose} style={{background:t.cardAlt,border:`1px solid ${t.border}`,color:t.text,borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:13,fontWeight:700}}>✕</button>
@@ -1074,8 +1075,103 @@ function CanvasserDetailPanel({detail,onClose,t}){
             ))}
           </div>
           )}
-       <div style={{overflowY:"auto",flex:1}}>
-          {view==="outlet"?(<>
+       <div style={{overflowY:"auto",flex:1,scrollbarWidth:"none",msOverflowStyle:"none"}}>
+          {view==="ava"?(
+            <div style={{padding:"12px 16px"}}>
+              <div style={{fontWeight:700,fontSize:13,marginBottom:8,color:t.text}}>🏷 AVA Compliance Summary</div>
+              <div style={{fontSize:11,color:t.muted,marginBottom:12}}>Berdasarkan {(allRows||rows||[]).length.toLocaleString()} total kunjungan · Klik item untuk lihat detail outlet</div>
+              {[
+                {label:"AVA Tracking", key:"AVA Tracking?"},
+                {label:"Poster XL/AXIS", key:"AVA Poster XL/AXIS Comply?"},
+                {label:"Poster Smartfren", key:"AVA Poster Smartfren Comply?"},
+                {label:"SP XL", key:"AVA SP XL Comply?"},
+                {label:"SP AXIS", key:"AVA SP AXIS Comply?"},
+                {label:"SP Smartfren", key:"AVA SP Smartfren Comply?"},
+                {label:"Voucher XL", key:"AVA Voucher XL Comply?"},
+                {label:"Voucher AXIS", key:"AVA Voucher AXIS Comply?"},
+                {label:"Voucher Smartfren", key:"AVA Voucher Smartfren Comply?"},
+              ].map(({label,key})=>{
+                const src=allRows||rows||[];
+                const tracked=src.filter(r=>r[key]!=null&&String(r[key]||"").trim()!=="");
+                const yes=src.filter(r=>String(r[key]||"").toLowerCase()==="yes").length;
+                const no=tracked.length-yes;
+                const pctVal=tracked.length?Math.round(yes/tracked.length*100):0;
+                const color=pctVal>=80?"#22c55e":pctVal>=50?"#f59e0b":"#ef4444";
+                return(
+                  <div key={key} style={{marginBottom:12,cursor:"pointer",borderRadius:8,padding:"8px 10px",background:t.cardAlt,border:`1px solid ${t.border}`}}
+                    onClick={()=>{
+                      // Build outlet breakdown for this AVA item
+                      const outMap={};
+                      src.forEach(r=>{
+                        const oid=String(r["Outlet ID"]||r["Outlet"]||"").trim();
+                        const onm=String(r["Outlet"]||oid).trim();
+                        const val=String(r[key]||"").toLowerCase();
+                        if(!outMap[oid]) outMap[oid]={id:oid,name:onm,yes:0,no:0,total:0};
+                        outMap[oid].total++;
+                        if(val==="yes") outMap[oid].yes++;
+                        else if(val==="no") outMap[oid].no++;
+                      });
+                      setAvaDrill({label,key,outlets:Object.values(outMap).sort((a,b)=>b.total-a.total)});
+                    }}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:5,alignItems:"center"}}>
+                      <span style={{fontSize:11,fontWeight:700,color:t.text}}>{label}</span>
+                      <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                        <span style={{background:"#22c55e22",color:"#22c55e",padding:"1px 7px",borderRadius:999,fontSize:10,fontWeight:700}}>✓ {yes}</span>
+                        <span style={{background:"#ef444422",color:"#ef4444",padding:"1px 7px",borderRadius:999,fontSize:10,fontWeight:700}}>✗ {no}</span>
+                        <span style={{fontSize:11,fontWeight:700,color,marginLeft:2}}>{pctVal}%</span>
+                        <span style={{fontSize:10,color:t.muted}}>›</span>
+                      </div>
+                    </div>
+                    <div style={{background:t.border,borderRadius:999,height:5}}>
+                      <div style={{background:color,borderRadius:999,height:5,width:pctVal+"%",transition:"width 0.4s"}}/>
+                    </div>
+                  </div>
+                );
+              })}
+              {avaDrill&&(
+                <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:1300,display:"flex",alignItems:"flex-end",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)"}} onClick={()=>setAvaDrill(null)}>
+                  <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxHeight:"80vh",background:t.card,borderRadius:"16px 16px 0 0",border:`1px solid ${t.border}`,overflow:"hidden",display:"flex",flexDirection:"column"}}>
+                    <div style={{padding:"14px 18px 10px",borderBottom:`1px solid ${t.border}`,display:"flex",alignItems:"center",gap:10}}>
+                      <div style={{flex:1}}>
+                        <div style={{fontWeight:800,fontSize:14,color:t.text}}>🏷 {avaDrill.label}</div>
+                        <div style={{fontSize:11,color:t.muted,marginTop:2}}>{avaDrill.outlets.length} outlet dikunjungi</div>
+                      </div>
+                      <button onClick={()=>setAvaDrill(null)} style={{background:t.cardAlt,border:`1px solid ${t.border}`,color:t.text,borderRadius:8,padding:"4px 10px",cursor:"pointer",fontSize:12,fontWeight:700}}>✕</button>
+                    </div>
+                    <div style={{overflowY:"auto",flex:1,scrollbarWidth:"none"}}>
+                      <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                        <thead style={{position:"sticky",top:0,background:t.card}}>
+                          <tr style={{background:t.cardAlt}}>
+                            {["#","Outlet ID","Outlet","✓ Comply","✗ Tidak","% Comply"].map(h=>(
+                              <th key={h} style={{padding:"8px 10px",textAlign:"left",fontSize:10,fontWeight:700,color:t.muted,borderBottom:`1px solid ${t.border}`,whiteSpace:"nowrap"}}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {avaDrill.outlets.map((o,i)=>{
+                            const pct2=o.total?Math.round(o.yes/o.total*100):0;
+                            const c2=pct2>=80?"#22c55e":pct2>=50?"#f59e0b":"#ef4444";
+                            return(
+                              <tr key={o.id||i} style={{borderBottom:`1px solid ${t.border}`,background:i%2===0?"transparent":t.rowAlt}}>
+                                <td style={{padding:"7px 10px",color:t.muted,fontSize:10}}>{i+1}</td>
+                                <td style={{padding:"7px 10px",color:t.muted,fontSize:10,whiteSpace:"nowrap"}}>{o.id||"–"}</td>
+                                <td style={{padding:"7px 10px",fontWeight:600,color:t.text,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.name||"–"}</td>
+                                <td style={{padding:"7px 10px",color:"#22c55e",fontWeight:700}}>{o.yes}</td>
+                                <td style={{padding:"7px 10px",color:o.no>0?"#ef4444":t.muted,fontWeight:700}}>{o.no}</td>
+                                <td style={{padding:"7px 10px"}}>
+                                  <span style={{background:c2+"22",color:c2,padding:"1px 7px",borderRadius:999,fontSize:10,fontWeight:700}}>{pct2}%</span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          ):view==="outlet"?(<>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
               <thead style={{position:"sticky",top:0,background:t.card,zIndex:1}}>
                 <tr style={{background:t.cardAlt}}>
@@ -1120,7 +1216,7 @@ function CanvasserDetailPanel({detail,onClose,t}){
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
             <thead style={{position:"sticky",top:0,background:t.card,zIndex:1}}>
               <tr style={{background:t.cardAlt}}>
-                {["#","Tanggal","Visit Type","Outlet ID","Outlet","Status","In Range","Jarak ke Outlet*","Durasi","Alasan"].map(h=>(
+                {["#","Tanggal","Visit Type","Outlet ID","Outlet","Status","In Range","Jarak ke Outlet*","Durasi","AVA","Alasan"].map(h=>(
                   <th key={h} style={{padding:"9px 12px",textAlign:"left",fontSize:11,fontWeight:700,color:t.muted,whiteSpace:"nowrap",borderBottom:`1px solid ${t.border}`}}>{h}</th>
                 ))}
               </tr>
@@ -1153,6 +1249,7 @@ function CanvasserDetailPanel({detail,onClose,t}){
                     <span>{fmtDur(r["Visit Duration (Menit)"])}</span>
                     {dur>0&&dur<1&&<span style={{fontSize:9,color:P.investigate,marginLeft:4,fontWeight:700}}>⚡</span>}
                   </td>
+                  <td style={{padding:"6px 8px",textAlign:"center"}}>{["AVA Poster XL/AXIS Comply?","AVA Poster Smartfren Comply?","AVA SP XL Comply?","AVA SP AXIS Comply?","AVA SP Smartfren Comply?","AVA Voucher XL Comply?","AVA Voucher AXIS Comply?","AVA Voucher Smartfren Comply?"].filter(k=>String(r[k]||"").toLowerCase()==="yes").length===8?<span style={{background:"#22c55e22",color:"#22c55e",padding:"2px 6px",borderRadius:999,fontSize:10,fontWeight:700}}>8/8</span>:["AVA Poster XL/AXIS Comply?","AVA Poster Smartfren Comply?","AVA SP XL Comply?","AVA SP AXIS Comply?","AVA SP Smartfren Comply?","AVA Voucher XL Comply?","AVA Voucher AXIS Comply?","AVA Voucher Smartfren Comply?"].filter(k=>String(r[k]||"").toLowerCase()==="yes").length>=4?<span style={{background:"#f59e0b22",color:"#f59e0b",padding:"2px 6px",borderRadius:999,fontSize:10,fontWeight:700}}>{["AVA Poster XL/AXIS Comply?","AVA Poster Smartfren Comply?","AVA SP XL Comply?","AVA SP AXIS Comply?","AVA SP Smartfren Comply?","AVA Voucher XL Comply?","AVA Voucher AXIS Comply?","AVA Voucher Smartfren Comply?"].filter(k=>String(r[k]||"").toLowerCase()==="yes").length}/8</span>:<span style={{background:"#ef444422",color:"#ef4444",padding:"2px 6px",borderRadius:999,fontSize:10,fontWeight:700}}>{["AVA Poster XL/AXIS Comply?","AVA Poster Smartfren Comply?","AVA SP XL Comply?","AVA SP AXIS Comply?","AVA SP Smartfren Comply?","AVA Voucher XL Comply?","AVA Voucher AXIS Comply?","AVA Voucher Smartfren Comply?"].filter(k=>String(r[k]||"").toLowerCase()==="yes").length}/8</span>}</td>
                   <td style={{padding:"7px 10px",fontSize:11,color:t.muted}}>{reason(r)}</td>
                 </tr>
               );})}
@@ -1393,6 +1490,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
   const [trendPeriod,setTrendPeriod]=useState("daily");
   const [addLoading,setAddLoading]=useState(null);
   const [showFileManager,setShowFileManager]=useState(false);
+  const [outletTypeDrill,setOutletTypeDrill]=useState(null);
   const [vtDrill,setVtDrill]=useState(null);
   const [outletActivity,setOutletActivity]=useState(null); // {canvasser, drillLabel, color}
   // Responsive
@@ -1744,7 +1842,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
 
       {/* ── NAVIGATION: Level 1 — Nasional + Region tabs ── */}
       <div style={{background:t.card,borderBottom:`1px solid ${t.border}`}}>
-        <div style={{padding:"0 20px",display:"flex",gap:0,overflowX:"auto"}}>
+        <div style={{padding:"0 20px",display:"flex",gap:0,overflowX:"auto",scrollbarWidth:"none",msOverflowStyle:"none"}}>
           <button onClick={()=>{setSelRegion(null);setSelCluster(null);}} style={{padding:"10px 16px",border:"none",cursor:"pointer",fontSize:12,fontWeight:700,background:"transparent",whiteSpace:"nowrap",color:!selRegion&&!selCluster?"#3b82f6":t.muted,borderBottom:`3px solid ${!selRegion&&!selCluster?"#3b82f6":"transparent"}`,transition:"all 0.15s"}}>
             {regionCodes.length===1?`${regionCodes[0]} — ${regionFullName(regionCodes[0])}`:"🌐 Nasional"}
           </button>
@@ -2129,7 +2227,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
             {(()=>{const tRev=[...view.trend].reverse();return(
             <div style={card()}>
               <div style={{fontWeight:700,marginBottom:12}}>Detail per Tanggal</div>
-              <div style={{overflowX:"auto"}}>
+              <div style={{overflowX:"auto",scrollbarWidth:"none",msOverflowStyle:"none"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
                   <thead><tr style={{background:t.cardAlt}}>
                     {["Tanggal","Total","A1","A2","A3","A1%","A2%","A3%"].map(h=><th key={h} style={{padding:"9px 12px",textAlign:"left",fontSize:11,fontWeight:700,color:t.muted,whiteSpace:"nowrap",borderBottom:`1px solid ${t.border}`}}>{h}</th>)}
@@ -2182,20 +2280,28 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
             ))}
             <div style={{...card(),gridColumn:"1/-1"}}>
               <div style={{fontWeight:700,marginBottom:12}}>Detail per Outlet Type</div>
-              <div style={{overflowX:"auto"}}>
+              <div style={{overflowX:"auto",scrollbarWidth:"none",msOverflowStyle:"none"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
                   <thead><tr style={{background:t.cardAlt}}>
-                    {["Outlet Type","Total","A1","A2","A3","Investigate","Distribusi","A1%","A2%","A3%"].map(h=><th key={h} style={{padding:"9px 12px",textAlign:"left",fontSize:11,fontWeight:700,color:t.muted,whiteSpace:"nowrap",borderBottom:`1px solid ${t.border}`}}>{h}</th>)}
+                    {["Outlet Type","Total","A1","A2","A3","Inv","Dist","A1%","A2%"].map(h=><th key={h} style={{padding:isMobile?"6px 8px":"9px 12px",textAlign:"left",fontSize:11,fontWeight:700,color:t.muted,whiteSpace:"nowrap",borderBottom:`1px solid ${t.border}`}}>{h}</th>)}
                   </tr></thead>
                   <tbody>
                     {view.outletData.map((d,i)=>(
                       <tr key={i} style={{borderBottom:`1px solid ${t.border}`,background:i%2===0?"transparent":t.rowAlt}}>
-                        <td style={{padding:"9px 12px",fontWeight:700,color:P.accent,cursor:"pointer"}} onClick={()=>openOutletDrill(d.type)}>{d.type}</td>
-                        <td style={{padding:"9px 12px",fontWeight:600}}>{d.total.toLocaleString()}</td>
-                        <td style={{padding:"9px 12px",color:P.a1}}>{(d.A1||0).toLocaleString()}</td>
-                        <td style={{padding:"9px 12px",color:P.a2}}>{(d.A2||0).toLocaleString()}</td>
-                        <td style={{padding:"9px 12px",color:P.a3}}>{(d.A3||0).toLocaleString()}</td>
-                        <td style={{padding:"9px 12px",color:(d.INVESTIGATE||0)>0?P.investigate:t.muted}}>{(d.INVESTIGATE||0).toLocaleString()}</td>
+                        <td style={{padding:isMobile?"6px 8px":"9px 12px",fontWeight:700,color:P.accent,cursor:"pointer",whiteSpace:"nowrap"}} onClick={()=>openOutletDrill(d.type)}>{d.type}</td>
+                        <td style={{padding:isMobile?"6px 8px":"9px 12px",fontWeight:600}}>{d.total.toLocaleString()}</td>
+                        <td style={{padding:"9px 12px"}}>
+                          {(d.A1||0)>0?<span onClick={()=>setOutletTypeDrill({type:d.type,status:"A1 - NORMAL",label:"A1 Normal"})} style={{color:P.a1,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.a1}}>{(d.A1||0).toLocaleString()}</span>:<span style={{color:t.muted}}>0</span>}
+                        </td>
+                        <td style={{padding:"9px 12px"}}>
+                          {(d.A2||0)>0?<span onClick={()=>setOutletTypeDrill({type:d.type,status:"A2 - ANOMALY",label:"A2 Anomaly"})} style={{color:P.a2,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.a2}}>{(d.A2||0).toLocaleString()}</span>:<span style={{color:t.muted}}>0</span>}
+                        </td>
+                        <td style={{padding:"9px 12px"}}>
+                          {(d.A3||0)>0?<span onClick={()=>setOutletTypeDrill({type:d.type,status:"A3 - INCOMPLETE",label:"A3 Incomplete"})} style={{color:P.a3,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.a3}}>{(d.A3||0).toLocaleString()}</span>:<span style={{color:t.muted}}>0</span>}
+                        </td>
+                        <td style={{padding:"9px 12px"}}>
+                          {(d.INVESTIGATE||0)>0?<span onClick={()=>setOutletTypeDrill({type:d.type,status:"INVESTIGATE",label:"Investigate"})} style={{color:P.investigate,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.investigate}}>{(d.INVESTIGATE||0).toLocaleString()}</span>:<span style={{color:t.muted}}>0</span>}
+                        </td>
                         <td style={{padding:"9px 12px",minWidth:90}}><Bar3 A1={d.A1||0} A2={d.A2||0} A3={d.A3||0} total={d.total}/></td>
                         <td style={{padding:"9px 12px",color:P.a1,fontWeight:700}}>{pctS(d.A1,d.total)}</td>
                         <td style={{padding:"9px 12px",color:pct(d.A2,d.total)>=40?P.investigate:P.a2}}>{pctS(d.A2,d.total)}</td>
@@ -2206,6 +2312,73 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                 </table>
               </div>
             </div>
+
+            {/* ── Outlet per Region ── */}
+            {regionCodes.length>0&&(
+            <div style={card()}>
+              <div style={{fontWeight:700,marginBottom:12}}>🗺 Perbandingan per Region</div>
+
+              {/* Stacked Bar Chart per Region */}
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={regionCodes.map((code,i)=>{
+                  const ra=regionAgg[code]||{actC:{},total:0};
+                  return {
+                    name:code,
+                    fullName:regionFullName(code),
+                    A1:(ra.actC||{})["A1 - NORMAL"]||0,
+                    A2:(ra.actC||{})["A2 - ANOMALY"]||0,
+                    A3:(ra.actC||{})["A3 - INCOMPLETE"]||0,
+                    total:ra.total||0,
+                  };
+                })} margin={{top:5,right:10,bottom:5,left:0}}
+                  onClick={d=>{if(d?.activePayload?.[0]?.payload?.name){setSelRegion(d.activePayload[0].payload.name);setSelCluster(null);setTab("overview");}}}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={t.border}/>
+                  <XAxis dataKey="name" tick={{fill:t.muted,fontSize:10}} tickLine={false}/>
+                  <YAxis tick={{fill:t.muted,fontSize:10}} tickLine={false} axisLine={false} tickFormatter={v=>v>=1000?Math.round(v/1000)+"K":v}/>
+                  <Tooltip contentStyle={{background:t.card,border:`1px solid ${t.border}`,borderRadius:8,fontSize:11}}
+                    formatter={(v,n,p)=>[v.toLocaleString()+" ("+pctS(v,p.payload.total)+")",n]}/>
+                  <Legend iconSize={8} wrapperStyle={{fontSize:10}}/>
+                  <Bar dataKey="A1" name="A1 Normal" fill={P.a1} stackId="a"/>
+                  <Bar dataKey="A2" name="A2 Anomaly" fill={P.a2} stackId="a"/>
+                  <Bar dataKey="A3" name="A3 Incomplete" fill={P.a3} stackId="a" radius={[3,3,0,0]}/>
+                </BarChart>
+              </ResponsiveContainer>
+              <div style={{fontSize:10,color:t.muted,marginBottom:12,textAlign:"center"}}>Klik bar untuk drill-down ke region tersebut</div>
+
+              {/* Table */}
+              <div style={{overflowX:"auto",scrollbarWidth:"none",msOverflowStyle:"none"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead><tr style={{background:t.cardAlt}}>
+                    {["Region","Total","A1","A2","A3","A1%","A2%","A3%"].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontSize:11,fontWeight:700,color:t.muted,borderBottom:`1px solid ${t.border}`,whiteSpace:"nowrap"}}>{h}</th>)}
+                  </tr></thead>
+                  <tbody>
+                    {regionCodes.map((code,i)=>{
+                      const ra=regionAgg[code]||{actC:{},total:0};
+                      const rA1=(ra.actC||{})["A1 - NORMAL"]||0;
+                      const rA2=(ra.actC||{})["A2 - ANOMALY"]||0;
+                      const rA3=(ra.actC||{})["A3 - INCOMPLETE"]||0;
+                      const rc=P.regions[i%P.regions.length];
+                      return(
+                        <tr key={code} style={{borderBottom:`1px solid ${t.border}`,background:i%2===0?"transparent":t.rowAlt}}>
+                          <td style={{padding:"8px 12px",display:"flex",alignItems:"center",gap:6}}>
+                            <span style={{background:rc+"22",color:rc,padding:"1px 8px",borderRadius:999,fontSize:10,fontWeight:700}}>{code}</span>
+                            <span style={{fontSize:11,color:t.text,fontWeight:600}}>{regionFullName(code)}</span>
+                          </td>
+                          <td style={{padding:"8px 12px",fontWeight:600}}>{(ra.total||0).toLocaleString()}</td>
+                          <td style={{padding:"8px 12px",color:P.a1,fontWeight:700}}>{rA1.toLocaleString()}</td>
+                          <td style={{padding:"8px 12px",color:P.a2,fontWeight:700}}>{rA2.toLocaleString()}</td>
+                          <td style={{padding:"8px 12px",color:P.a3,fontWeight:700}}>{rA3.toLocaleString()}</td>
+                          <td style={{padding:"8px 12px",color:P.a1,fontWeight:600}}>{pctS(rA1,ra.total)}</td>
+                          <td style={{padding:"8px 12px",color:pct(rA2,ra.total)>=30?P.a2:t.muted,fontWeight:600}}>{pctS(rA2,ra.total)}</td>
+                          <td style={{padding:"8px 12px",color:pct(rA3,ra.total)>=30?P.a3:t.muted,fontWeight:600}}>{pctS(rA3,ra.total)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            )}
 
             {/* ── Census vs Non-Census ── */}
             {(view.censusData||[]).length>0&&(
@@ -2370,7 +2543,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
               <span style={{marginLeft:"auto",fontSize:11,color:t.muted}}>{sorted.length} canvasser</span>
             </div>
             <div style={{...card({padding:0}),overflow:"hidden"}}>
-              <div style={{overflowX:"auto"}}>
+              <div style={{overflowX:"auto",scrollbarWidth:"none",msOverflowStyle:"none"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
                   <thead><tr style={{background:t.cardAlt}}>
                     {[["#",""],["Region","region"],["Cluster","cluster"],["Nama","name"],["Total","total"],
@@ -2448,7 +2621,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
             </div>
             <button onClick={()=>setTrendDrill(null)} style={{background:t.cardAlt,border:`1px solid ${t.border}`,color:t.text,borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:13,fontWeight:700}}>✕</button>
           </div>
-          <div style={{overflowY:"auto",flex:1}}>
+          <div style={{overflowY:"auto",flex:1,scrollbarWidth:"none",msOverflowStyle:"none"}}>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
               <thead style={{position:"sticky",top:0,background:t.card,zIndex:1}}>
                 <tr style={{background:t.cardAlt}}>
@@ -2705,6 +2878,61 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
         </div>
       </div>
     )}
+    {outletTypeDrill&&(()=>{
+      const {type,status,label}=outletTypeDrill;
+      const isInv=status==="INVESTIGATE";
+      const map={};
+      clusters.forEach(cl=>(cl.rawRows||[]).forEach(r=>{
+        const ot=String(r["Outlet Type"]||"").trim();
+        if(ot!==type) return;
+        const as1=r["_CAS1"]||"";
+        const vs=String(r["_CVS"]||r["Visit Status"]||"").toUpperCase();
+        if(isInv?vs!=="INVESTIGATE":as1!==status) return;
+        const cid=String(r["Canvasser ID"]||r["Canvasser"]||"").trim();
+        const nm=String(r["Canvasser"]||"").trim();
+        if(!map[cid])map[cid]={id:cid,name:nm,region:cl.regionCode||"",cluster:cl.label||"",total:0};
+        map[cid].total++;
+      }));
+      const rows2=Object.values(map).sort((a,b)=>b.total-a.total);
+      const color=isInv?P.investigate:status==="A1 - NORMAL"?P.a1:status==="A2 - ANOMALY"?P.a2:P.a3;
+      return(
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:1050,display:"flex",alignItems:"flex-end",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)"}} onClick={()=>setOutletTypeDrill(null)}>
+          <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxHeight:"85vh",background:t.card,borderRadius:"20px 20px 0 0",border:`1px solid ${t.border}`,overflow:"hidden",display:"flex",flexDirection:"column",fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
+            <div style={{padding:"14px 18px 10px",borderBottom:`1px solid ${t.border}`,display:"flex",alignItems:"center",gap:12}}>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:800,fontSize:15,color:t.text}}>🏪 {type}</div>
+                <div style={{fontSize:11,color:t.muted,marginTop:2,display:"flex",gap:8,alignItems:"center"}}>
+                  <span style={{background:color+"20",color,padding:"1px 8px",borderRadius:999,fontSize:10,fontWeight:700}}>{label}</span>
+                  <span>{rows2.length} canvasser · {rows2.reduce((s,r)=>s+r.total,0).toLocaleString()} aktivitas</span>
+                </div>
+              </div>
+              <button onClick={()=>setOutletTypeDrill(null)} style={{background:t.cardAlt,border:`1px solid ${t.border}`,color:t.text,borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:13,fontWeight:700}}>✕</button>
+            </div>
+            <div style={{overflowY:"auto",flex:1,scrollbarWidth:"none",msOverflowStyle:"none"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead style={{position:"sticky",top:0,background:t.card}}>
+                  <tr style={{background:t.cardAlt}}>
+                    {["#","Canvasser","Region","Cluster","Jumlah"].map(h=><th key={h} style={{padding:"9px 12px",textAlign:"left",fontSize:11,fontWeight:700,color:t.muted,borderBottom:`1px solid ${t.border}`,whiteSpace:"nowrap"}}>{h}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows2.slice(0,50).map((r,i)=>(
+                    <tr key={r.id||i} style={{borderBottom:`1px solid ${t.border}`,background:i%2===0?"transparent":t.rowAlt,cursor:"pointer"}}
+                      onClick={()=>{const rows3=getCanvasserRows(r.name,r.cluster,isInv?"INVESTIGATE":status==="A1 - NORMAL"?"A1":status==="A2 - ANOMALY"?"A2":"A3");setCanvDetail({canvasser:r,drillLabel:label,color,rows:rows3,drillKey:isInv?"INVESTIGATE":status==="A1 - NORMAL"?"A1":status==="A2 - ANOMALY"?"A2":"A3",sessionKey:Date.now()});}}>
+                      <td style={{padding:"7px 10px",color:t.muted,fontSize:10}}>{i+1}</td>
+                      <td style={{padding:"7px 10px",fontWeight:600,color:t.text}}>{r.name}</td>
+                      <td style={{padding:"7px 10px"}}><span style={{background:P.accent+"20",color:P.accent,padding:"1px 7px",borderRadius:6,fontSize:10,fontWeight:700}}>{r.region||"–"}</span></td>
+                      <td style={{padding:"7px 10px",color:t.muted,fontSize:11}}>{r.cluster||"–"}</td>
+                      <td style={{padding:"7px 10px",fontWeight:800,color}}>{r.total.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      );
+    })()}
     <VisitTypeDrillPanel drill={vtDrill} onClose={()=>setVtDrill(null)} t={t}
       onCanvasserClick={(r,key)=>{
         const drillMap={"A1":"A1 - Normal","A2":"A2 - Anomaly","A3":"A3 - Incomplete"};
@@ -2727,9 +2955,13 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
 export default function App(){
   const [files,setFiles]=useState(null);
   const [roMap,setRoMap]=useState({});
+  const hideScrollbarStyle=`
+    ::-webkit-scrollbar{display:none!important;width:0!important;height:0!important}
+    *{scrollbar-width:none!important;-ms-overflow-style:none!important}
+  `;
   const [dark,setDark]=useState(true);
   const t=dark?DARK:LIGHT;
-  return files
+  return(<><style>{hideScrollbarStyle}</style>{files
     ?<Dashboard files={files} onReset={()=>setFiles(null)} onAddFiles={setFiles} dark={dark} toggleDark={()=>setDark(d=>!d)} roMap={roMap}/>
-    :<UploadScreen onLoad={setFiles} roMap={roMap} onRoLoad={setRoMap} t={t}/>;
+    :<UploadScreen onLoad={setFiles} roMap={roMap} onRoLoad={setRoMap} t={t}/>}</>);
 }
