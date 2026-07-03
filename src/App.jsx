@@ -1,5 +1,3 @@
-
-
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import * as XLSX from "xlsx";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -1995,6 +1993,51 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                     setCanvDetail({canvasser:canv,drillLabel:label,color,rows,drillKey:key,sessionKey:Date.now()});
                   };
                   return[
+                    // ── Top 3 Region per kategori ──────────────────────────
+                    ...( regionCodes.length>1 ? [
+                      {
+                        icon:"🗺",color:P.a1,
+                        title:"Top 3 Region A1 Normal",
+                        desc:regionCodes.map(code=>({code,v:(regionAgg[code]?.actC||{})["A1 - NORMAL"]||0}))
+                          .sort((a,b)=>b.v-a.v).slice(0,3)
+                          .map((r,i)=>`${i+1}. ${r.code}: ${r.v.toLocaleString()}`).join(" · ")
+                      },
+                      {
+                        icon:"🗺",color:P.a2,
+                        title:"Top 3 Region A2 Anomaly",
+                        desc:regionCodes.map(code=>({code,v:(regionAgg[code]?.actC||{})["A2 - ANOMALY"]||0}))
+                          .sort((a,b)=>b.v-a.v).slice(0,3)
+                          .map((r,i)=>`${i+1}. ${r.code}: ${r.v.toLocaleString()}`).join(" · ")
+                      },
+                      {
+                        icon:"🗺",color:P.a3,
+                        title:"Top 3 Region A3 Incomplete",
+                        desc:regionCodes.map(code=>({code,v:(regionAgg[code]?.actC||{})["A3 - INCOMPLETE"]||0}))
+                          .sort((a,b)=>b.v-a.v).slice(0,3)
+                          .map((r,i)=>`${i+1}. ${r.code}: ${r.v.toLocaleString()}`).join(" · ")
+                      },
+                    ] : [] ),
+                    // ── Top 3 Cluster per kategori ──────────────────────────
+                    ...( clusters.length>1 ? [
+                      {
+                        icon:"📍",color:P.a1,
+                        title:"Top 3 Cluster A1 Normal",
+                        desc:[...clusters].sort((a,b)=>((b.actC||{})["A1 - NORMAL"]||0)-((a.actC||{})["A1 - NORMAL"]||0))
+                          .slice(0,3).map((cl,i)=>`${i+1}. ${cl.label}: ${((cl.actC||{})["A1 - NORMAL"]||0).toLocaleString()}`).join(" · ")
+                      },
+                      {
+                        icon:"📍",color:P.a2,
+                        title:"Top 3 Cluster A2 Anomaly",
+                        desc:[...clusters].sort((a,b)=>((b.actC||{})["A2 - ANOMALY"]||0)-((a.actC||{})["A2 - ANOMALY"]||0))
+                          .slice(0,3).map((cl,i)=>`${i+1}. ${cl.label}: ${((cl.actC||{})["A2 - ANOMALY"]||0).toLocaleString()}`).join(" · ")
+                      },
+                      {
+                        icon:"📍",color:P.a3,
+                        title:"Top 3 Cluster A3 Incomplete",
+                        desc:[...clusters].sort((a,b)=>((b.actC||{})["A3 - INCOMPLETE"]||0)-((a.actC||{})["A3 - INCOMPLETE"]||0))
+                          .slice(0,3).map((cl,i)=>`${i+1}. ${cl.label}: ${((cl.actC||{})["A3 - INCOMPLETE"]||0).toLocaleString()}`).join(" · ")
+                      },
+                    ] : [] ),
                     {icon:"✅",color:P.a1,title:"A1 Normal Rate",desc:`${pctS(ac["A1 - NORMAL"],T)} (${(ac["A1 - NORMAL"]||0).toLocaleString()}) aktivitas berjalan normal.`},
                     {icon:"⚠️",color:P.a2,title:"A2 Anomaly Terbanyak",onClick:wA2?()=>openInsight(wA2,"A2","A2 - Anomaly",P.a2):null,desc:wA2?`${wA2.name} [${wA2.cluster}]: ${wA2.A2.toLocaleString()} aktivitas (${wA2.a2p.toFixed(1)}% dari totalnya)`:"–"},
                     {icon:"🔵",color:P.a3,title:"A3 Incomplete Terbanyak",onClick:wA3?()=>openInsight(wA3,"A3","A3 - Incomplete",P.a3):null,desc:wA3?`${wA3.name} [${wA3.cluster}]: ${wA3.A3.toLocaleString()} aktivitas (${wA3.a3p.toFixed(1)}% dari totalnya)`:"–"},
@@ -2029,7 +2072,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                       });
                       return items;
                     })(),
-                    {icon:"📅",color:"#34d399",title:"Hari Tersibuk",onClick:topDay?()=>setTrendDrill(topDay.date):null,desc:topDay?`${topDay.date}: ${topDay.total.toLocaleString()} aktivitas (A1: ${pctS(topDay.A1,topDay.total)})`:"–"},
+{icon:"📅",color:"#34d399",title:"Hari Tersibuk",onClick:topDay?()=>setTrendDrill(topDay.date):null,desc:topDay?`${topDay.date}: ${topDay.total.toLocaleString()} aktivitas (A1: ${pctS(topDay.A1,topDay.total)})`:"–"},
                   ].map((f,i)=>(
                     <div key={i} onClick={f.onClick} style={{display:"flex",gap:10,padding:"9px 12px",cursor:f.onClick?"pointer":"default",transition:"background 0.15s",background:f.onClick?"transparent":"transparent",borderRadius:10,background:t.cardAlt,border:`1px solid ${t.border}`,marginBottom:8,alignItems:"flex-start"}}>
                       <div style={{fontSize:14,width:28,height:28,borderRadius:7,background:f.color+"20",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{f.icon}</div>
@@ -2608,7 +2651,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
           </div>);})()}
 
       </div>
-      <div style={{textAlign:"center",fontSize:10,color:t.muted,padding:"14px 22px 28px",opacity:0.4}}>XLSMART Analytics · Klik status di chart untuk lihat breakdown canvasser</div>
+      <div style={{textAlign:"center",fontSize:10,color:t.muted,padding:"14px 22px 28px",opacity:0.4}}>XLSMART Analytics Dashboard v100 · Klik status di chart untuk lihat breakdown canvasser</div>
     </div>
     <OutletDrillPanel drill={outletDrill} onClose={()=>setOutletDrill(null)} t={t} onDrill={handleOutletActivity}/>
     {trendDrill&&(
