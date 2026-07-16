@@ -10,7 +10,7 @@ const LIGHT = { bg:"#f0f4fa",card:"#ffffff",cardAlt:"#f5f8ff",border:"#d0dff0",t
 
 // ── DEFAULT VALIDATION PARAMETERS ────────────────────────────────────────────
 const DEFAULT_PARAMS = {
-  dur_short: 5,      // menit — di bawah ini = SHORT
+  dur_short: 2,      // menit — di bawah ini = SHORT
   dur_long:  30,     // menit — di atas ini = LONG
   dis_near:  50,     // meter — di bawah ini = NEAR
   dis_far:   200,    // meter — di atas ini = FAR
@@ -319,7 +319,7 @@ function processRows(rows) {
       const dur2=parseFloat(r["Visit Duration (Menit)"]);
       const dIn2=parseFloat(r["Distance Check In (Meter)"]);
       const dOt2=parseFloat(r["Distance Check Out (Meter)"]);
-      if(durSt2==="SHORT"||(dur2>0&&dur2<5)) addReason(bucket,"⏱ Durasi singkat");
+      if(durSt2==="SHORT"||(dur2>0&&dur2<2)) addReason(bucket,"⏱ Durasi singkat");
       if(durSt2==="LONG"||(dur2>30)) addReason(bucket,"⏱ Durasi panjang");
       if(dIn2>5000||dOt2>5000) addReason(bucket,"🚨 Jarak sangat jauh");
       else if(dIn2>200||dOt2>200) addReason(bucket,"📍 Jarak jauh");
@@ -342,7 +342,7 @@ function processRows(rows) {
           dm = (tOut - tIn) / 60000; // milliseconds → minutes
         }
       }
-      dur = isNaN(dm) ? "" : dm < 3 ? "SHORT" : dm > 60 ? "LONG" : "NORMAL";
+      dur = isNaN(dm) ? "" : dm < 2 ? "SHORT" : dm > 60 ? "LONG" : "NORMAL";
     }
 
     // Distance Status — read from cell, fallback compute from Distance Check In (Meter)
@@ -664,7 +664,7 @@ function OutletActivityPanel({detail,onClose,t}){
     const inR=String(r["In Range"]||"").toLowerCase();
     if(vs==="INCOMPLETE")return"❌ Checkout tidak ada";
     const f=[];
-    if(durSt==="SHORT"||(!isNaN(dur)&&dur>0&&dur<3))f.push("⏱ Durasi singkat ("+fmtDur(dur)+")");
+    if(durSt==="SHORT"||(!isNaN(dur)&&dur>0&&dur<2))f.push("⏱ Durasi singkat ("+fmtDur(dur)+")");
     else if(durSt==="LONG"||(!isNaN(dur)&&dur>60))f.push("⏱ Durasi panjang ("+fmtDur(dur)+")");
     if(dIn>5000)f.push("🚨 Check-in sangat jauh ("+fmtDist(dIn)+")");
     else if(dOt>5000)f.push("🚨 Check-out sangat jauh ("+fmtDist(dOt)+")");
@@ -718,7 +718,7 @@ function OutletActivityPanel({detail,onClose,t}){
                       :<span style={{color:t.muted}}>–</span>}
                   </td>
                   <td style={{padding:"7px 10px",color:dist>500?P.investigate:dist>100?P.observe:t.muted,fontWeight:dist>500?700:400}}>{fmtDist(r["Distance Check In (Meter)"])}</td>
-                  <td style={{padding:"7px 10px",color:!isNaN(dur)&&dur>0&&dur<3?P.short:t.muted}}>
+                  <td style={{padding:"7px 10px",color:!isNaN(dur)&&dur>0&&dur<2?P.short:t.muted}}>
                     {fmtDur(r["Visit Duration (Menit)"])}{!isNaN(dur)&&dur>0&&dur<1&&<span style={{fontSize:9,color:P.investigate,marginLeft:3}}>⚡</span>}
                   </td>
                   <td style={{padding:"6px 8px",textAlign:"center"}}>{["AVA Poster XL/AXIS Comply?","AVA Poster Smartfren Comply?","AVA SP XL Comply?","AVA SP AXIS Comply?","AVA SP Smartfren Comply?","AVA Voucher XL Comply?","AVA Voucher AXIS Comply?","AVA Voucher Smartfren Comply?"].filter(k=>String(r[k]||"").toLowerCase()==="yes").length===8?<span style={{background:"#22c55e22",color:"#22c55e",padding:"2px 6px",borderRadius:999,fontSize:10,fontWeight:700}}>8/8</span>:["AVA Poster XL/AXIS Comply?","AVA Poster Smartfren Comply?","AVA SP XL Comply?","AVA SP AXIS Comply?","AVA SP Smartfren Comply?","AVA Voucher XL Comply?","AVA Voucher AXIS Comply?","AVA Voucher Smartfren Comply?"].filter(k=>String(r[k]||"").toLowerCase()==="yes").length>=4?<span style={{background:"#f59e0b22",color:"#f59e0b",padding:"2px 6px",borderRadius:999,fontSize:10,fontWeight:700}}>{["AVA Poster XL/AXIS Comply?","AVA Poster Smartfren Comply?","AVA SP XL Comply?","AVA SP AXIS Comply?","AVA SP Smartfren Comply?","AVA Voucher XL Comply?","AVA Voucher AXIS Comply?","AVA Voucher Smartfren Comply?"].filter(k=>String(r[k]||"").toLowerCase()==="yes").length}/8</span>:<span style={{background:"#ef444422",color:"#ef4444",padding:"2px 6px",borderRadius:999,fontSize:10,fontWeight:700}}>{["AVA Poster XL/AXIS Comply?","AVA Poster Smartfren Comply?","AVA SP XL Comply?","AVA SP AXIS Comply?","AVA SP Smartfren Comply?","AVA Voucher XL Comply?","AVA Voucher AXIS Comply?","AVA Voucher Smartfren Comply?"].filter(k=>String(r[k]||"").toLowerCase()==="yes").length}/8</span>}</td>
@@ -926,9 +926,20 @@ function CanvasserDetailPanel({detail,onClose,t}){
   const [sortCol,setSortCol]=useState("date");
   const [sortDir,setSortDir]=useState("asc");
   const [avaDrill,setAvaDrill]=useState(null);
+  const [avaRowDetail,setAvaRowDetail]=useState(null);
   const [reasonDrill,setReasonDrill]=useState(null);
+  const AVA_ITEMS=[
+    {label:"Poster XL/AXIS",key:"AVA Poster XL/AXIS Comply?"},
+    {label:"Poster Smartfren",key:"AVA Poster Smartfren Comply?"},
+    {label:"SP XL",key:"AVA SP XL Comply?"},
+    {label:"SP AXIS",key:"AVA SP AXIS Comply?"},
+    {label:"SP Smartfren",key:"AVA SP Smartfren Comply?"},
+    {label:"Voucher XL",key:"AVA Voucher XL Comply?"},
+    {label:"Voucher AXIS",key:"AVA Voucher AXIS Comply?"},
+    {label:"Voucher Smartfren",key:"AVA Voucher Smartfren Comply?"},
+  ];
   const PG=10;
-  useEffect(()=>{setPg(0);setOPg(0);setView("list");setVtFilter("ALL");setOutletFilter(null);setOutletFilterName(null);setStatusFilter(null);setSortCol("date");setSortDir("asc");setAvaDrill(null);},[detail?.sessionKey]);
+  useEffect(()=>{setPg(0);setOPg(0);setView("list");setVtFilter("ALL");setOutletFilter(null);setOutletFilterName(null);setStatusFilter(null);setSortCol("date");setSortDir("asc");setAvaDrill(null);setAvaRowDetail(null);},[detail?.sessionKey]);
   if(!detail) return null;
   const {canvasser,drillLabel,color,rows}=detail;
   const allRows=rows._all||rows;
@@ -947,7 +958,7 @@ function CanvasserDetailPanel({detail,onClose,t}){
     if(vs==="INCOMPLETE") return "❌ Checkout tidak ada";
     const f=[];
     // Duration - main factor for OBSERVE
-    if(durSt==="SHORT"||(!isNaN(dur)&&dur>0&&dur<3))  f.push(`⏱ Durasi singkat (${fmtDur(dur)})`);
+    if(durSt==="SHORT"||(!isNaN(dur)&&dur>0&&dur<2))  f.push(`⏱ Durasi singkat (${fmtDur(dur)})`);
     else if(durSt==="LONG"||(!isNaN(dur)&&dur>60))    f.push(`⏱ Durasi panjang (${fmtDur(dur)})`);
     // Distance
     if(distIn>5000)   f.push(`🚨 Check-in sangat jauh dari outlet (${fmtDist(distIn)})`);
@@ -1246,11 +1257,17 @@ function CanvasserDetailPanel({detail,onClose,t}){
                     ):<span style={{color:t.muted}}>–</span>}
                   </td>
                   <td style={{padding:"7px 10px",color:dist>500?P.investigate:dist>100?P.observe:t.muted,fontWeight:dist>500?700:400}}>{fmtDist(r["Distance Check In (Meter)"])}</td>
-                  <td style={{padding:"7px 10px",color:dur>0&&dur<3?P.short:t.muted,fontWeight:dur>0&&dur<3?700:400}}>
+                  <td style={{padding:"7px 10px",color:dur>0&&dur<2?P.short:t.muted,fontWeight:dur>0&&dur<2?700:400}}>
                     <span>{fmtDur(r["Visit Duration (Menit)"])}</span>
                     {dur>0&&dur<1&&<span style={{fontSize:9,color:P.investigate,marginLeft:4,fontWeight:700}}>⚡</span>}
                   </td>
-                  <td style={{padding:"6px 8px",textAlign:"center"}}>{["AVA Poster XL/AXIS Comply?","AVA Poster Smartfren Comply?","AVA SP XL Comply?","AVA SP AXIS Comply?","AVA SP Smartfren Comply?","AVA Voucher XL Comply?","AVA Voucher AXIS Comply?","AVA Voucher Smartfren Comply?"].filter(k=>String(r[k]||"").toLowerCase()==="yes").length===8?<span style={{background:"#22c55e22",color:"#22c55e",padding:"2px 6px",borderRadius:999,fontSize:10,fontWeight:700}}>8/8</span>:["AVA Poster XL/AXIS Comply?","AVA Poster Smartfren Comply?","AVA SP XL Comply?","AVA SP AXIS Comply?","AVA SP Smartfren Comply?","AVA Voucher XL Comply?","AVA Voucher AXIS Comply?","AVA Voucher Smartfren Comply?"].filter(k=>String(r[k]||"").toLowerCase()==="yes").length>=4?<span style={{background:"#f59e0b22",color:"#f59e0b",padding:"2px 6px",borderRadius:999,fontSize:10,fontWeight:700}}>{["AVA Poster XL/AXIS Comply?","AVA Poster Smartfren Comply?","AVA SP XL Comply?","AVA SP AXIS Comply?","AVA SP Smartfren Comply?","AVA Voucher XL Comply?","AVA Voucher AXIS Comply?","AVA Voucher Smartfren Comply?"].filter(k=>String(r[k]||"").toLowerCase()==="yes").length}/8</span>:<span style={{background:"#ef444422",color:"#ef4444",padding:"2px 6px",borderRadius:999,fontSize:10,fontWeight:700}}>{["AVA Poster XL/AXIS Comply?","AVA Poster Smartfren Comply?","AVA SP XL Comply?","AVA SP AXIS Comply?","AVA SP Smartfren Comply?","AVA Voucher XL Comply?","AVA Voucher AXIS Comply?","AVA Voucher Smartfren Comply?"].filter(k=>String(r[k]||"").toLowerCase()==="yes").length}/8</span>}</td>
+                  <td style={{padding:"6px 8px",textAlign:"center"}}>
+                    {(()=>{const n=AVA_ITEMS.filter(a=>String(r[a.key]||"").toLowerCase()==="yes").length;const bg=n===8?"#22c55e22":n>=4?"#f59e0b22":"#ef444422";const fg=n===8?"#22c55e":n>=4?"#f59e0b":"#ef4444";return(
+                      <span onClick={()=>setAvaRowDetail({outlet:r["Outlet"],date:fmtDate(r["Planned Visit Date"]),items:AVA_ITEMS.map(a=>({label:a.label,ok:String(r[a.key]||"").toLowerCase()==="yes"})),n})}
+                        style={{background:bg,color:fg,padding:"2px 6px",borderRadius:999,fontSize:10,fontWeight:700,cursor:"pointer"}}
+                        onMouseEnter={e=>e.currentTarget.style.opacity="0.7"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>{n}/8</span>
+                    );})()}
+                  </td>
                   <td style={{padding:"7px 10px",fontSize:11,color:t.muted}}>{reason(r)}</td>
                 </tr>
               );})}
@@ -1264,6 +1281,27 @@ function CanvasserDetailPanel({detail,onClose,t}){
           </div>
         </div>
       </div>
+      {avaRowDetail&&(
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:1400,display:"flex",alignItems:"flex-end",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)"}} onClick={()=>setAvaRowDetail(null)}>
+          <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxHeight:"75vh",background:t.card,borderRadius:"16px 16px 0 0",border:`1px solid ${t.border}`,overflow:"hidden",display:"flex",flexDirection:"column"}}>
+            <div style={{padding:"14px 18px 10px",borderBottom:`1px solid ${t.border}`,display:"flex",alignItems:"center",gap:10}}>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:800,fontSize:14,color:t.text}}>🏷 AVA Compliance — {avaRowDetail.n}/8</div>
+                <div style={{fontSize:11,color:t.muted,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{avaRowDetail.outlet} · {avaRowDetail.date}</div>
+              </div>
+              <button onClick={()=>setAvaRowDetail(null)} style={{background:t.cardAlt,border:`1px solid ${t.border}`,color:t.text,borderRadius:8,padding:"4px 10px",cursor:"pointer",fontSize:12,fontWeight:700}}>✕</button>
+            </div>
+            <div style={{overflowY:"auto",flex:1,padding:"10px 18px 18px",scrollbarWidth:"none"}}>
+              {avaRowDetail.items.map((it,i)=>(
+                <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 4px",borderBottom:i<avaRowDetail.items.length-1?"1px solid "+t.border:"none"}}>
+                  <span style={{fontSize:12,color:t.text,fontWeight:600}}>{it.label}</span>
+                  <span style={{background:it.ok?"#22c55e22":"#ef444422",color:it.ok?"#22c55e":"#ef4444",padding:"2px 9px",borderRadius:999,fontSize:10,fontWeight:700}}>{it.ok?"✓ Comply":"✗ Tidak"}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1666,7 +1704,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
       if(ls==="NOT MATCH") add("📌 Lokasi tidak match",r);
       if(di>5000||do2>5000) add("🚨 Jarak sangat jauh (>5km)",r);
       else if(di>200||do2>200) add("📍 Jarak jauh (>200m)",r);
-      if(ds==="SHORT"||(dur>0&&dur<5)) add("⏱ Durasi singkat (<5 mnt)",r);
+      if(ds==="SHORT"||(dur>0&&dur<2)) add("⏱ Durasi singkat (<2 mnt)",r);
       else if(ds==="LONG"||(dur>30)) add("⏱ Durasi panjang (>30 mnt)",r);
       if(ir==="no"||ir==="n") add("🎯 Out of range",r);
       if(vs==="INVESTIGATE") add("🔍 Investigate",r); else if(vs==="OBSERVE") add("⚠️ Observe",r);
@@ -1821,7 +1859,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
         case "INVESTIGATE": return vs==="INVESTIGATE";
         case "INCOMPLETE": return vs==="INCOMPLETE";
         case "DUR_NORMAL": return durSt==="NORMAL"||(!isNaN(dur)&&dur>=3&&dur<=60);
-        case "DUR_SHORT": return durSt==="SHORT"||(!isNaN(dur)&&dur>0&&dur<3);
+        case "DUR_SHORT": return durSt==="SHORT"||(!isNaN(dur)&&dur>0&&dur<2);
         case "DUR_LONG": return durSt==="LONG"||(!isNaN(dur)&&dur>60);
         case "DIS_NEAR": return disSt==="NEAR"||(dIn<=100&&dIn>0);
         case "DIS_MID": return disSt==="MID"||(dIn>100&&dIn<=1000);
@@ -1858,7 +1896,246 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
     {id:"outlet",label:"🏪 Outlet"},
     {id:"detail",label:"🔬 Status Detail"},
     {id:"canvasser",label:"👤 Canvasser"},
+    {id:"findings",label:"🔎 Temuan"},
   ];
+
+  // ── AUTO FINDINGS: temuan & rekomendasi otomatis dari data ──────────────
+  const findings=useMemo(()=>{
+    const out=[];
+    // ── Scope data sesuai drill-down yang aktif (cluster/region/nasional) ──
+    const scopedClusters=selCluster?clusters.filter(cl=>cl.label===selCluster)
+      :selRegion?clusters.filter(cl=>cl.regionCode===selRegion)
+      :clusters;
+    const scopeLabel=selCluster||selRegion||"Nasional";
+    const allRows=scopedClusters.flatMap(cl=>(cl.rawRows||[]).map(r=>({...r,_clLabel:cl.label})));
+    if(!allRows.length) return out;
+
+    // Kolom AVA yang tersedia (dipakai finding outlet compliance di bawah)
+    const avaCols=["AVA Poster XL/AXIS Comply?","AVA Poster Smartfren Comply?","AVA SP XL Comply?","AVA SP AXIS Comply?","AVA SP Smartfren Comply?","AVA Voucher XL Comply?","AVA Voucher AXIS Comply?","AVA Voucher Smartfren Comply?"];
+    const availAva=avaCols.filter(c=>allRows.some(r=>r[c]!=null&&String(r[c]).trim()!==""));
+
+    // 0) RINGKASAN STATUS A1/A2/A3
+    {
+      const a=view.actC||{};
+      const totS=Object.values(a).reduce((s,v)=>s+v,0)||1;
+      const a1=a["A1 - NORMAL"]||0, a2=a["A2 - ANOMALY"]||0, a3=a["A3 - INCOMPLETE"]||0;
+      const a1p=Math.round(a1/totS*100), a2p=Math.round(a2/totS*100), a3p=Math.round(a3/totS*100);
+      const verdict=a1p>=70?"Kepatuhan baik":a1p>=40?"Kepatuhan sedang, perlu perhatian":"Kepatuhan rendah, perlu tindakan segera";
+      out.push({severity:a1p>=70?"low":a1p>=40?"medium":"high",icon:"📊",
+        title:`Ringkasan Status ${scopeLabel}: A1 ${a1p}% · A2 ${a2p}% · A3 ${a3p}%`,
+        desc:`Dari ${totS.toLocaleString()} aktivitas: ${a1.toLocaleString()} Normal, ${a2.toLocaleString()} Anomaly, ${a3.toLocaleString()} Incomplete. ${verdict}.`,
+        rec:a1p>=70?"Pertahankan, monitor rutin saja.":"Cek breakdown A2/A3 di tab Overview & Status Detail untuk tahu penyebab utamanya."});
+    }
+
+    // ══ INDIKASI FRAUD ══════════════════════════════════════════════════
+    // F1) GPS check-in sama persis dipakai utk banyak outlet berbeda (canvasser gak pindah tempat)
+    {
+      const byCanv={};
+      allRows.forEach(r=>{
+        const nm=r["Canvasser"]||"";
+        const lat=parseFloat(r["Check-In Latitude"]), lon=parseFloat(r["Check-In Longitude"]);
+        const oid=String(r["Outlet ID"]||r["Outlet"]||"").trim();
+        const onm=r["Outlet"]||oid;
+        if(!nm||isNaN(lat)||isNaN(lon)||!oid) return;
+        const key=nm+"|"+r["_clLabel"];
+        const coordKey=lat.toFixed(3)+","+lon.toFixed(3); // ~±110m
+        if(!byCanv[key])byCanv[key]={name:nm,cluster:r["_clLabel"],coords:{}};
+        if(!byCanv[key].coords[coordKey])byCanv[key].coords[coordKey]={outlets:new Set(),names:[]};
+        if(!byCanv[key].coords[coordKey].outlets.has(oid)){
+          byCanv[key].coords[coordKey].outlets.add(oid);
+          byCanv[key].coords[coordKey].names.push(onm);
+        }
+      });
+      let worst=null;
+      Object.values(byCanv).forEach(c=>{
+        Object.values(c.coords).forEach(co=>{
+          if(co.outlets.size>=3&&(!worst||co.outlets.size>worst.n)) worst={name:c.name,cluster:c.cluster,n:co.outlets.size,sample:co.names.slice(0,3)};
+        });
+      });
+      if(worst){
+        out.push({severity:"fraud",icon:"📍",
+          title:`${worst.name} — GPS sama di ${worst.n} outlet berbeda`,
+          desc:`Titik koordinat check-in PERSIS SAMA (radius ±100m) dipakai untuk ${worst.n} outlet berbeda (${worst.cluster}), termasuk "${worst.sample.join('", "')}". Kemungkinan gak pernah pindah lokasi fisik saat check-in.`,
+          rec:`Cek riwayat kunjungan ${worst.name} satu-satu — kemungkinan check-in dilakukan dari 1 tempat tetap (rumah/warung), bukan dari outlet.`});
+      }
+    }
+
+    // F2) Kecepatan perpindahan antar kunjungan mustahil (impossible travel)
+    {
+      const byCanv={};
+      allRows.forEach(r=>{
+        const nm=r["Canvasser"]||"";
+        const t=r["Actual Visit Time"]?new Date(r["Actual Visit Time"]):null;
+        const lat=parseFloat(r["Check-In Latitude"]), lon=parseFloat(r["Check-In Longitude"]);
+        if(!nm||!t||isNaN(t.getTime())||isNaN(lat)||isNaN(lon)) return;
+        const key=nm+"|"+r["_clLabel"];
+        if(!byCanv[key])byCanv[key]={name:nm,cluster:r["_clLabel"],visits:[]};
+        byCanv[key].visits.push({t,lat,lon,outlet:r["Outlet"]||r["Outlet ID"]||"?"});
+      });
+      let worst=null;
+      Object.values(byCanv).forEach(c=>{
+        const vs=[...c.visits].sort((a,b)=>a.t-b.t);
+        for(let i=1;i<vs.length;i++){
+          const dtH=(vs[i].t-vs[i-1].t)/3600000;
+          if(dtH<=0||dtH>3) continue; // beda hari / data gak wajar, skip
+          const distKm=haversineM(vs[i-1].lat,vs[i-1].lon,vs[i].lat,vs[i].lon)/1000;
+          const speed=distKm/dtH;
+          if(speed>=150&&distKm>=5&&(!worst||speed>worst.speed)){
+            worst={name:c.name,cluster:c.cluster,speed,distKm,dtH,from:vs[i-1].outlet,to:vs[i].outlet};
+          }
+        }
+      });
+      if(worst){
+        out.push({severity:"fraud",icon:"🚀",
+          title:`${worst.name} — kecepatan perjalanan mustahil`,
+          desc:`Dari "${worst.from}" ke "${worst.to}" (${worst.cluster}) — jarak ${worst.distKm.toFixed(1)}km cuma dalam ${(worst.dtH*60).toFixed(0)} menit (≈${Math.round(worst.speed)} km/jam). Gak masuk akal untuk kunjungan lapangan.`,
+          rec:`Cek 2 kunjungan ini manual — indikasi salah satu titik GPS-nya di-input palsu / kunjungan gak beneran terjadi.`});
+      }
+    }
+
+    // F3) Lokasi hampir selalu gak match (persisten, bukan sesekali)
+    {
+      const byCanv={};
+      allRows.forEach(r=>{
+        const nm=r["Canvasser"]||"";
+        if(!nm) return;
+        const key=nm+"|"+r["_clLabel"];
+        const di=parseFloat(r["Distance Check In (Meter)"]);
+        if(!byCanv[key])byCanv[key]={name:nm,cluster:r["_clLabel"],far:0,tot:0};
+        byCanv[key].tot++;
+        if(!isNaN(di)&&di>200) byCanv[key].far++;
+      });
+      const cands=Object.values(byCanv).filter(c=>c.tot>=10).map(c=>({...c,rate:c.far/c.tot}));
+      const worst=[...cands].sort((a,b)=>b.rate-a.rate)[0];
+      if(worst&&worst.rate>=0.9){
+        out.push({severity:"fraud",icon:"🛑",
+          title:`${worst.name} — ${Math.round(worst.rate*100)}% kunjungan lokasi tidak match`,
+          desc:`Dari ${worst.tot.toLocaleString()} kunjungan (${worst.cluster}), ${worst.far.toLocaleString()} di antaranya GPS jauh dari outlet (>200m) — hampir selalu, bukan sesekali.`,
+          rec:`Ini pola persisten, bukan kebetulan — cek langsung ke ${worst.name}, kemungkinan besar tidak benar-benar mengunjungi outlet.`});
+      }
+    }
+
+
+    // 2) Cluster dengan A1 Normal rate jauh di bawah rata-rata (dalam scope aktif)
+    const clusterRates=scopedClusters.map(cl=>{const a=cl.actC||{};const tot=Object.values(a).reduce((s,v)=>s+v,0)||0;return {label:cl.label,rate:tot?((a["A1 - NORMAL"]||0)/tot):0,tot};}).filter(c=>c.tot>=30);
+    if(clusterRates.length>=2){
+      const avg=clusterRates.reduce((s,c)=>s+c.rate,0)/clusterRates.length;
+      const worst=[...clusterRates].sort((a,b)=>a.rate-b.rate)[0];
+      if(worst.rate<avg*0.5&&worst.rate<0.3){
+        out.push({severity:"high",icon:"⚠️",
+          title:`Cluster ${worst.label} — A1 rate terendah`,
+          desc:`Cuma ${Math.round(worst.rate*100)}% normal, vs rata-rata cluster lain di ${scopeLabel} (${Math.round(avg*100)}%).`,
+          rec:"Investigasi lapangan: supervisi canvasser, rute, akurasi GPS di cluster ini."});
+      }
+    }
+
+    // 3) Canvasser dengan rasio A2 jauh di atas rata-rata
+    const cvs=view.canvassers||[];
+    const cvRates=cvs.map(c=>{const tot=(c.A1||0)+(c.A2||0)+(c.A3||0);return {...c,rate:tot?((c.A2||0)/tot):0,tot};}).filter(c=>c.tot>=15);
+    if(cvRates.length>=3){
+      const avg=cvRates.reduce((s,c)=>s+c.rate,0)/cvRates.length;
+      const worst=[...cvRates].sort((a,b)=>b.rate-a.rate)[0];
+      if(worst.rate>avg*1.8&&worst.rate>0.3){
+        out.push({severity:"medium",icon:"🔍",
+          title:`${worst.name} — rasio A2 tertinggi (% bukan jumlah)`,
+          desc:`${Math.round(worst.rate*100)}% dari ${worst.tot.toLocaleString()} kunjungannya (${worst.cluster}) A2 — rata-rata canvasser lain ${Math.round(avg*100)}%.`,
+          rec:"Cek riwayat kunjungannya manual — kemungkinan GPS HP, rute salah, atau perlu coaching."});
+      }
+    }
+
+    // 4) Penyebab anomali paling dominan (dalam scope aktif)
+    const reasonScope=selCluster?{clusterLabel:selCluster}:selRegion?{regionCode:selRegion}:null;
+    const bdA2=computeReasonBreakdown("A2",reasonScope);
+    if(bdA2.reasons.length){
+      const top=bdA2.reasons[0];
+      if(top.pct>=40){
+        const nm=top.lbl.split(" ").slice(1).join(" ");
+        out.push({severity:"medium",icon:top.lbl.split(" ")[0],
+          title:`Penyebab A2 dominan di ${scopeLabel}: ${nm}`,
+          desc:`${top.pct}% kasus A2 (relatif ke reason lain) — ${top.cnt.toLocaleString()} kasus.`,
+          rec:"Fokus perbaikan ke akar masalah ini dulu — dampaknya paling besar."});
+      }
+    }
+
+    // 5) Proporsi Incomplete (A3) tinggi (dalam scope aktif)
+    const totA=Object.values(view.actC||{}).reduce((s,v)=>s+v,0)||1;
+    const a3cnt=view.actC?.["A3 - INCOMPLETE"]||0;
+    const a3rate=a3cnt/totA;
+    if(a3rate>=0.15){
+      out.push({severity:"high",icon:"🔵",
+        title:`Incomplete rate ${scopeLabel} tinggi`,
+        desc:`${Math.round(a3rate*100)}% aktivitas (${a3cnt.toLocaleString()} kunjungan) checkout tidak ada.`,
+        rec:"Cek app canvasser: lupa checkout, sinyal putus, atau app crash sebelum submit."});
+    }
+
+    // 6) GPS Out of Range tinggi secara nasional
+    const irRows=allRows.filter(r=>r["In Range"]!=null&&String(r["In Range"]).trim()!=="");
+    if(irRows.length>=50){
+      const outCnt=irRows.filter(r=>{const v=String(r["In Range"]).toLowerCase();return v==="no"||v==="n";}).length;
+      const outRate=outCnt/irRows.length;
+      if(outRate>=0.2){
+        out.push({severity:"high",icon:"🎯",
+          title:`GPS Out of Range tinggi di ${scopeLabel}`,
+          desc:`${Math.round(outRate*100)}% kunjungan (${outCnt.toLocaleString()}) di luar radius outlet.`,
+          rec:"Cek akurasi koordinat outlet (RO Master) & kalibrasi GPS HP canvasser."});
+      }
+    }
+
+    // 7) Durasi sangat singkat (<5 menit) tinggi secara nasional
+    const durRows=allRows.filter(r=>{const d=parseFloat(r["Visit Duration (Menit)"]);return !isNaN(d)&&d>=0;});
+    if(durRows.length>=50){
+      const shortCnt=durRows.filter(r=>parseFloat(r["Visit Duration (Menit)"])<5).length;
+      const shortRate=shortCnt/durRows.length;
+      if(shortRate>=0.25){
+        out.push({severity:"medium",icon:"⏱",
+          title:`Durasi kunjungan <5 menit tinggi di ${scopeLabel}`,
+          desc:`${Math.round(shortRate*100)}% kunjungan (${shortCnt.toLocaleString()}) durasinya di bawah 5 menit.`,
+          rec:"Indikasi kunjungan formalitas — cek pola canvasser/cluster yang paling banyak menyumbang."});
+      }
+    }
+
+    // 8) Outlet dengan AVA compliance terendah
+    if(availAva.length>=1){
+      const outletMap={};
+      allRows.forEach(r=>{
+        const oid=String(r["Outlet ID"]||r["Outlet"]||"").trim();
+        if(!oid) return;
+        const onm=String(r["Outlet"]||oid).trim();
+        let yes=0,tot2=0;
+        availAva.forEach(c=>{const v=String(r[c]||"").toLowerCase();if(v==="yes"||v==="no"){tot2++;if(v==="yes")yes++;}});
+        if(!outletMap[oid])outletMap[oid]={id:oid,name:onm,yes:0,tot:0};
+        outletMap[oid].yes+=yes;outletMap[oid].tot+=tot2;
+      });
+      const outlets=Object.values(outletMap).map(o=>({...o,rate:o.tot?o.yes/o.tot:0})).filter(o=>o.tot>=16);
+      if(outlets.length>=3){
+        const worst=[...outlets].sort((a,b)=>a.rate-b.rate)[0];
+        if(worst.rate<=0.1){
+          out.push({severity:"medium",icon:"🏪",
+            title:`Outlet ${worst.name} — AVA compliance ${Math.round(worst.rate*100)}%`,
+            desc:`Dari ${worst.tot.toLocaleString()} pengecekan item AVA, cuma ${worst.yes} yang comply.`,
+            rec:"Follow-up ke outlet ini — materi promosi kemungkinan gak terpasang sama sekali."});
+        }
+      }
+    }
+
+    // 9) Tren A1 rate menurun (paruh awal vs paruh akhir periode)
+    const trend=view.trend||[];
+    if(trend.length>=8){
+      const half=Math.floor(trend.length/2);
+      const first=trend.slice(0,half), second=trend.slice(half);
+      const rate=arr=>{const t=arr.reduce((s,d)=>s+d.total,0)||1;const a1=arr.reduce((s,d)=>s+(d.A1||0),0);return a1/t;};
+      const r1=rate(first), r2=rate(second);
+      if(r1-r2>=0.1){
+        out.push({severity:"high",icon:"📉",
+          title:`Tren A1 Normal menurun di ${scopeLabel}`,
+          desc:`A1 rate turun dari ${Math.round(r1*100)}% (paruh awal) jadi ${Math.round(r2*100)}% (paruh akhir periode).`,
+          rec:"Cek apa yang berubah di paruh kedua — canvasser baru, rute berubah, atau musiman."});
+      }
+    }
+
+    return out;
+  },[clusters,view,selCluster,selRegion]);
+
 
   return(
     <>
@@ -3115,6 +3392,39 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
         </div>
       );
     })()}
+        {tab==="findings"&&(
+          <div>
+            <div style={{marginBottom:14}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <div style={{fontWeight:800,fontSize:15,color:t.text}}>🔎 Temuan & Rekomendasi Otomatis</div>
+                <span style={{background:P.accent+"22",color:P.accent,fontSize:10,fontWeight:800,padding:"2px 9px",borderRadius:999}}>
+                  📍 {selCluster||selRegion||"Nasional (semua data)"}
+                </span>
+              </div>
+              <div style={{fontSize:11,color:t.muted,marginTop:4}}>Dihasilkan otomatis dari pola di data yang di-upload — bukan pengganti verifikasi manual. Ganti scope lewat tab Overview (klik cluster/region).</div>
+            </div>
+            {findings.length===0?(
+              <div style={{...card(),textAlign:"center",color:t.muted,padding:"32px 16px"}}>Belum ada temuan signifikan dari data saat ini. 👍</div>
+            ):findings.map((f,i)=>{
+              const sevColor=f.severity==="fraud"?"#dc2626":f.severity==="high"?"#ef4444":f.severity==="medium"?"#f59e0b":f.severity==="low"?"#22c55e":"#3b82f6";
+              const sevLabel=f.severity==="fraud"?"🚨 POTENSI FRAUD":f.severity==="high"?"PERLU PERHATIAN":f.severity==="medium"?"PERLU DICEK":f.severity==="low"?"BAIK":"INFO";
+              return(
+                <div key={i} style={{...card({borderLeft:`4px solid ${sevColor}`}),marginBottom:12}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                    <span style={{fontSize:16}}>{f.icon}</span>
+                    <span style={{fontWeight:800,fontSize:13,color:t.text,flex:1}}>{f.title}</span>
+                    <span style={{background:sevColor+"22",color:sevColor,fontSize:9,fontWeight:800,padding:"2px 8px",borderRadius:999,letterSpacing:"0.03em",whiteSpace:"nowrap"}}>{sevLabel}</span>
+                  </div>
+                  <div style={{fontSize:12,color:t.text,lineHeight:1.6,marginBottom:8}}>{f.desc}</div>
+                  <div style={{display:"flex",gap:8,alignItems:"flex-start",background:t.cardAlt,borderRadius:8,padding:"8px 10px"}}>
+                    <span style={{fontSize:13,flexShrink:0}}>💡</span>
+                    <div style={{fontSize:11,color:t.muted,lineHeight:1.6}}><b style={{color:t.text}}>Rekomendasi: </b>{f.rec}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
     <VisitTypeDrillPanel drill={vtDrill} onClose={()=>setVtDrill(null)} t={t}
       onCanvasserClick={(r,key)=>{
         const drillMap={"A1":"A1 - Normal","A2":"A2 - Anomaly","A3":"A3 - Incomplete"};
