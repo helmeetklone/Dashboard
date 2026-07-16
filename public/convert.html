@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>XLS→CSV · Converter Ringan</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --bg:#0b0f14;
+    --panel:#121821;
+    --panel-alt:#1a2230;
+    --border:#232d3d;
+    --text:#e7edf5;
+    --muted:#7c8aa0;
+    --accent:#ff8a3d;
+    --accent-dim:#ff8a3d22;
+    --ok:#3ddc97;
+    --ok-dim:#3ddc9722;
+    --mono: 'JetBrains Mono','SF Mono',Consolas,monospace;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,'Segoe UI',system-ui,sans-serif;
+    min-height:100vh;display:flex;flex-direction:column;align-items:center;
+    padding:32px 18px 60px;
+  }
+  .wrap{width:100%;max-width:640px;}
+  .eyebrow{
+    font-family:var(--mono);font-size:11px;letter-spacing:0.18em;text-transform:uppercase;
+    color:var(--accent);margin-bottom:10px;display:flex;align-items:center;gap:8px;
+  }
+  .eyebrow::before{content:"";width:20px;height:1px;background:var(--accent);display:inline-block;}
+  h1{font-size:28px;font-weight:800;margin:0 0 8px;letter-spacing:-0.02em;}
+  h1 span{color:var(--accent);}
+  .sub{color:var(--muted);font-size:14px;line-height:1.6;margin:0 0 32px;max-width:520px;}
+  .sub b{color:var(--text);}
+
+  .drop{
+    border:1.5px dashed var(--border);border-radius:16px;padding:36px 22px;text-align:center;
+    background:var(--panel);transition:all .15s ease;cursor:pointer;position:relative;
+  }
+  .drop.drag{border-color:var(--accent);background:var(--accent-dim);}
+  .drop input{position:absolute;inset:0;opacity:0;cursor:pointer;}
+  .drop .ic{font-size:34px;margin-bottom:6px;}
+  .drop .t1{font-weight:700;font-size:15px;margin-bottom:4px;}
+  .drop .t2{font-size:12px;color:var(--muted);font-family:var(--mono);}
+
+  .hint{
+    margin-top:12px;font-size:12px;color:var(--muted);line-height:1.6;
+    background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:10px 14px;
+  }
+  .hint b{color:var(--accent);}
+
+  .zip-bar{
+    margin-top:18px;background:var(--ok-dim);border:1px solid #3ddc9740;border-radius:12px;
+    padding:12px 16px;display:flex;flex-direction:column;gap:10px;
+  }
+  .zip-name-input{
+    background:var(--panel-alt);border:1px solid var(--border);color:var(--text);
+    border-radius:8px;padding:8px 12px;font-size:12px;font-family:var(--mono);width:100%;outline:none;
+  }
+  .zip-name-input:focus{border-color:var(--ok);}
+  .zip-row2{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  .zip-info{font-size:12px;color:var(--ok);font-weight:600;font-family:var(--mono);flex:1;}
+  .reset-btn{
+    background:none;border:1px solid #ef444460;color:#ef4444;border-radius:8px;padding:9px 12px;
+    font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;
+  }
+  .reset-btn:hover{background:#ef444415;}
+  .zip-hint{font-size:10px;color:var(--muted);margin-top:2px;line-height:1.5;}
+  .zip-btn{
+    background:var(--ok);color:#06231a;border:none;border-radius:8px;padding:9px 16px;
+    font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap;
+  }
+  .zip-btn:hover{filter:brightness(1.08);}
+  .zip-btn:disabled{opacity:0.5;cursor:wait;}
+
+  .file-list{margin-top:20px;display:flex;flex-direction:column;gap:10px;}
+  .file-card{
+    background:var(--panel);border:1px solid var(--border);border-radius:12px;
+    padding:14px 16px;
+  }
+  .fc-head{display:flex;align-items:center;gap:10px;margin-bottom:2px;}
+  .fc-name{font-weight:700;font-size:13px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .fc-size{font-family:var(--mono);font-size:11px;color:var(--muted);}
+  .fc-status{font-size:11px;color:var(--muted);margin-top:6px;font-family:var(--mono);}
+  .fc-status.working{color:var(--accent);}
+  .fc-status.done{color:var(--ok);}
+  .fc-status.error{color:#ef4444;}
+
+  .bar{height:4px;border-radius:99px;background:var(--panel-alt);margin-top:10px;overflow:hidden;}
+  .bar-fill{height:100%;background:var(--accent);width:0%;transition:width .2s ease;}
+
+  .sheets{margin-top:12px;display:flex;flex-direction:column;gap:6px;}
+  .sheet-row{
+    display:flex;align-items:center;gap:10px;background:var(--panel-alt);
+    border-radius:8px;padding:8px 12px;
+  }
+  .sheet-row .sn{flex:1;font-size:12px;font-weight:600;}
+  .sheet-row .sr{font-family:var(--mono);font-size:10px;color:var(--muted);}
+  .dl{
+    background:var(--ok-dim);color:var(--ok);border:1px solid #3ddc9740;border-radius:7px;
+    padding:5px 12px;font-size:11px;font-weight:700;text-decoration:none;font-family:var(--mono);
+    white-space:nowrap;
+  }
+  .dl:hover{background:#3ddc9738;}
+
+  .note{
+    margin-top:28px;padding:14px 16px;background:var(--panel);border:1px solid var(--border);
+    border-radius:12px;font-size:12px;color:var(--muted);line-height:1.7;
+  }
+  .note b{color:var(--text);}
+  footer{margin-top:40px;font-family:var(--mono);font-size:10px;color:#3a4557;text-align:center;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">Utility · No upload, runs locally</div>
+  <h1>XLS<span>→</span>CSV</h1>
+  <p class="sub">Convert langsung di browser km — <b>gak ada file yang dikirim ke server manapun</b>. Cuma baca lalu tulis ulang jadi CSV, gak ada proses tambahan, jadi jauh lebih ringan buat file besar dibanding upload langsung ke dashboard.</p>
+
+  <div class="drop" id="drop">
+    <input type="file" id="fileInput" accept=".xlsx,.xls" multiple>
+    <div class="ic">📂</div>
+    <div class="t1">Drop file .xlsx / .xls di sini</div>
+    <div class="t2">atau tap buat pilih file</div>
+  </div>
+  <div class="hint">
+    💡 Di iPhone/iPad: pas file picker kebuka, tap <b>"Select"</b> di pojok kanan atas, lalu centang beberapa file sekaligus dari folder yang sama — semuanya bisa langsung dipilih bareng.
+  </div>
+
+  <div id="zipBar" class="zip-bar" style="display:none">
+    <input type="text" id="zipName" class="zip-name-input" placeholder="nama-hasil-convert" value="csv-hasil-convert">
+    <div class="zip-row2">
+      <div class="zip-info"><span id="zipCount">0</span> file selesai</div>
+      <button id="resetBtn" class="reset-btn" title="Bebasin memori kalau udah download semua">🗑 Reset</button>
+      <button id="zipBtn" class="zip-btn">📦 Download Semua (ZIP)</button>
+    </div>
+    <div class="zip-hint">💡 Udah download semua file yang km mau? Tap "Reset" biar memori HP kepakai buat convert file berikutnya (gak numpuk terus).</div>
+  </div>
+
+  <div class="file-list" id="fileList"></div>
+
+  <div class="note">
+    <b>Kenapa ini lebih ringan?</b> Tools ini cuma baca isi Excel lalu langsung tulis ulang jadi teks CSV — gak ada validasi data, gak ada gabung antar file, gak ada perhitungan tambahan. Kalau file 50-70MB masih gagal di sini juga, itu tandanya browser HP km emang udah kehabisan memori total buat file seukuran itu, terlepas dari tools apapun.
+  </div>
+
+  <footer>XLSMART · Local Converter · v1</footer>
+</div>
+
+<script>
+// ── Mini ZIP builder (format STORE, tanpa kompresi, tanpa dependency luar) ──
+// Ditulis sendiri biar gak ketiban bug JSZip di Safari/iOS
+const CRC_TABLE = (()=>{
+  const t=new Uint32Array(256);
+  for(let n=0;n<256;n++){
+    let c=n;
+    for(let k=0;k<8;k++) c = (c&1) ? (0xEDB88320 ^ (c>>>1)) : (c>>>1);
+    t[n]=c>>>0;
+  }
+  return t;
+})();
+function crc32(bytes){
+  let c=0xFFFFFFFF;
+  for(let i=0;i<bytes.length;i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c>>>8);
+  return (c ^ 0xFFFFFFFF)>>>0;
+}
+function u16(n){return [n&0xFF,(n>>>8)&0xFF];}
+function u32(n){return [n&0xFF,(n>>>8)&0xFF,(n>>>16)&0xFF,(n>>>24)&0xFF];}
+function strBytes(s){ return Array.from(new TextEncoder().encode(s)); }
+
+function buildZip(files){
+  // files: [{name, data: Uint8Array}]
+  const localParts=[]; const centralParts=[]; let offset=0;
+  const dosTime=0, dosDate=0x21; // tanggal dummy (1/1/1980), gak krusial buat kegunaan ini
+  files.forEach(f=>{
+    const nameBytes=strBytes(f.name);
+    const data=f.data;
+    const crc=crc32(data);
+    const size=data.length;
+    const localHeader=new Uint8Array([
+      0x50,0x4b,0x03,0x04, // local file header signature
+      ...u16(20),          // version needed
+      ...u16(0x0800),      // general purpose flag (UTF-8)
+      ...u16(0),           // compression method = 0 (store)
+      ...u16(dosTime),...u16(dosDate),
+      ...u32(crc),
+      ...u32(size),        // compressed size = uncompressed (store)
+      ...u32(size),
+      ...u16(nameBytes.length),
+      ...u16(0),           // extra field length
+    ]);
+    localParts.push(localHeader, new Uint8Array(nameBytes), data);
+    const localHeaderOffset=offset;
+    offset += localHeader.length + nameBytes.length + data.length;
+
+    const centralHeader=new Uint8Array([
+      0x50,0x4b,0x01,0x02, // central directory signature
+      ...u16(20),...u16(20),
+      ...u16(0x0800),
+      ...u16(0),
+      ...u16(dosTime),...u16(dosDate),
+      ...u32(crc),
+      ...u32(size),
+      ...u32(size),
+      ...u16(nameBytes.length),
+      ...u16(0),...u16(0), // extra, comment length
+      ...u16(0),           // disk number start
+      ...u16(0),           // internal attrs
+      ...u32(0),           // external attrs
+      ...u32(localHeaderOffset),
+    ]);
+    centralParts.push(centralHeader, new Uint8Array(nameBytes));
+  });
+  const centralStart=offset;
+  centralParts.forEach(p=>{offset+=p.length;});
+  const centralSize=offset-centralStart;
+  const eocd=new Uint8Array([
+    0x50,0x4b,0x05,0x06,
+    ...u16(0),...u16(0),
+    ...u16(files.length),...u16(files.length),
+    ...u32(centralSize),
+    ...u32(centralStart),
+    ...u16(0),
+  ]);
+  return new Blob([...localParts,...centralParts,eocd], {type:'application/zip'});
+}
+const drop = document.getElementById('drop');
+const fileInput = document.getElementById('fileInput');
+const fileList = document.getElementById('fileList');
+const zipBar = document.getElementById('zipBar');
+const zipCount = document.getElementById('zipCount');
+const zipBtn = document.getElementById('zipBtn');
+const zipName = document.getElementById('zipName');
+
+const resetBtn = document.getElementById('resetBtn');
+const allCsvs = []; // {name, data: Uint8Array}
+
+resetBtn.addEventListener('click', ()=>{
+  // Revoke semua object URL biar browser bener2 lepasin blob-nya dari memori
+  fileList.querySelectorAll('a.dl[href^="blob:"]').forEach(a=>URL.revokeObjectURL(a.href));
+  allCsvs.length=0;
+  fileList.innerHTML='';
+  zipBar.style.display='none';
+  zipCount.textContent='0';
+});
+
+['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('drag');}));
+['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('drag');}));
+drop.addEventListener('drop',e=>{
+  e.preventDefault();
+  if(e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
+});
+fileInput.addEventListener('change',e=>{
+  if(e.target.files.length) handleFiles(e.target.files);
+  e.target.value='';
+});
+
+function fmtBytes(n){
+  if(n<1024) return n+' B';
+  if(n<1024*1024) return (n/1024).toFixed(1)+' KB';
+  return (n/1024/1024).toFixed(1)+' MB';
+}
+
+function handleFiles(files){
+  // Filter cuma .xlsx/.xls (folder bisa aja isinya campur file lain)
+  Array.from(files).filter(f=>/\.(xlsx|xls)$/i.test(f.name)).forEach(processFile);
+}
+
+function updateZipBar(){
+  if(allCsvs.length>0){
+    zipBar.style.display='flex';
+    zipCount.textContent=allCsvs.length;
+  }
+}
+
+zipBtn.addEventListener('click', async ()=>{
+  zipBtn.disabled=true;
+  zipBtn.textContent='⚙️ Membuat ZIP...';
+  try{
+    const content = buildZip(allCsvs);
+    const url = URL.createObjectURL(content);
+    const a = document.createElement('a');
+    const rawName=(zipName.value||'csv-hasil-convert').trim().replace(/[^a-zA-Z0-9 _-]/g,'');
+    a.href = url; a.download = (rawName||'csv-hasil-convert')+'.zip';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    zipBtn.textContent='✅ ZIP terdownload';
+  }catch(err){
+    console.error(err);
+    zipBtn.textContent='❌ Gagal bikin ZIP';
+  }
+  setTimeout(()=>{zipBtn.disabled=false; zipBtn.textContent='📦 Download Semua (ZIP)';},2500);
+});
+
+function processFile(file){
+  const card = document.createElement('div');
+  card.className='file-card';
+  card.innerHTML = `
+    <div class="fc-head">
+      <div class="fc-name">${file.name}</div>
+      <div class="fc-size">${fmtBytes(file.size)}</div>
+    </div>
+    <div class="fc-status working">⚙️ Membaca file...</div>
+    <div class="bar"><div class="bar-fill" style="width:15%"></div></div>
+    <div class="sheets"></div>
+  `;
+  fileList.prepend(card);
+
+  const statusEl = card.querySelector('.fc-status');
+  const barEl = card.querySelector('.bar-fill');
+  const sheetsEl = card.querySelector('.sheets');
+
+  const reader = new FileReader();
+  reader.onerror = ()=>{ statusEl.textContent='❌ Gagal baca file (kemungkinan kehabisan memori)'; statusEl.className='fc-status error'; };
+  reader.onload = (e)=>{
+    try{
+      barEl.style.width='55%';
+      statusEl.textContent='⚙️ Parsing isi Excel...';
+      const wb = XLSX.read(e.target.result, {
+        type:'array', cellDates:true,
+        cellHTML:false, cellStyles:false, cellNF:false, bookVBA:false
+      });
+      barEl.style.width='85%';
+      statusEl.textContent='📝 Menulis CSV...';
+
+      sheetsEl.innerHTML='';
+      wb.SheetNames.forEach(sn=>{
+        const ws = wb.Sheets[sn];
+        if(!ws || !ws['!ref']) return;
+        const range = XLSX.utils.decode_range(ws['!ref']);
+        const rowCount = range.e.r - range.s.r;
+        const csv = XLSX.utils.sheet_to_csv(ws, {blankrows:false});
+        const csvBytes = new TextEncoder().encode(csv); // simpan sbg bytes (1B/char), bukan JS string (2B/char) — lebih hemat memori
+        const blob = new Blob([csvBytes], {type:'text/csv;charset=utf-8;'});
+        const url = URL.createObjectURL(blob);
+        const baseName = file.name.replace(/\.[^.]+$/,'');
+        const outName = wb.SheetNames.length>1 ? `${baseName}__${sn}.csv` : `${baseName}.csv`;
+
+        allCsvs.push({name:outName, data:csvBytes});
+        updateZipBar();
+
+        const row = document.createElement('div');
+        row.className='sheet-row';
+        row.innerHTML = `
+          <div class="sn">${sn}</div>
+          <div class="sr">${rowCount.toLocaleString('id-ID')} baris · ${fmtBytes(blob.size)}</div>
+          <a class="dl" download="${outName}" href="${url}">⬇ Download</a>
+        `;
+        sheetsEl.appendChild(row);
+      });
+
+      barEl.style.width='100%';
+      statusEl.textContent='✅ Selesai — silakan download';
+      statusEl.className='fc-status done';
+    }catch(err){
+      console.error(err);
+      statusEl.textContent='❌ Gagal: '+(err.message||'unknown error');
+      statusEl.className='fc-status error';
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+</script>
+</body>
+</html>
