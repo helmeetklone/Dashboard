@@ -2339,11 +2339,9 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                           .sort((a,b)=>b.v-a.v).slice(0,3)
                       },
                       {
-                        icon:"🗺",color:P.a3,
-                        title:"Top 3 Region A3 Incomplete",
-                        desc:regionCodes.map(code=>({code,v:(regionAgg[code]?.actC||{})["A3 - INCOMPLETE"]||0}))
+                        icon:"🗺",color:P.a3,title:"Top Region A3",type:"ranked",statusKey:"A3",
+                        ranks:regionCodes.map(code=>({code,regionCode:code,v:(regionAgg[code]?.actC||{})["A3 - INCOMPLETE"]||0}))
                           .sort((a,b)=>b.v-a.v).slice(0,3)
-                          .map((r,i)=>`${i+1}. ${r.code}: ${r.v.toLocaleString()}`).join(" · ")
                       },
                     ] : [] ),
                     // ── Top 3 Cluster per kategori ──────────────────────────
@@ -2364,11 +2362,11 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                           .slice(0,3).map(cl=>({code:cl.label.split("-").slice(1).join("-")||cl.label,clusterLabel:cl.label,v:(cl.actC||{})["A3 - INCOMPLETE"]||0}))
                       },
                     ] : [] ),
-                    {icon:"✅",color:P.a1,title:"A1 Normal Rate",desc:`${pctS(ac["A1 - NORMAL"],T)} (${(ac["A1 - NORMAL"]||0).toLocaleString()}) aktivitas berjalan normal.`},
+                    {icon:"✅",color:P.a1,title:"A1 Normal Rate",onClick:()=>openDrill("A1 - Normal",P.a1,"A1"),desc:`${pctS(ac["A1 - NORMAL"],T)} (${(ac["A1 - NORMAL"]||0).toLocaleString()}) aktivitas berjalan normal.`},
                     {icon:"⚠️",color:P.a2,title:"A2 Anomaly Terbanyak",onClick:wA2?()=>openInsight(wA2,"A2","A2 - Anomaly",P.a2):null,desc:wA2?`${wA2.name} [${wA2.cluster}]: ${wA2.A2.toLocaleString()} aktivitas (${wA2.a2p.toFixed(1)}% dari totalnya)`:"–"},
                     {icon:"🔵",color:P.a3,title:"A3 Incomplete Terbanyak",onClick:wA3?()=>openInsight(wA3,"A3","A3 - Incomplete",P.a3):null,desc:wA3?`${wA3.name} [${wA3.cluster}]: ${wA3.A3.toLocaleString()} aktivitas (${wA3.a3p.toFixed(1)}% dari totalnya)`:"–"},
                     {icon:"🔍",color:P.investigate,title:"Investigate Terbanyak",onClick:wInv?()=>openInsight(wInv,"INVESTIGATE","Investigate",P.investigate):null,desc:wInv?`${wInv.name} [${wInv.cluster}]: ${wInv.INVESTIGATE.toLocaleString()} aktivitas (${wInv.invP.toFixed(1)}% dari totalnya)`:"–"},
-                    {icon:"⏱",color:"#f97316",title:"Durasi Singkat (SHORT)",desc:`${(dc["SHORT"]||0).toLocaleString()} aktivitas durasi singkat — perlu verifikasi.`},
+                    {icon:"⏱",color:"#f97316",title:"Durasi Singkat (SHORT)",onClick:()=>openDrill("Durasi Singkat (SHORT)","#f97316","DUR_SHORT"),desc:`${(dc["SHORT"]||0).toLocaleString()} aktivitas durasi singkat — perlu verifikasi.`},
                     ...((view.visitTypeData||[]).map(vt=>({
                       icon:vt.type==="Regular Visit"?"🚗":vt.type==="Ad-Hoc Visit"?"⚡":"📦",
                       color:vt.type==="Regular Visit"?P.a1:vt.type==="Ad-Hoc Visit"?P.a2:"#06b6d4",
@@ -2389,11 +2387,13 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                       if(invTotal>0) items.push({
                         icon:"🔍",color:P.investigate,
                         title:`Penyebab Investigate (${invTotal.toLocaleString()} kasus)`,
+                        onClick:()=>openDrill("Investigate",P.investigate,"INVESTIGATE"),
                         desc:topReason("investigate")||"–"
                       });
                       if(obsTotal>0) items.push({
                         icon:"⚠️",color:P.a2,
                         title:`Penyebab Observe (${obsTotal.toLocaleString()} kasus)`,
+                        onClick:()=>openDrill("Observe",P.a2,"OBSERVE"),
                         desc:topReason("observe")||"–"
                       });
                       return items;
