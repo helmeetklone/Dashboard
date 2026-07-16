@@ -188,8 +188,9 @@ function regionFullName(code){
 }
 
 // ── READ FILE — reads critical cols by direct cell reference (100% reliable) ─────
-function readFileRows(buf, sheetName=null) {
-  const wb = XLSX.read(buf, {type:"array", cellDates:true});
+function readFileRows(wbOrBuf, sheetName=null) {
+  // Terima workbook yang SUDAH di-parse (hindari re-parse buffer berkali-kali — берat utk file besar di mobile)
+  const wb = (wbOrBuf && wbOrBuf.SheetNames) ? wbOrBuf : XLSX.read(wbOrBuf, {type:"array", cellDates:true});
   const targetSheet = sheetName||wb.SheetNames[0];
   const ws = wb.Sheets[targetSheet];
   if(!ws||!ws["!ref"]) throw new Error("Sheet kosong: "+targetSheet);
@@ -1357,7 +1358,7 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
             const fileResults=[];
             for(const sn of sheets){
               const ws2=wb2.Sheets[sn]; if(!ws2||!ws2["!ref"]) continue;
-              const {rows}=readFileRows(e.target.result,sn);
+              const {rows}=readFileRows(wb2,sn);
               if(!rows||!rows.length) continue;
               const clusterNames=[...new Set(rows.map(r=>r["Cluster"]).filter(Boolean))];
               if(clusterNames.length>1){
@@ -1731,7 +1732,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
             const fileResults=[];
             for(const sn of wb2.SheetNames){
               const ws2=wb2.Sheets[sn]; if(!ws2||!ws2["!ref"]) continue;
-              const {rows}=readFileRows(ev.target.result,sn);
+              const {rows}=readFileRows(wb2,sn);
               if(!rows?.length) continue;
               const cls=[...new Set(rows.map(r=>r["Cluster"]).filter(Boolean))];
               if(cls.length>1){cls.forEach(cl=>{const r2=rows.filter(r=>String(r["Cluster"]||"").trim()===cl);if(r2.length)fileResults.push({name:f.name+"|"+cl,label:cl,regionCode:getRegionCode(cl),rows:r2});});}
@@ -2268,7 +2269,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
 
             {/* ── ROW 1: Activity Status Pie (left) + Key Insights (right) ── */}
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:16}}>
-              <div style={card()}>
+              <div style={card({background:`linear-gradient(160deg, #f59e0b12, ${t.card})`,borderTop:"3px solid #f59e0b50"})}>
                 <div style={{fontWeight:700,marginBottom:2}}>Activity Status <span style={{fontSize:10,fontWeight:500,color:t.muted}}>(Regular + Ad-Hoc)</span></div>
                 <div style={{fontSize:11,color:t.muted,marginBottom:10}}>
                   {view.label}
@@ -2312,7 +2313,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                 </div>
               </div>
 
-              <div style={card()}>
+              <div style={card({background:`linear-gradient(160deg, #a78bfa14, ${t.card})`,borderTop:"3px solid #a78bfa50"})}>
                 <div style={{fontWeight:700,marginBottom:12}}>📋 Key Insights</div>
                 {(()=>{
                   // Sort by AMOUNT (count) not percentage - more meaningful
@@ -2671,17 +2672,25 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
               </div>
             ))}
             <div style={{...card(),gridColumn:"1/-1"}}>
-              <div style={{fontWeight:700,marginBottom:12}}>Detail per Outlet Type</div>
+              <div style={{fontWeight:700,marginBottom:6}}>Detail per Outlet Type</div>
+              {(()=>{const worst=[...view.outletData].sort((a,b)=>pct(a.A1,a.total)-pct(b.A1,b.total))[0];const best=[...view.outletData].sort((a,b)=>pct(b.A1,b.total)-pct(a.A1,a.total))[0];
+                return worst&&best?(
+                <div style={{fontSize:11,color:t.text,marginBottom:12,background:"#f59e0b15",border:"1px solid #f59e0b30",borderRadius:8,padding:"7px 10px",lineHeight:1.6}}>
+                  💡 <b style={{color:t.text}}>{best.type.replace("RO ","")}</b> paling sehat (<span style={{color:P.a1,fontWeight:700}}>{pctS(best.A1,best.total)} A1</span>), <b style={{color:t.text}}>{worst.type.replace("RO ","")}</b> paling perlu perhatian (<span style={{color:P.a1,fontWeight:700}}>{pctS(worst.A1,worst.total)} A1</span>).
+                </div>):null;})()}
               <div style={{overflowX:"auto",scrollbarWidth:"none",msOverflowStyle:"none"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
                   <thead><tr style={{background:t.cardAlt}}>
                     {["Outlet Type","Total","A1","A2","A3","Inv","Dist","A1%","A2%"].map(h=><th key={h} style={{padding:isMobile?"6px 8px":"9px 12px",textAlign:"left",fontSize:11,fontWeight:700,color:t.muted,whiteSpace:"nowrap",borderBottom:`1px solid ${t.border}`}}>{h}</th>)}
                   </tr></thead>
                   <tbody>
-                    {view.outletData.map((d,i)=>(
-                      <tr key={i} style={{borderBottom:`1px solid ${t.border}`,background:i%2===0?"transparent":t.rowAlt}}>
+                    {view.outletData.map((d,i)=>{
+                      const a1p=pct(d.A1,d.total);
+                      const rowTint=a1p>=70?P.a1:a1p>=40?P.a2:P.a3;
+                      return(
+                      <tr key={i} style={{borderBottom:`1px solid ${t.border}`,background:i%2===0?rowTint+"08":rowTint+"10"}}>
                         <td style={{padding:isMobile?"6px 8px":"9px 12px",fontWeight:700,color:P.accent,cursor:"pointer",whiteSpace:"nowrap"}} onClick={()=>openOutletDrill(d.type)}>{d.type}</td>
-                        <td style={{padding:isMobile?"6px 8px":"9px 12px",fontWeight:600}}>{d.total.toLocaleString()}</td>
+                        <td style={{padding:isMobile?"6px 8px":"9px 12px",fontWeight:700}}>{d.total.toLocaleString()}</td>
                         <td style={{padding:"9px 12px"}}>
                           {(d.A1||0)>0?<span onClick={()=>setOutletTypeDrill({type:d.type,status:"A1 - NORMAL",label:"A1 Normal"})} style={{color:P.a1,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.a1}}>{(d.A1||0).toLocaleString()}</span>:<span style={{color:t.muted}}>0</span>}
                         </td>
@@ -2692,14 +2701,14 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                           {(d.A3||0)>0?<span onClick={()=>setOutletTypeDrill({type:d.type,status:"A3 - INCOMPLETE",label:"A3 Incomplete"})} style={{color:P.a3,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.a3}}>{(d.A3||0).toLocaleString()}</span>:<span style={{color:t.muted}}>0</span>}
                         </td>
                         <td style={{padding:"9px 12px"}}>
-                          {(d.INVESTIGATE||0)>0?<span onClick={()=>setOutletTypeDrill({type:d.type,status:"INVESTIGATE",label:"Investigate"})} style={{color:P.investigate,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.investigate}}>{(d.INVESTIGATE||0).toLocaleString()}</span>:<span style={{color:t.muted}}>0</span>}
+                          {(d.INVESTIGATE||0)>0?<span onClick={()=>setOutletTypeDrill({type:d.type,status:"INVESTIGATE",label:"Investigate"})} style={{color:t.muted,fontWeight:600,cursor:"pointer",borderBottom:"1px dotted "+t.muted}}>{(d.INVESTIGATE||0).toLocaleString()}</span>:<span style={{color:t.muted}}>0</span>}
                         </td>
                         <td style={{padding:"9px 12px",minWidth:90}}><Bar3 A1={d.A1||0} A2={d.A2||0} A3={d.A3||0} total={d.total}/></td>
-                        <td style={{padding:"9px 12px",color:P.a1,fontWeight:700}}>{pctS(d.A1,d.total)}</td>
-                        <td style={{padding:"9px 12px",color:pct(d.A2,d.total)>=40?P.investigate:P.a2}}>{pctS(d.A2,d.total)}</td>
-                        <td style={{padding:"9px 12px",color:P.a3}}>{pctS(d.A3,d.total)}</td>
+                        <td style={{padding:"9px 12px",color:P.a1,fontWeight:800}}>{pctS(d.A1,d.total)}</td>
+                        <td style={{padding:"9px 12px",color:pct(d.A2,d.total)>=40?P.investigate:t.muted,fontWeight:600}}>{pctS(d.A2,d.total)}</td>
+                        <td style={{padding:"9px 12px",color:t.muted,fontWeight:600}}>{pctS(d.A3,d.total)}</td>
                       </tr>
-                    ))}
+                    );})}
                   </tbody>
                 </table>
               </div>
@@ -2708,7 +2717,13 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
             {/* ── Outlet per Region ── */}
             {regionCodes.length>0&&(
             <div style={card()}>
-              <div style={{fontWeight:700,marginBottom:12}}>🗺 Perbandingan per Region</div>
+              <div style={{fontWeight:700,marginBottom:6}}>🗺 Perbandingan per Region</div>
+              {(()=>{const rows=regionCodes.map(code=>{const ra=regionAgg[code]||{actC:{},total:0};return{code,a1p:pct((ra.actC||{})["A1 - NORMAL"],ra.total)};});
+                const best=[...rows].sort((a,b)=>b.a1p-a.a1p)[0], worst=[...rows].sort((a,b)=>a.a1p-b.a1p)[0];
+                return best&&worst&&rows.length>1?(
+                <div style={{fontSize:11,color:t.text,marginBottom:12,background:"#f59e0b15",border:"1px solid #f59e0b30",borderRadius:8,padding:"7px 10px",lineHeight:1.6}}>
+                  💡 Region <b style={{color:t.text}}>{best.code}</b> paling sehat (<span style={{color:P.a1,fontWeight:700}}>{best.a1p}% A1</span>), <b style={{color:t.text}}>{worst.code}</b> paling perlu perhatian (<span style={{color:P.a1,fontWeight:700}}>{worst.a1p}% A1</span>).
+                </div>):null;})()}
 
               {/* Stacked Bar Chart per Region */}
               <ResponsiveContainer width="100%" height={220}>
@@ -2735,7 +2750,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                   <Bar dataKey="A3" name="A3 Incomplete" fill={P.a3} stackId="a" radius={[3,3,0,0]}/>
                 </BarChart>
               </ResponsiveContainer>
-              <div style={{fontSize:10,color:t.muted,marginBottom:12,textAlign:"center"}}>Klik bar untuk drill-down ke region tersebut</div>
+              <div style={{fontSize:10,color:"#f59e0b",marginBottom:12,textAlign:"center",background:"#f59e0b12",borderRadius:6,padding:"4px 0"}}>💡 Klik bar untuk drill-down ke region tersebut</div>
 
               {/* Table */}
               <div style={{overflowX:"auto",scrollbarWidth:"none",msOverflowStyle:"none"}}>
@@ -2750,19 +2765,21 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                       const rA2=(ra.actC||{})["A2 - ANOMALY"]||0;
                       const rA3=(ra.actC||{})["A3 - INCOMPLETE"]||0;
                       const rc=P.regions[i%P.regions.length];
+                      const a1pv=pct(rA1,ra.total);
+                      const healthTint=a1pv>=70?P.a1:a1pv>=40?P.a2:P.a3;
                       return(
-                        <tr key={code} style={{borderBottom:`1px solid ${t.border}`,background:i%2===0?"transparent":t.rowAlt}}>
+                        <tr key={code} style={{borderBottom:`1px solid ${t.border}`,background:i%2===0?healthTint+"08":healthTint+"10"}}>
                           <td style={{padding:"8px 12px",display:"flex",alignItems:"center",gap:6}}>
                             <span style={{background:rc+"22",color:rc,padding:"1px 8px",borderRadius:999,fontSize:10,fontWeight:700}}>{code}</span>
                             <span style={{fontSize:11,color:t.text,fontWeight:600}}>{regionFullName(code)}</span>
                           </td>
-                          <td style={{padding:"8px 12px",fontWeight:600}}>{(ra.total||0).toLocaleString()}</td>
+                          <td style={{padding:"8px 12px",fontWeight:700}}>{(ra.total||0).toLocaleString()}</td>
                           <td style={{padding:"8px 12px",color:P.a1,fontWeight:700}}>{rA1.toLocaleString()}</td>
                           <td style={{padding:"8px 12px",color:P.a2,fontWeight:700}}>{rA2.toLocaleString()}</td>
                           <td style={{padding:"8px 12px",color:P.a3,fontWeight:700}}>{rA3.toLocaleString()}</td>
-                          <td style={{padding:"8px 12px",color:P.a1,fontWeight:600}}>{pctS(rA1,ra.total)}</td>
+                          <td style={{padding:"8px 12px",color:P.a1,fontWeight:800}}>{pctS(rA1,ra.total)}</td>
                           <td style={{padding:"8px 12px",color:pct(rA2,ra.total)>=30?P.a2:t.muted,fontWeight:600}}>{pctS(rA2,ra.total)}</td>
-                          <td style={{padding:"8px 12px",color:pct(rA3,ra.total)>=30?P.a3:t.muted,fontWeight:600}}>{pctS(rA3,ra.total)}</td>
+                          <td style={{padding:"8px 12px",color:t.muted,fontWeight:600}}>{pctS(rA3,ra.total)}</td>
                         </tr>
                       );
                     })}
@@ -2948,10 +2965,12 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                     ))}
                   </tr></thead>
                   <tbody>
-                    {sorted.slice(cPg*CPG,(cPg+1)*CPG).map((c,i)=>(
-                      <tr key={c.name+c.cluster} style={{borderBottom:`1px solid ${t.border}`,background:i%2===0?"transparent":t.rowAlt,transition:"background 0.1s"}}
+                    {sorted.slice(cPg*CPG,(cPg+1)*CPG).map((c,i)=>{
+                      const healthTint=c.a1p>=70?P.a1:c.a1p>=40?P.a2:P.a3;
+                      return(
+                      <tr key={c.name+c.cluster} style={{borderBottom:`1px solid ${t.border}`,background:i%2===0?healthTint+"08":healthTint+"12",transition:"background 0.1s"}}
                         onMouseEnter={e=>e.currentTarget.style.background=t.rowHover}
-                        onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"transparent":t.rowAlt}>
+                        onMouseLeave={e=>e.currentTarget.style.background=i%2===0?healthTint+"08":healthTint+"12"}>
                         <td style={{padding:"7px 10px",color:t.muted,fontSize:10}}>{i+1}</td>
                         <td style={{padding:"7px 10px"}}>
                           <span style={{background:P.accent+"20",color:P.accent,padding:"2px 8px",borderRadius:6,fontSize:10,fontWeight:700}}>{c.region||"–"}</span>
@@ -2989,7 +3008,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                         <td style={{padding:"7px 10px",color:c.avgDur!=null&&c.avgDur<2?P.short:t.muted}}>{c.avgDur!=null?c.avgDur.toFixed(1)+" m":"—"}</td>
                         <td style={{padding:"7px 10px",color:(c.avgDis||0)>500?P.investigate:(c.avgDis||0)>100?P.a2:t.muted}}>{c.avgDis!=null?c.avgDis.toFixed(0)+" m":"—"}</td>
                       </tr>
-                    ))}
+                    );})}
                   </tbody>
                 </table>
               </div>
@@ -3061,7 +3080,10 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
       <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)"}} onClick={()=>setShowParams(false)}>
         <div onClick={e=>e.stopPropagation()} style={{background:t.card,borderRadius:16,border:`1px solid ${t.border}`,padding:"24px 28px",minWidth:320,maxWidth:420,boxShadow:"0 8px 40px rgba(0,0,0,0.5)",fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
           <div style={{fontWeight:800,fontSize:16,color:t.text,marginBottom:4}}>⚙️ Parameter Validasi</div>
-          <div style={{fontSize:11,color:t.muted,marginBottom:20}}>Perubahan parameter memerlukan persetujuan management</div>
+          <div style={{fontSize:11,color:t.muted,marginBottom:10}}>Perubahan parameter memerlukan persetujuan management</div>
+          <div style={{fontSize:11,color:"#f59e0b",background:"#f59e0b15",border:"1px solid #f59e0b40",borderRadius:8,padding:"8px 10px",marginBottom:16,lineHeight:1.6}}>
+            ⚠️ Parameter ini <b>TIDAK mengubah status A1/A2/A3</b> (itu sudah ditentukan dari kolom Visit Status di file asli). Parameter ini cuma mempengaruhi breakdown Duration/Distance Status, filter drill-down, dan highlight tabel.
+          </div>
           {[
             {key:"dur_short",label:"Durasi Minimal (menit)",desc:"Kunjungan di bawah ini = SHORT",unit:"menit"},
             {key:"dur_long", label:"Durasi Maksimal (menit)",desc:"Kunjungan di atas ini = LONG",unit:"menit"},
@@ -3124,7 +3146,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                           const newResults=[];
                           for(const sn of sheets){
                             const ws2=wb2.Sheets[sn]; if(!ws2||!ws2["!ref"]) continue;
-                            const {rows}=readFileRows(ev.target.result,sn);
+                            const {rows}=readFileRows(wb2,sn);
                             if(!rows?.length) continue;
                             const clusterNames=[...new Set(rows.map(r=>r["Cluster"]).filter(Boolean))];
                             if(clusterNames.length>1){
@@ -3210,7 +3232,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                           const newR=[];
                           for(const sn of wb2.SheetNames){
                             const ws2=wb2.Sheets[sn]; if(!ws2||!ws2["!ref"]) continue;
-                            const {rows}=readFileRows(ev.target.result,sn);
+                            const {rows}=readFileRows(wb2,sn);
                             if(!rows?.length) continue;
                             const cls2=[...new Set(rows.map(r=>r["Cluster"]).filter(Boolean))];
                             if(cls2.length>1){cls2.forEach(c2=>{const r2=rows.filter(r=>String(r["Cluster"]||"").trim()===c2);if(r2.length)newR.push({name:file.name+"|"+c2,label:c2,regionCode:getRegionCode(c2),rows:r2});});}
@@ -3409,16 +3431,16 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
               const sevColor=f.severity==="fraud"?"#dc2626":f.severity==="high"?"#ef4444":f.severity==="medium"?"#f59e0b":f.severity==="low"?"#22c55e":"#3b82f6";
               const sevLabel=f.severity==="fraud"?"🚨 POTENSI FRAUD":f.severity==="high"?"PERLU PERHATIAN":f.severity==="medium"?"PERLU DICEK":f.severity==="low"?"BAIK":"INFO";
               return(
-                <div key={i} style={{...card({borderLeft:`4px solid ${sevColor}`}),marginBottom:12}}>
+                <div key={i} style={{...card({borderLeft:`4px solid ${sevColor}`,background:`linear-gradient(135deg, ${sevColor}0d, ${t.card})`}),marginBottom:12}}>
                   <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
-                    <span style={{fontSize:16}}>{f.icon}</span>
-                    <span style={{fontWeight:800,fontSize:13,color:t.text,flex:1}}>{f.title}</span>
+                    <span style={{fontSize:18}}>{f.icon}</span>
+                    <span style={{fontWeight:800,fontSize:14,color:t.text,flex:1}}>{f.title}</span>
                     <span style={{background:sevColor+"22",color:sevColor,fontSize:9,fontWeight:800,padding:"2px 8px",borderRadius:999,letterSpacing:"0.03em",whiteSpace:"nowrap"}}>{sevLabel}</span>
                   </div>
-                  <div style={{fontSize:12,color:t.text,lineHeight:1.6,marginBottom:8}}>{f.desc}</div>
-                  <div style={{display:"flex",gap:8,alignItems:"flex-start",background:t.cardAlt,borderRadius:8,padding:"8px 10px"}}>
+                  <div style={{fontSize:12,color:t.muted,lineHeight:1.6,marginBottom:8}}>{f.desc}</div>
+                  <div style={{display:"flex",gap:8,alignItems:"flex-start",background:sevColor+"12",borderRadius:8,padding:"8px 10px",border:`1px solid ${sevColor}25`}}>
                     <span style={{fontSize:13,flexShrink:0}}>💡</span>
-                    <div style={{fontSize:11,color:t.muted,lineHeight:1.6}}><b style={{color:t.text}}>Rekomendasi: </b>{f.rec}</div>
+                    <div style={{fontSize:11,color:t.text,lineHeight:1.6}}><b style={{color:sevColor}}>Rekomendasi: </b>{f.rec}</div>
                   </div>
                 </div>
               );
