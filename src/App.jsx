@@ -1283,7 +1283,7 @@ function CanvasserDetailPanel({detail,onClose,t}){
       </div>
       {avaRowDetail&&(
         <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:1400,display:"flex",alignItems:"flex-end",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)"}} onClick={()=>setAvaRowDetail(null)}>
-          <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxHeight:"75vh",background:t.card,borderRadius:"16px 16px 0 0",border:`1px solid ${t.border}`,overflow:"hidden",display:"flex",flexDirection:"column"}}>
+          <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxHeight:"75vh",background:t.card,borderRadius:"16px 16px 0 0",border:`1px solid ${t.border}`,overflow:"hidden",display:"flex",flexDirection:"column",fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
             <div style={{padding:"14px 18px 10px",borderBottom:`1px solid ${t.border}`,display:"flex",alignItems:"center",gap:10}}>
               <div style={{flex:1}}>
                 <div style={{fontWeight:800,fontSize:14,color:t.text}}>🏷 AVA Compliance — {avaRowDetail.n}/8</div>
@@ -3251,7 +3251,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
     )}
     {reasonDrill&&(
       <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:1200,display:"flex",alignItems:"flex-end",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)"}} onClick={()=>setReasonDrill(null)}>
-        <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxHeight:"75vh",background:t.card,borderRadius:"18px 18px 0 0",border:"1px solid "+t.border,overflow:"hidden",display:"flex",flexDirection:"column"}}>
+        <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxHeight:"75vh",background:t.card,borderRadius:"18px 18px 0 0",border:"1px solid "+t.border,overflow:"hidden",display:"flex",flexDirection:"column",fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
           <div style={{padding:"14px 18px 12px",borderBottom:"1px solid "+t.border,display:"flex",alignItems:"center",gap:10}}>
             <div style={{width:12,height:12,borderRadius:3,background:reasonDrill.color,flexShrink:0}}/>
             <div style={{flex:1}}>
