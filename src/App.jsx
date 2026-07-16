@@ -190,7 +190,7 @@ function regionFullName(code){
 // ── READ FILE — reads critical cols by direct cell reference (100% reliable) ─────
 function readFileRows(wbOrBuf, sheetName=null) {
   // Terima workbook yang SUDAH di-parse (hindari re-parse buffer berkali-kali — берat utk file besar di mobile)
-  const wb = (wbOrBuf && wbOrBuf.SheetNames) ? wbOrBuf : XLSX.read(wbOrBuf, {type:"array", cellDates:true});
+  const wb = (wbOrBuf && wbOrBuf.SheetNames) ? wbOrBuf : XLSX.read(wbOrBuf, {type:"array", cellDates:true, cellHTML:false});
   const targetSheet = sheetName||wb.SheetNames[0];
   const ws = wb.Sheets[targetSheet];
   if(!ws||!ws["!ref"]) throw new Error("Sheet kosong: "+targetSheet);
@@ -1322,7 +1322,7 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
     try{
       const maps=await Promise.all(Array.from(fileList).map(async file=>{
         const buf=await file.arrayBuffer();
-        const wb=XLSX.read(buf,{type:"array"});
+        const wb=XLSX.read(buf,{type:"array", cellHTML:false});
         const ws=wb.Sheets[wb.SheetNames[0]];
         const rows=XLSX.utils.sheet_to_json(ws,{defval:null});
         const map={};
@@ -1344,22 +1344,53 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
     }catch(e){console.error("RO parse error:",e);}
   };
 
+  // Parser CSV ringan (tanpa dependency tambahan) — support quoted field & koma di dalam quote
+  const parseCSVText=(text)=>{
+    // Normalisasi line ending & buang BOM
+    text=text.replace(/^\uFEFF/,"").replace(/\r\n/g,"\n").replace(/\r/g,"\n");
+    const rows=[];
+    let row=[],field="",inQuotes=false;
+    for(let i=0;i<text.length;i++){
+      const c=text[i];
+      if(inQuotes){
+        if(c==='"'){
+          if(text[i+1]==='"'){field+='"';i++;}
+          else inQuotes=false;
+        } else field+=c;
+      } else {
+        if(c==='"') inQuotes=true;
+        else if(c===','){row.push(field);field="";}
+        else if(c==='\n'){row.push(field);rows.push(row);row=[];field="";}
+        else field+=c;
+      }
+    }
+    if(field.length||row.length){row.push(field);rows.push(row);}
+    if(!rows.length) return [];
+    const headers=rows[0].map(h=>h.trim());
+    return rows.slice(1).filter(r=>r.length>1||r[0]!=="").map(r=>{
+      const obj={};
+      headers.forEach((h,i)=>{obj[h]=r[i]!==undefined&&r[i]!==""?r[i]:null;});
+      return obj;
+    });
+  };
+
     const handleFiles=useCallback(async files=>{
     setLoading(true);setError(null);
     try{
-      const xlsFiles=Array.from(files).filter(f=>/\.(xlsx|xls)$/i.test(f.name));
-      if(!xlsFiles.length)throw new Error("Tidak ada file .xlsx/.xls ditemukan");
-      const results=await Promise.all(xlsFiles.map(f=>new Promise((res,rej)=>{
+      const validFiles=Array.from(files).filter(f=>/\.(xlsx|xls|csv)$/i.test(f.name));
+      if(!validFiles.length)throw new Error("Tidak ada file .xlsx/.xls/.csv ditemukan");
+      const bigFiles=validFiles.filter(f=>f.size>15*1024*1024);
+      if(bigFiles.length){
+        setError(`⚠️ File ${bigFiles.map(f=>f.name).join(", ")} berukuran besar (>15MB). Di HP/tablet ini berisiko gagal karena keterbatasan memori browser — kalau macet di "Membaca file...", coba convert ke CSV (jauh lebih ringan) atau upload dari laptop/desktop.`);
+      }
+      const results=await Promise.all(validFiles.map(f=>new Promise((res,rej)=>{
+        const isCsv=/\.csv$/i.test(f.name);
         const reader=new FileReader();
         reader.onload=e=>{
           try{
-            const wb2=XLSX.read(e.target.result,{type:"array",cellDates:true});
-            const sheets=wb2.SheetNames;
             const fileResults=[];
-            for(const sn of sheets){
-              const ws2=wb2.Sheets[sn]; if(!ws2||!ws2["!ref"]) continue;
-              const {rows}=readFileRows(wb2,sn);
-              if(!rows||!rows.length) continue;
+            const buildEntries=(rows,sn)=>{
+              if(!rows||!rows.length) return;
               const clusterNames=[...new Set(rows.map(r=>r["Cluster"]).filter(Boolean))];
               if(clusterNames.length>1){
                 // Multi-cluster file: split rows per cluster
@@ -1370,22 +1401,32 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
                   fileResults.push({name:f.name+"|"+cl,label:cl,regionCode:rc,rows:clRows});
                 });
               } else {
-                const label=clusterNames.length===1?clusterNames[0]:(sheets.length>1?sn:f.name.replace(/\.[^.]+$/,""));
+                const label=clusterNames.length===1?clusterNames[0]:(sn?sn:f.name.replace(/\.[^.]+$/,""));
                 const regionCode=getRegionCode(clusterNames[0]||sn||"");
-                fileResults.push({name:sheets.length>1?f.name+"|"+sn:f.name,label,regionCode,rows});
+                fileResults.push({name:sn?f.name+"|"+sn:f.name,label,regionCode,rows});
+              }
+            };
+            if(isCsv){
+              const rows=parseCSVText(e.target.result);
+              buildEntries(rows,null);
+            } else {
+              const wb2=XLSX.read(e.target.result,{type:"array",cellDates:true,cellHTML:false});
+              for(const sn of wb2.SheetNames){
+                const ws2=wb2.Sheets[sn]; if(!ws2||!ws2["!ref"]) continue;
+                const {rows}=readFileRows(wb2,sn);
+                buildEntries(rows,wb2.SheetNames.length>1?sn:null);
               }
             }
             if(!fileResults.length) throw new Error(`${f.name}: tidak ada data`);
             res(fileResults.length===1?fileResults[0]:{multi:true,results:fileResults,name:f.name});
           }catch(err){rej(err);}
         };
-        reader.readAsArrayBuffer(f);
+        if(isCsv) reader.readAsText(f); else reader.readAsArrayBuffer(f);
       })));
       setQueue(prev=>{
         const m=[...prev];
-        const skipped=[];
-        const flatResults=results.flatMap(r=>r.multi?r.results:[r]);
         const merged=[];
+        const flatResults=results.flatMap(r=>r.multi?r.results:[r]);
         flatResults.forEach(r=>{
           const byName=m.findIndex(x=>x.name===r.name);
           const byLabel=m.findIndex(x=>x.label===r.label);
@@ -1417,6 +1458,7 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
     setLoading(false);
   },[]);
 
+
   const regionGroups={};
   queue.forEach(f=>{if(!regionGroups[f.regionCode])regionGroups[f.regionCode]=[];regionGroups[f.regionCode].push(f);});
 
@@ -1436,13 +1478,13 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
       <div onDragOver={e=>{e.preventDefault();setDrag(true);}} onDragLeave={()=>setDrag(false)}
         onDrop={e=>{e.preventDefault();setDrag(false);handleFiles(e.dataTransfer.files);}}
         style={{width:"100%",maxWidth:520,border:`2px dashed ${drag?P.accent:t.border}`,borderRadius:20,padding:"36px 28px",textAlign:"center",background:drag?"rgba(37,99,235,0.06)":t.card,transition:"all 0.2s"}}>
-        <input ref={fileRef} type="file" accept=".xlsx,.xls" multiple style={{display:"none"}} onChange={e=>handleFiles(e.target.files)}/>
-        <input ref={folderRef} type="file" accept=".xlsx,.xls" multiple webkitdirectory="" style={{display:"none"}} onChange={e=>handleFiles(e.target.files)}/>
+        <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" multiple style={{display:"none"}} onChange={e=>handleFiles(e.target.files)}/>
+        <input ref={folderRef} type="file" accept=".xlsx,.xls,.csv" multiple webkitdirectory="" style={{display:"none"}} onChange={e=>handleFiles(e.target.files)}/>
         {loading
           ?<><div style={{fontSize:40,marginBottom:10}}>⚙️</div><div style={{color:"#60a5fa",fontWeight:700}}>Membaca file...</div></>
           :<>
             <div style={{fontSize:46,marginBottom:10}}>{drag?"📥":"📂"}</div>
-            <div style={{color:t.text,fontSize:15,fontWeight:700,marginBottom:4}}>{drag?"Lepas di sini!":"Drag & drop file XLS/XLSX"}</div>
+            <div style={{color:t.text,fontSize:15,fontWeight:700,marginBottom:4}}>{drag?"Lepas di sini!":"Drag & drop file XLS/XLSX/CSV"}</div>
             <div style={{color:t.muted,fontSize:12,marginBottom:18}}>Atau pilih file / folder</div>
             <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}>
               <button onClick={()=>fileRef.current.click()} style={{background:"linear-gradient(135deg,#1d5fc0,#2d8ef5)",color:"#fff",border:"none",padding:"9px 22px",borderRadius:10,fontWeight:700,fontSize:13,cursor:"pointer"}}>📄 Pilih File</button>
@@ -1552,27 +1594,39 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
   const [fq,setFq]=useState("all");
 
   // ── Clusters (each file = one cluster) ───────────────────────────────────
-  const clusters=useMemo(()=>files.map((f,i)=>{
-    // Re-apply validation with current params (supports param changes)
-    const reRows=f.rows.map(r=>{
-      // Enrich with RO master data if available
-      const rid=String(r["Outlet ID"]||"").trim();
-      const ro=roMap[rid];
-      const enriched=ro?{
-        ...r,
-        "RO Latitude":  r["RO Latitude"]  ?? ro.lat,
-        "RO Longitude": r["RO Longitude"] ?? ro.lon,
-        "RO Census":    r["RO Census"]    ?? (ro.census?"YES":"NO"),
-        "Outlet Type":  r["Outlet Type"]  || ro.type,
-      }:r;
-      return computeValidation(enriched,params);
+  // Cache per-file: file yang SUDAH diproses & belum berubah gak perlu diproses ulang
+  // (sebelumnya nambah 1 file baru = reprocess SEMUA file lama juga → berat/crash di HP)
+  const clusterCacheRef=useRef(new Map()); // key: f.name → {result, paramsKey, roMapRef, rowsRef}
+  const clusters=useMemo(()=>{
+    const paramsKey=JSON.stringify(params);
+    return files.map((f,i)=>{
+      const cached=clusterCacheRef.current.get(f.name);
+      if(cached&&cached.rowsRef===f.rows&&cached.paramsKey===paramsKey&&cached.roMapRef===roMap){
+        return {...cached.result,color:P.regions[i%P.regions.length]};
+      }
+      // Re-apply validation with current params (supports param changes)
+      const reRows=f.rows.map(r=>{
+        // Enrich with RO master data if available
+        const rid=String(r["Outlet ID"]||"").trim();
+        const ro=roMap[rid];
+        const enriched=ro?{
+          ...r,
+          "RO Latitude":  r["RO Latitude"]  ?? ro.lat,
+          "RO Longitude": r["RO Longitude"] ?? ro.lon,
+          "RO Census":    r["RO Census"]    ?? (ro.census?"YES":"NO"),
+          "Outlet Type":  r["Outlet Type"]  || ro.type,
+        }:r;
+        return computeValidation(enriched,params);
+      });
+      const result={
+        ...processRows(reRows),
+        rawRows:reRows,  // kept for canvasser detail lookup
+        label:f.label,regionCode:f.regionCode,fileName:f.name,
+      };
+      clusterCacheRef.current.set(f.name,{result,paramsKey,roMapRef:roMap,rowsRef:f.rows});
+      return {...result,color:P.regions[i%P.regions.length]};
     });
-    return {
-    ...processRows(reRows),
-    rawRows:reRows,  // kept for canvasser detail lookup
-    label:f.label,regionCode:f.regionCode,
-    color:P.regions[i%P.regions.length],fileName:f.name,
-  };}),[files,params]);
+  },[files,params,roMap]);
 
   // ── Group clusters by region ─────────────────────────────────────────────
   const regionGroups=useMemo(()=>{
@@ -1728,7 +1782,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
         const rd=new FileReader();
         rd.onload=ev=>{
           try{
-            const wb2=XLSX.read(ev.target.result,{type:"array",cellDates:true});
+            const wb2=XLSX.read(ev.target.result,{type:"array",cellDates:true,cellHTML:false});
             const fileResults=[];
             for(const sn of wb2.SheetNames){
               const ws2=wb2.Sheets[sn]; if(!ws2||!ws2["!ref"]) continue;
@@ -3141,7 +3195,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                       const reader=new FileReader();
                       reader.onload=ev=>{
                         try{
-                          const wb2=XLSX.read(ev.target.result,{type:"array",cellDates:true});
+                          const wb2=XLSX.read(ev.target.result,{type:"array",cellDates:true,cellHTML:false});
                           const sheets=wb2.SheetNames;
                           const newResults=[];
                           for(const sn of sheets){
@@ -3228,7 +3282,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                       const rd=new FileReader();
                       rd.onload=ev=>{
                         try{
-                          const wb2=XLSX.read(ev.target.result,{type:"array",cellDates:true});
+                          const wb2=XLSX.read(ev.target.result,{type:"array",cellDates:true,cellHTML:false});
                           const newR=[];
                           for(const sn of wb2.SheetNames){
                             const ws2=wb2.Sheets[sn]; if(!ws2||!ws2["!ref"]) continue;
