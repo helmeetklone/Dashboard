@@ -2430,8 +2430,8 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
         {tab==="overview"&&(
           <div style={{display:"grid",gap:16}}>
 
-            {/* ── ROW 1: Activity Status Pie (left) + Key Insights (right) ── */}
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:16,alignItems:"start"}}>
+            {/* ── ROW 1: Activity Status (atas, ringkas) + Key Insights (bawah, full-width biar sub-kolomnya lega) ── */}
+            <div style={{display:"flex",flexDirection:"column",gap:16}}>
               <div style={card()}>
                 <div style={{fontWeight:700,marginBottom:2,fontSize:11,letterSpacing:"0.06em",textTransform:"uppercase",color:t.muted}}>Activity Status</div>
                 <div style={{fontSize:11,color:t.muted,marginBottom:12}}>
