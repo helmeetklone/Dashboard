@@ -2386,7 +2386,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
           </div>
         )}
         {/* ── KPI LIST (flat row style) ── */}
-        <div style={{marginBottom:20}}>
+        <div style={{marginBottom:10}}>
           {(kpiMode==="canvasser"?[
             {label:"Total",val:canvStatusCounts.total.toLocaleString(),color:t.text},
             {label:"A1 — Normal",val:pctS(canvStatusCounts.counts.A1,canvStatusCounts.total||1),color:P.a1,sub:canvStatusCounts.counts.A1.toLocaleString()+" canvasser",drill:()=>setCanvCategoryDrill({label:"A1 - Normal",color:P.a1,statusKey:"A1",list:canvStatusCounts.lists.A1})},
@@ -2397,30 +2397,50 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
           ]:[
             {label:"Total Aktivitas",val:T.toLocaleString(),color:t.text},
             {label:"A1 — Normal",val:pctS(ac["A1 - NORMAL"],T),color:P.a1,sub:(ac["A1 - NORMAL"]||0).toLocaleString(),drill:()=>openDrill("A1 - Normal",P.a1,"A1")},
-            {label:"A2 — Anomaly",val:pctS(ac["A2 - ANOMALY"],T),color:P.a2,sub:(ac["A2 - ANOMALY"]||0).toLocaleString(),drill:()=>openDrill("A2 - Anomaly",P.a2,"A2")},
-            {label:"A3 — Incomplete",val:pctS(ac["A3 - INCOMPLETE"],T),color:P.a3,sub:(ac["A3 - INCOMPLETE"]||0).toLocaleString(),drill:()=>openDrill("A3 - Incomplete",P.a3,"A3")},
+            {label:"A2 — Anomaly",val:pctS(ac["A2 - ANOMALY"],T),color:P.a2,sub:(ac["A2 - ANOMALY"]||0).toLocaleString(),drill:()=>openDrill("A2 - Anomaly",P.a2,"A2"),
+              sublink:()=>{const bd=computeReasonBreakdown("A2");setReasonDrill({statusKey:"A2",label:"A2 - Anomaly",color:P.a2,reasons:bd.reasons,topCanvassers:bd.topCanvassers});}},
+            {label:"A3 — Incomplete",val:pctS(ac["A3 - INCOMPLETE"],T),color:P.a3,sub:(ac["A3 - INCOMPLETE"]||0).toLocaleString(),drill:()=>openDrill("A3 - Incomplete",P.a3,"A3"),
+              sublink:()=>{const bd=computeReasonBreakdown("A3");setReasonDrill({statusKey:"A3",label:"A3 - Incomplete",color:P.a3,reasons:bd.reasons,topCanvassers:bd.topCanvassers});}},
             {label:"Investigate",val:pctS(vc["INVESTIGATE"],T),color:t.muted,sub:(vc["INVESTIGATE"]||0).toLocaleString(),drill:()=>openDrill("Investigate",P.investigate,"INVESTIGATE")},
             {label:"Canvasser",val:view.canvassers.length.toLocaleString(),color:t.muted},
           ]).map((k,i)=>{
             const barPct=typeof k.val==="string"&&k.val.includes("%")?parseFloat(k.val):null;
             return(
-              <div key={i} onClick={k.drill||undefined} style={{display:"flex",alignItems:"center",padding:"11px 0",borderBottom:i<5?`1px solid ${t.border}`:"none",cursor:k.drill?"pointer":"default"}}>
-                <div style={{flex:1,minWidth:0,marginRight:12}}>
-                  <div style={{display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:600,color:t.text}}>
-                    {barPct!=null&&<span style={{width:7,height:7,borderRadius:"50%",background:k.color,flexShrink:0}}/>}
-                    <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.label}</span>
+              <div key={i} style={{borderBottom:i<5?`1px solid ${t.border}`:"none"}}>
+                <div onClick={k.drill||undefined} style={{display:"flex",alignItems:"center",padding:"11px 0 "+(k.sublink?"2px":"11px"),cursor:k.drill?"pointer":"default"}}>
+                  <div style={{flex:1,minWidth:0,marginRight:12}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:600,color:t.text}}>
+                      {barPct!=null&&<span style={{width:7,height:7,borderRadius:"50%",background:k.color,flexShrink:0}}/>}
+                      <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.label}</span>
+                    </div>
+                    {barPct!=null&&<div style={{width:"100%",height:3,background:t.border,borderRadius:99,marginTop:6}}><div style={{width:barPct+"%",height:3,background:k.color,borderRadius:99}}/></div>}
                   </div>
-                  {barPct!=null&&<div style={{width:"100%",height:3,background:t.border,borderRadius:99,marginTop:6}}><div style={{width:barPct+"%",height:3,background:k.color,borderRadius:99}}/></div>}
+                  {k.sub&&<div style={{fontSize:11,color:t.muted,width:isMobile?70:90,textAlign:"right",flexShrink:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.sub}</div>}
+                  <div style={{fontSize:isMobile?14:16,fontWeight:800,color:k.color,width:isMobile?58:70,textAlign:"right",flexShrink:0}}>{k.val}</div>
                 </div>
-                {k.sub&&<div style={{fontSize:11,color:t.muted,width:isMobile?70:90,textAlign:"right",flexShrink:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.sub}</div>}
-                <div style={{fontSize:isMobile?14:16,fontWeight:800,color:k.color,width:isMobile?58:70,textAlign:"right",flexShrink:0}}>{k.val}</div>
+                {k.sublink&&<div onClick={k.sublink} style={{fontSize:10,fontWeight:700,color:P.accent,cursor:"pointer",paddingBottom:11}}>🔍 Lihat penyebab ›</div>}
               </div>
             );
           })}
         </div>
 
+        {/* ── Visit Status (digabung nyambung sama KPI di atas, bukan card terpisah lagi) ── */}
+        <div style={{marginBottom:20}}>
+          <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.06em",marginBottom:6}}>VISIT STATUS</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:5}}>
+            {VIS.map((s,i)=>(
+              <div key={i} onClick={()=>openDrill(s.label,s.color,s.key)} style={{display:"flex",alignItems:"center",gap:6,padding:"7px 10px",background:t.cardAlt,borderRadius:7,cursor:"pointer"}}
+                onMouseEnter={e=>e.currentTarget.style.opacity="0.75"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+                <div style={{width:7,height:7,borderRadius:2,background:s.color}}/>
+                <span style={{fontSize:10,color:t.muted,flex:1}}>{s.label}</span>
+                <span style={{fontSize:11,fontWeight:700,color:s.color}}>{pctS(vc[s.key],T)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* ── TAB BUTTONS ── */}
-        <div style={{display:"flex",gap:22,marginBottom:20,flexWrap:"wrap",borderBottom:`1px solid ${t.border}`,overflowX:"auto"}}>
+        <div style={{display:"flex",gap:22,marginBottom:20,borderBottom:`1px solid ${t.border}`,overflowX:"auto",scrollbarWidth:"none",msOverflowStyle:"none"}}>
           {tabs.map(tb=>(
             <button key={tb.id} onClick={()=>setTab(tb.id)} style={{padding:"0 0 11px",border:"none",background:"none",cursor:"pointer",fontSize:12,fontWeight:700,whiteSpace:"nowrap",color:tab===tb.id?t.text:t.muted,borderBottom:`2px solid ${tab===tb.id?P.accent:"transparent"}`,marginBottom:-1,transition:"color 0.15s"}}>{tb.label}</button>
           ))}
@@ -2430,40 +2450,8 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
         {tab==="overview"&&(
           <div style={{display:"grid",gap:16}}>
 
-            {/* ── ROW 1: Activity Status (atas, ringkas) + Key Insights (bawah, full-width biar sub-kolomnya lega) ── */}
-            <div style={{display:"flex",flexDirection:"column",gap:16}}>
-              <div style={card()}>
-                <div style={{fontWeight:700,marginBottom:2,fontSize:11,letterSpacing:"0.06em",textTransform:"uppercase",color:t.muted}}>Activity Status</div>
-                <div style={{fontSize:11,color:t.muted,marginBottom:12}}>
-                  {view.label}
-                  {view.label&&view.label.length<=3&&REGION_NAMES[view.label]&&<span style={{color:t.muted}}> ({REGION_NAMES[view.label]})</span>}
-                  {view.label&&view.label.startsWith&&(()=>{const m=view.label.match(/^([A-Z]{2,3})-/);return m&&REGION_NAMES[m[1]]?<span style={{color:t.muted}}> · {REGION_NAMES[m[1]]}</span>:null;})()}
-                </div>
-                <div style={{fontSize:11,color:t.muted,marginBottom:10}}>Angka A1/A2/A3 udah keliatan di atas — di sini tinggal cari tau <b style={{color:t.text}}>penyebabnya</b>:</div>
-                {[{aKey:"A2",label:"A2 - Anomaly",color:P.a2},{aKey:"A3",label:"A3 - Incomplete",color:P.a3}].map((s,i)=>(
-                  <div key={i} onClick={()=>{const bd=computeReasonBreakdown(s.aKey);setReasonDrill({statusKey:s.aKey,label:s.label,color:s.color,reasons:bd.reasons,topCanvassers:bd.topCanvassers});}}
-                    style={{display:"flex",alignItems:"center",gap:8,padding:"10px 0",borderBottom:i===0?`1px solid ${t.border}`:"none",cursor:"pointer"}}
-                    onMouseEnter={e=>e.currentTarget.style.opacity="0.75"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                    <div style={{width:7,height:7,borderRadius:"50%",background:s.color,flexShrink:0}}/>
-                    <span style={{fontSize:12,color:t.text,flex:1,fontWeight:600}}>🔍 Lihat penyebab {s.label}</span>
-                    <span style={{fontSize:12,color:P.accent,fontWeight:700}}>›</span>
-                  </div>
-                ))}
-                <div style={{marginTop:10,padding:"8px 0 4px",fontSize:11,color:t.muted,fontWeight:700,letterSpacing:"0.06em",borderTop:`1px solid ${t.border}`}}>VISIT STATUS</div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:5,marginTop:4}}>
-                  {VIS.map((s,i)=>(
-                    <div key={i} onClick={()=>openDrill(s.label,s.color,s.key)} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",background:t.cardAlt,borderRadius:7,cursor:"pointer"}}
-                      onMouseEnter={e=>e.currentTarget.style.opacity="0.75"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                      <div style={{width:7,height:7,borderRadius:2,background:s.color}}/>
-                      <span style={{fontSize:10,color:t.muted,flex:1}}>{s.label}</span>
-                      <span style={{fontSize:11,fontWeight:700,color:s.color}}>{pctS(vc[s.key],T)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div style={card()}>
-                <div style={{fontWeight:700,marginBottom:14,fontSize:11,letterSpacing:"0.06em",textTransform:"uppercase",color:t.muted}}>Key Insights</div>
+            {/* ── Key Insights ── */}
+            <div style={{fontWeight:700,marginBottom:14,fontSize:11,letterSpacing:"0.06em",textTransform:"uppercase",color:t.muted}}>Key Insights</div>
                 {(()=>{
                   const wA2=[...view.canvassers].filter(c=>c.A2>0).sort((a,b)=>b.A2-a.A2)[0];
                   const wA3=[...view.canvassers].filter(c=>c.A3>0).sort((a,b)=>b.A3-a.A3)[0];
@@ -2512,8 +2500,8 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                   const obsTotal=Object.values(rm.observe||{}).reduce((s,v)=>s+v,0);
 
                   return(
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:24}}>
-                    <div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:16,alignItems:"start"}}>
+                    <div style={card()}>
                       {/* Section 1 */}
                       {topCanvasserItems.length>0&&<>
                         <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Top Canvasser per Status</div>
@@ -2552,7 +2540,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                       </div>
                     </div>
 
-                    <div>
+                    <div style={card()}>
                       {/* Section 2 */}
                       {(topRegions.length>0||topClusters.length>0)&&<div>
                         <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:8}}>Ranking Cluster & Region</div>
@@ -2614,8 +2602,6 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                   </div>
                   );
                 })()}
-              </div>
-            </div>
 
             {/* ── ROW 2: Comparison chart (region/cluster) OR Top 5 per status (cluster level) ── */}
             {selCluster?(
@@ -2865,30 +2851,64 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
         {tab==="outlet"&&(
           <div>
             <div style={{marginBottom:28}}>
-              <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:2}}>
-                <span style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase"}}>Volume per Outlet Type</span>
-                <div style={{display:"flex",gap:14,marginLeft:"auto"}}>
-                  {["Jumlah","Persentase"].map((lbl,mi)=>(
-                    <button key={mi} onClick={()=>setOutletChartMode(mi)} style={{background:"none",border:"none",color:outletChartMode===mi?P.accent:t.muted,padding:0,fontSize:11,fontWeight:700,cursor:"pointer"}}>{lbl}</button>
-                  ))}
-                </div>
-              </div>
-              <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={view.outletData.map(d=>outletChartMode===0
-                  ?{name:d.type.replace("RO ",""),A1:d.A1,A2:d.A2,A3:d.A3,_type:d.type}
-                  :{name:d.type.replace("RO ",""),A1:pct(d.A1,d.total),A2:pct(d.A2,d.total),A3:pct(d.A3,d.total),_type:d.type}
-                )} margin={{top:10,right:10,bottom:20,left:0}}
-                onClick={d=>{if(d?.activePayload?.[0]?.payload?._type)openOutletDrill(d.activePayload[0].payload._type);}}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={t.border}/>
-                  <XAxis dataKey="name" tick={{fill:t.muted,fontSize:11}}/>
-                  <YAxis tick={{fill:t.muted,fontSize:10}} tickFormatter={outletChartMode===0?fmtK:v=>v+"%"} unit={outletChartMode===1?"%":""} domain={outletChartMode===1?[0,100]:undefined}/>
-                  <Tooltip content={mkTip}/>
-                  <Legend formatter={v=><span style={{color:t.text,fontSize:11}}>{v}</span>}/>
-                  <Bar dataKey="A1" name="A1 Normal"    stackId="a" fill={P.a1}><LabelList dataKey="A1" position="center" formatter={v=>v>0?(outletChartMode===0?fmtK(v):v.toFixed(0)+"%"):""} style={{fill:"#fff",fontSize:9,fontWeight:800,paintOrder:"stroke",stroke:"rgba(0,0,0,0.55)",strokeWidth:3}}/></Bar>
-                  <Bar dataKey="A2" name="A2 Anomaly"   stackId="a" fill={P.a2}><LabelList dataKey="A2" position="center" formatter={v=>v>0?(outletChartMode===0?fmtK(v):v.toFixed(0)+"%"):""} style={{fill:"#fff",fontSize:9,fontWeight:800,paintOrder:"stroke",stroke:"rgba(0,0,0,0.55)",strokeWidth:3}}/></Bar>
-                  <Bar dataKey="A3" name="A3 Incomplete" stackId="a" fill={P.a3} radius={[4,4,0,0]}><LabelList dataKey="A3" position="center" formatter={v=>v>0?(outletChartMode===0?fmtK(v):v.toFixed(0)+"%"):""} style={{fill:"#fff",fontSize:9,fontWeight:800,paintOrder:"stroke",stroke:"rgba(0,0,0,0.55)",strokeWidth:3}}/></Bar>
-                </BarChart>
-              </ResponsiveContainer>
+              <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Ringkasan Outlet</div>
+              <div style={{fontSize:11,color:t.muted,marginBottom:16}}>{T.toLocaleString()} aktivitas · {view.outletData.length} tipe outlet · {view.label}</div>
+
+              {(()=>{
+                const od=[...view.outletData].filter(d=>d.total>0);
+                if(!od.length) return <div style={{color:t.muted,fontSize:12}}>Belum ada data outlet.</div>;
+                const byVolume=[...od].sort((a,b)=>b.total-a.total);
+                const byA1Rate=[...od].sort((a,b)=>pct(b.A1,b.total)-pct(a.A1,a.total));
+                const biggest=byVolume[0];
+                const healthiest=byA1Rate[0];
+                const weakest=byA1Rate[byA1Rate.length-1];
+
+                const regionRows=regionCodes.map(code=>{const ra=regionAgg[code]||{actC:{},total:0};return{code,a1p:pct((ra.actC||{})["A1 - NORMAL"],ra.total)};});
+                const bestRegion=regionCodes.length>1?[...regionRows].sort((a,b)=>b.a1p-a.a1p)[0]:null;
+                const worstRegion=regionCodes.length>1?[...regionRows].sort((a,b)=>a.a1p-b.a1p)[0]:null;
+
+                return(<>
+                  <div style={{display:"flex",border:`1px solid ${t.border}`,borderRadius:12,overflow:"hidden",marginBottom:18}}>
+                    <div style={{flex:1,padding:"14px 8px",textAlign:"center",borderRight:`1px solid ${t.border}`}}>
+                      <div style={{fontSize:15,fontWeight:800,color:P.accent}}>{biggest.type.replace("RO ","")}</div>
+                      <div style={{fontSize:9,color:t.muted,marginTop:3,textTransform:"uppercase"}}>Volume<br/>Terbesar</div>
+                    </div>
+                    <div style={{flex:1,padding:"14px 8px",textAlign:"center",borderRight:`1px solid ${t.border}`}}>
+                      <div style={{fontSize:15,fontWeight:800,color:P.a1}}>{pctS(healthiest.A1,healthiest.total)}</div>
+                      <div style={{fontSize:9,color:t.muted,marginTop:3,textTransform:"uppercase"}}>Rate A1<br/>Tertinggi</div>
+                    </div>
+                    <div style={{flex:1,padding:"14px 8px",textAlign:"center"}}>
+                      <div style={{fontSize:15,fontWeight:800,color:"#ef4444"}}>{pctS(weakest.A1,weakest.total)}</div>
+                      <div style={{fontSize:9,color:t.muted,marginTop:3,textTransform:"uppercase"}}>Rate A1<br/>Terendah</div>
+                    </div>
+                  </div>
+
+                  <div style={{border:`1px solid ${t.border}`,borderRadius:12,padding:"14px 16px",marginBottom:18,fontSize:12,color:t.text,lineHeight:1.7}}>
+                    ✅ <b style={{color:P.a1}}>{healthiest.type.replace("RO ","")} paling sehat</b> — {pctS(healthiest.A1,healthiest.total)} aktivitasnya Normal, dari total {healthiest.total.toLocaleString()} aktivitas.<br/><br/>
+                    ⚠️ <b style={{color:"#ef4444"}}>{weakest.type.replace("RO ","")} paling perlu perhatian</b> — rate A1 cuma {pctS(weakest.A1,weakest.total)}, dari total {weakest.total.toLocaleString()} aktivitas.
+                    {bestRegion&&worstRegion&&bestRegion.code!==worstRegion.code&&<>
+                      <br/><br/>📍 Secara region, <b style={{color:P.a1}}>{regionFullName(bestRegion.code)} paling sehat</b> ({bestRegion.a1p}% A1), <b style={{color:"#ef4444"}}>{regionFullName(worstRegion.code)} paling perlu perhatian</b> ({worstRegion.a1p}% A1).
+                    </>}
+                  </div>
+
+                  <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Ranking Outlet Type</div>
+                  <div style={{fontSize:11,color:t.muted,marginBottom:12}}>Urut dari volume terbesar · klik buat lihat detail</div>
+                  {byVolume.map((d,i)=>{
+                    const a1p=pct(d.A1,d.total);
+                    return(
+                      <div key={d.type} onClick={()=>openOutletDrill(d.type)} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:i<byVolume.length-1?`1px solid ${t.border}`:"none",cursor:"pointer"}}
+                        onMouseEnter={e=>e.currentTarget.style.opacity="0.75"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+                        <div style={{width:22,textAlign:"center",fontSize:13,flexShrink:0}}>{i<3?["🥇","🥈","🥉"][i]:i+1}</div>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:12,fontWeight:700,color:t.text}}>{d.type}</div>
+                          <div style={{fontSize:10,color:t.muted}}>{d.total.toLocaleString()} aktivitas</div>
+                        </div>
+                        <div style={{fontSize:13,fontWeight:800,color:a1p>=70?P.a1:a1p>=40?P.a2:"#ef4444",flexShrink:0}}>{pctS(d.A1,d.total)} A1</div>
+                      </div>
+                    );
+                  })}
+                </>);
+              })()}
             </div>
 
             {/* ── Outlet per Region ── */}
