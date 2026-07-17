@@ -1567,6 +1567,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
   const [kpiMode,setKpiMode]=useState("activity"); // "activity" | "canvasser"
   const [showGlossary,setShowGlossary]=useState(false);
   const [insightRankTab,setInsightRankTab]=useState("A2");
+  const [outletChartMode,setOutletChartMode]=useState(0); // 0=Jumlah, 1=Persentase
   const [drill,setDrill]=useState(null);
   const [canvDetail,setCanvDetail]=useState(null);
   const [outletDrill,setOutletDrill]=useState(null);
@@ -1973,7 +1974,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
     const sorted=rows.sort((a,b)=>new Date(a["Planned Visit Date"]||0)-new Date(b["Planned Visit Date"]||0));sorted._all=all;return sorted;
   },[clusters]);
   const card=(x={})=>({background:t.card,border:`1px solid ${t.border}`,borderRadius:14,padding:20,...x});
-  const ths=key=>({padding:"9px 10px",textAlign:"left",fontSize:11,fontWeight:700,color:sk===key?"#60a5fa":t.muted,cursor:"pointer",letterSpacing:"0.05em",whiteSpace:"nowrap",userSelect:"none",borderBottom:`2px solid ${sk===key?P.accent:t.border}`});
+  const ths=key=>({padding:"9px 10px",textAlign:"left",fontSize:10,fontWeight:700,color:sk===key?P.accent:t.muted,cursor:"pointer",letterSpacing:"0.05em",textTransform:"uppercase",whiteSpace:"nowrap",userSelect:"none",borderBottom:`2px solid ${sk===key?P.accent:t.border}`});
 
   const T=view.total||1;
   const ac=view.actC||{};
@@ -2438,9 +2439,10 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                   {view.label&&view.label.length<=3&&REGION_NAMES[view.label]&&<span style={{color:t.muted}}> ({REGION_NAMES[view.label]})</span>}
                   {view.label&&view.label.startsWith&&(()=>{const m=view.label.match(/^([A-Z]{2,3})-/);return m&&REGION_NAMES[m[1]]?<span style={{color:t.muted}}> · {REGION_NAMES[m[1]]}</span>:null;})()}
                 </div>
-                <ResponsiveContainer width="100%" height={170}>
+                <ResponsiveContainer width="100%" height={190}>
                   <PieChart>
                     <Pie data={ACT.map(s=>({name:s.label,value:ac[s.key]||0,color:s.color,skey:s.key}))} cx="50%" cy="50%" outerRadius={75} innerRadius={32} dataKey="value" strokeWidth={0}
+                      label={({value})=>value>0?pctS(value,T):""} labelLine={false}
                       onClick={d=>{const m={"A1 - NORMAL":"A1","A2 - ANOMALY":"A2","A3 - INCOMPLETE":"A3"};openDrill(d.name,d.color,m[d.skey]);}}>
                       {ACT.map((s,i)=><Cell key={i} fill={s.color} style={{cursor:"pointer"}}/>)}
                     </Pie>
@@ -2680,9 +2682,9 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                       <YAxis tick={{fill:t.muted,fontSize:10}} unit="%" domain={[0,100]}/>
                       <Tooltip content={mkTip}/>
                       <Legend formatter={v=><span style={{color:t.text,fontSize:11}}>{v}</span>}/>
-                      <Bar dataKey="A1" name="A1 Normal"    stackId="a" fill={P.a1}><LabelList dataKey="A1" position="center" formatter={v=>v>=6?v.toFixed(0)+"%":""} style={{fill:"#06210f",fontSize:10,fontWeight:800}}/></Bar>
-                      <Bar dataKey="A2" name="A2 Anomaly"   stackId="a" fill={P.a2}><LabelList dataKey="A2" position="center" formatter={v=>v>=6?v.toFixed(0)+"%":""} style={{fill:"#3a2400",fontSize:10,fontWeight:800}}/></Bar>
-                      <Bar dataKey="A3" name="A3 Incomplete" stackId="a" fill={P.a3} radius={[4,4,0,0]}><LabelList dataKey="A3" position="center" formatter={v=>v>=6?v.toFixed(0)+"%":""} style={{fill:"#fff",fontSize:10,fontWeight:800}}/></Bar>
+                      <Bar dataKey="A1" name="A1 Normal"    stackId="a" fill={P.a1}><LabelList dataKey="A1" position="center" formatter={v=>v>0?v.toFixed(0)+"%":""} style={{fill:"#fff",fontSize:10,fontWeight:800,paintOrder:"stroke",stroke:"rgba(0,0,0,0.55)",strokeWidth:3}}/></Bar>
+                      <Bar dataKey="A2" name="A2 Anomaly"   stackId="a" fill={P.a2}><LabelList dataKey="A2" position="center" formatter={v=>v>0?v.toFixed(0)+"%":""} style={{fill:"#fff",fontSize:10,fontWeight:800,paintOrder:"stroke",stroke:"rgba(0,0,0,0.55)",strokeWidth:3}}/></Bar>
+                      <Bar dataKey="A3" name="A3 Incomplete" stackId="a" fill={P.a3} radius={[4,4,0,0]}><LabelList dataKey="A3" position="center" formatter={v=>v>0?v.toFixed(0)+"%":""} style={{fill:"#fff",fontSize:10,fontWeight:800,paintOrder:"stroke",stroke:"rgba(0,0,0,0.55)",strokeWidth:3}}/></Bar>
                     </BarChart>
                   </ResponsiveContainer>
                   <div style={{overflowY:"auto",maxHeight:240}}>
@@ -2727,9 +2729,9 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                   <YAxis tick={{fill:t.muted,fontSize:10}} tickLine={false} axisLine={false}/>
                   <Tooltip contentStyle={{background:t.card,border:`1px solid ${t.border}`,borderRadius:8,fontSize:11}}/>
                   <Legend iconSize={8} wrapperStyle={{fontSize:10}}/>
-                  <Bar dataKey="A1" name="A1 Normal" fill={P.a1} stackId="a"><LabelList dataKey="A1" position="center" formatter={v=>v>0?fmtK(v):""} style={{fill:"#06210f",fontSize:9,fontWeight:800}}/></Bar>
-                  <Bar dataKey="A2" name="A2 Anomaly" fill={P.a2} stackId="a"><LabelList dataKey="A2" position="center" formatter={v=>v>0?fmtK(v):""} style={{fill:"#3a2400",fontSize:9,fontWeight:800}}/></Bar>
-                  <Bar dataKey="A3" name="A3 Incomplete" fill={P.a3} stackId="a" radius={[3,3,0,0]}><LabelList dataKey="A3" position="center" formatter={v=>v>0?fmtK(v):""} style={{fill:"#fff",fontSize:9,fontWeight:800}}/></Bar>
+                  <Bar dataKey="A1" name="A1 Normal" fill={P.a1} stackId="a"><LabelList dataKey="A1" position="center" formatter={v=>v>0?fmtK(v):""} style={{fill:"#fff",fontSize:9,fontWeight:800,paintOrder:"stroke",stroke:"rgba(0,0,0,0.55)",strokeWidth:3}}/></Bar>
+                  <Bar dataKey="A2" name="A2 Anomaly" fill={P.a2} stackId="a"><LabelList dataKey="A2" position="center" formatter={v=>v>0?fmtK(v):""} style={{fill:"#fff",fontSize:9,fontWeight:800,paintOrder:"stroke",stroke:"rgba(0,0,0,0.55)",strokeWidth:3}}/></Bar>
+                  <Bar dataKey="A3" name="A3 Incomplete" fill={P.a3} stackId="a" radius={[3,3,0,0]}><LabelList dataKey="A3" position="center" formatter={v=>v>0?fmtK(v):""} style={{fill:"#fff",fontSize:9,fontWeight:800,paintOrder:"stroke",stroke:"rgba(0,0,0,0.55)",strokeWidth:3}}/></Bar>
                 </BarChart>
               </ResponsiveContainer>
               <div style={{marginTop:10}}>
@@ -2755,74 +2757,118 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
 
         {/* ════ TREND ════ */}
         {tab==="trend"&&(
-          <div style={{display:"grid",gap:16}}>
-            <div style={card()}>
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4,flexWrap:"wrap"}}>
-                <span style={{fontWeight:700}}>Volume Aktivitas</span>
-                <div style={{display:"flex",gap:4,marginLeft:"auto",flexWrap:"wrap"}}>
+          <div>
+            <div style={{marginBottom:28}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:2,flexWrap:"wrap"}}>
+                <span style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase"}}>Ringkasan Tren</span>
+                <div style={{display:"flex",gap:16,marginLeft:"auto",flexWrap:"wrap"}}>
                   {[["daily","Harian"],["weekly","Mingguan"],["monthly","Bulanan"],["quarterly","Kuartalan"],["half","Semesteran"],["yearly","Tahunan"]].map(([val,lbl])=>(
                     <button key={val} onClick={()=>setTrendPeriod(val)}
-                      style={{background:trendPeriod===val?P.accent:t.cardAlt,color:trendPeriod===val?"#fff":t.muted,border:"1px solid "+(trendPeriod===val?P.accent:t.border),borderRadius:6,padding:"3px 9px",fontSize:10,fontWeight:700,cursor:"pointer"}}>
+                      style={{background:"none",border:"none",color:trendPeriod===val?P.accent:t.muted,padding:0,fontSize:11,fontWeight:700,cursor:"pointer"}}>
                       {lbl}
                     </button>
                   ))}
                 </div>
               </div>
-              <div style={{fontSize:11,color:t.muted,marginBottom:14}}>Planned Visit Date · {view.label}</div>
-              <ResponsiveContainer width="100%" height={270}>
-                <BarChart data={groupTrend(view.trend,trendPeriod)} margin={{top:10,right:10,bottom:20,left:0}}
-                  onClick={d=>{if(d?.activePayload?.[0]?.payload?._date&&trendPeriod==="daily")setTrendDrill(d.activePayload[0].payload._date);}}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={t.border}/>
-                  <XAxis dataKey="name" tick={{fill:t.muted,fontSize:10}}/>
-                  <YAxis tick={{fill:t.muted,fontSize:10}} tickFormatter={fmtK}/>
-                  <Tooltip content={mkTip}/>
-                  <Legend formatter={v=><span style={{color:t.text,fontSize:11}}>{v}</span>}/>
-                  <Bar dataKey="A1" name="A1 Normal"    stackId="a" fill={P.a1}><LabelList dataKey="A1" position="center" formatter={v=>v>0?fmtK(v):""} style={{fill:"#06210f",fontSize:9,fontWeight:800}}/></Bar>
-                  <Bar dataKey="A2" name="A2 Anomaly"   stackId="a" fill={P.a2}><LabelList dataKey="A2" position="center" formatter={v=>v>0?fmtK(v):""} style={{fill:"#3a2400",fontSize:9,fontWeight:800}}/></Bar>
-                  <Bar dataKey="A3" name="A3 Incomplete" stackId="a" fill={P.a3} radius={[3,3,0,0]}><LabelList dataKey="A3" position="center" formatter={v=>v>0?fmtK(v):""} style={{fill:"#fff",fontSize:9,fontWeight:800}}/></Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <div style={card()}>
-              <div style={{fontWeight:700,marginBottom:4}}>Tren Rate per Hari (%)</div>
-              <ResponsiveContainer width="100%" height={200}>
-                <LineChart data={groupTrend(view.trend,trendPeriod).map(d=>({name:d.name,a1:pct(d.A1,d.total),a2:pct(d.A2,d.total),a3:pct(d.A3,d.total)}))} margin={{top:10,right:10,bottom:20,left:0}}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={t.border}/>
-                  <XAxis dataKey="name" tick={{fill:t.muted,fontSize:10}}/>
-                  <YAxis tick={{fill:t.muted,fontSize:10}} unit="%" domain={[0,100]}/>
-                  <Tooltip content={mkTip}/>
-                  <Legend formatter={v=><span style={{color:t.text,fontSize:11}}>{v}</span>}/>
-                  <Line type="monotone" dataKey="a1" name="A1 %" stroke={P.a1} strokeWidth={2} dot={{r:3}}/>
-                  <Line type="monotone" dataKey="a2" name="A2 %" stroke={P.a2} strokeWidth={2} dot={{r:3}}/>
-                  <Line type="monotone" dataKey="a3" name="A3 %" stroke={P.a3} strokeWidth={2} dot={{r:3}}/>
-                </LineChart>
-              </ResponsiveContainer>
+              <div style={{fontSize:11,color:t.muted,marginBottom:16}}>Planned Visit Date · {view.label}</div>
+
+              {(()=>{
+                const trendData=groupTrend(view.trend,trendPeriod);
+                if(!trendData.length) return <div style={{color:t.muted,fontSize:12,padding:"20px 0"}}>Belum ada data tren.</div>;
+
+                const n=trendData.length;
+                const avgPerDay=Math.round(trendData.reduce((s,d)=>s+d.total,0)/n);
+
+                // Bagi 2 paruh berdasarkan urutan waktu (paruh awal & paruh akhir)
+                const mid=Math.ceil(n/2);
+                const firstHalf=trendData.slice(0,mid);
+                const secondHalf=trendData.slice(mid);
+                const avgRate=(arr,key)=>arr.length?arr.reduce((s,d)=>s+pct(d[key],d.total),0)/arr.length:0;
+                const deltas=["A1","A2","A3"].map(key=>{
+                  const r1=avgRate(firstHalf,key), r2=avgRate(secondHalf,key);
+                  return {key,r1,r2,delta:r2-r1};
+                });
+                const rangeLabel=arr=>arr.length?(arr[0].name+"–"+arr[arr.length-1].name):"";
+
+                // Hari menonjol (dicari dari data harian asli, bukan hasil grouping periode, biar presisi ke tanggal)
+                const daily=[...view.trend];
+                const bestA1=daily.length?[...daily].sort((a,b)=>pct(b.A1,b.total)-pct(a.A1,a.total))[0]:null;
+                const worstA1=daily.length?[...daily].sort((a,b)=>pct(a.A1,a.total)-pct(b.A1,b.total))[0]:null;
+                const worstA3=daily.length?[...daily].sort((a,b)=>pct(b.A3,b.total)-pct(a.A3,a.total))[0]:null;
+                const topVolume=daily.length?[...daily].sort((a,b)=>b.total-a.total)[0]:null;
+
+                const dNames={A1:"A1 Normal",A2:"A2 Anomaly",A3:"A3 Incomplete"};
+                const dColors={A1:P.a1,A2:P.a2,A3:P.a3};
+                const isGood=(key,delta)=>key==="A1"?delta>=0:delta<=0; // A1 naik=bagus, A2/A3 naik=jelek
+
+                return(<>
+                  <div style={{display:"flex",border:`1px solid ${t.border}`,borderRadius:12,overflow:"hidden",marginBottom:18}}>
+                    <div style={{flex:1,padding:"14px 8px",textAlign:"center",borderRight:`1px solid ${t.border}`}}>
+                      <div style={{fontSize:17,fontWeight:800,color:P.accent}}>{avgPerDay.toLocaleString()}</div>
+                      <div style={{fontSize:9,color:t.muted,marginTop:3,textTransform:"uppercase"}}>Rata-rata Aktivitas<br/>per Hari</div>
+                    </div>
+                    <div style={{flex:1,padding:"14px 8px",textAlign:"center",borderRight:`1px solid ${t.border}`}}>
+                      <div style={{fontSize:17,fontWeight:800,color:P.accent}}>{view.trend.length}</div>
+                      <div style={{fontSize:9,color:t.muted,marginTop:3,textTransform:"uppercase"}}>Hari Terpantau<br/>dalam Periode Ini</div>
+                    </div>
+                    <div style={{flex:1,padding:"14px 8px",textAlign:"center"}}>
+                      <div style={{fontSize:17,fontWeight:800,color:isGood("A1",deltas[0].delta)?P.a1:"#ef4444"}}>{deltas[0].delta>=0?"+":""}{deltas[0].delta.toFixed(0)}%</div>
+                      <div style={{fontSize:9,color:t.muted,marginTop:3,textTransform:"uppercase"}}>Perubahan<br/>Rate A1</div>
+                    </div>
+                  </div>
+
+                  <div style={{border:`1px solid ${t.border}`,borderRadius:12,padding:"14px 16px",marginBottom:18}}>
+                    <div style={{fontSize:10,color:t.muted,marginBottom:10}}>Metode: rata-rata <b style={{color:t.text}}>rate harian</b> di paruh awal periode ({rangeLabel(firstHalf)}) dibandingkan paruh akhir ({rangeLabel(secondHalf)})</div>
+                    {deltas.map((d,i)=>(
+                      <div key={d.key} style={{marginBottom:i<2?10:0,fontSize:12,color:t.text,lineHeight:1.6}}>
+                        {isGood(d.key,d.delta)?"✅":"⚠️"} <b style={{color:isGood(d.key,d.delta)?P.a1:"#ef4444"}}>Rate {dNames[d.key]} {isGood(d.key,d.delta)?"membaik":"memburuk"} {d.delta>=0?"+":""}{d.delta.toFixed(0)}%</b> — rata-rata {d.r1.toFixed(0)}% di paruh awal, jadi rata-rata {d.r2.toFixed(0)}% di paruh akhir.
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Hari Menonjol</div>
+                  <div style={{fontSize:11,color:t.muted,marginBottom:12}}>Klik buat lihat breakdown canvasser di tanggal itu</div>
+                  {[
+                    bestA1&&{icon:"🏆",color:P.a1,title:"Rate A1 Normal tertinggi (hari ini)",date:bestA1.date,val:pctS(bestA1.A1,bestA1.total)},
+                    worstA1&&{icon:"📉",color:"#ef4444",title:"Rate A1 Normal terendah (hari ini)",date:worstA1.date,val:pctS(worstA1.A1,worstA1.total)},
+                    worstA3&&{icon:"🔵",color:P.a3,title:"Rate A3 Incomplete tertinggi (hari ini)",date:worstA3.date,val:pctS(worstA3.A3,worstA3.total)},
+                    topVolume&&{icon:"📦",color:P.a2,title:"Jumlah aktivitas terbanyak (hari ini)",date:topVolume.date,val:topVolume.total.toLocaleString()},
+                  ].filter(Boolean).map((h,i,arr)=>(
+                    <div key={i} onClick={()=>setTrendDrill(h.date)} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 0",borderBottom:i<arr.length-1?`1px solid ${t.border}`:"none",cursor:"pointer"}}
+                      onMouseEnter={e=>e.currentTarget.style.opacity="0.75"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+                      <div style={{width:26,height:26,borderRadius:7,background:h.color+"1f",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,flexShrink:0}}>{h.icon}</div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:10,color:t.muted}}>{h.title}</div>
+                        <div style={{fontSize:12,fontWeight:700,color:t.text}}>{h.date}</div>
+                      </div>
+                      <div style={{fontSize:14,fontWeight:800,color:h.color,flexShrink:0}}>{h.val}</div>
+                    </div>
+                  ))}
+                </>);
+              })()}
             </div>
             {(()=>{const tRev=[...view.trend].reverse();return(
-            <div style={card()}>
-              <div style={{fontWeight:700,marginBottom:12}}>Detail per Tanggal</div>
-              <div style={{overflowX:"auto",scrollbarWidth:"none",msOverflowStyle:"none"}}>
-                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
-                  <thead><tr style={{background:t.cardAlt}}>
-                    {["Tanggal","Total","A1","A2","A3","A1%","A2%","A3%"].map(h=><th key={h} style={{padding:"9px 12px",textAlign:"left",fontSize:11,fontWeight:700,color:t.muted,whiteSpace:"nowrap",borderBottom:`1px solid ${t.border}`}}>{h}</th>)}
-                  </tr></thead>
-                  <tbody>
-                    {tRev.slice(tPg*TPG,(tPg+1)*TPG).map((d,i)=>(
-                      <tr key={i} style={{borderBottom:`1px solid ${t.border}`,background:i%2===0?"transparent":t.rowAlt}}>
-                        <td style={{padding:"8px 12px",fontWeight:700,color:"#3b82f6"}}>{d.date}</td>
-                        <td style={{padding:"8px 12px",fontWeight:600}}>{d.total.toLocaleString()}</td>
-                        <td style={{padding:"8px 12px",color:P.a1}}>{(d.A1||0).toLocaleString()}</td>
-                        <td style={{padding:"8px 12px",color:P.a2}}>{(d.A2||0).toLocaleString()}</td>
-                        <td style={{padding:"8px 12px",color:P.a3}}>{(d.A3||0).toLocaleString()}</td>
-                        <td style={{padding:"8px 12px",color:P.a1,fontWeight:700}}>{pctS(d.A1,d.total)}</td>
-                        <td style={{padding:"8px 12px",color:pct(d.A2,d.total)>=40?P.investigate:P.a2}}>{pctS(d.A2,d.total)}</td>
-                        <td style={{padding:"8px 12px",color:P.a3}}>{pctS(d.A3,d.total)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <Pagination page={tPg} setPage={setTPg} total={tRev.length} pageSize={TPG} t={t}/>
+            <div>
+              <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Detail per Tanggal</div>
+              <div style={{fontSize:11,color:t.muted,marginBottom:12}}>Klik tanggal untuk lihat breakdown canvasser</div>
+              {tRev.slice(tPg*TPG,(tPg+1)*TPG).map((d,i)=>(
+                <div key={i} onClick={()=>setTrendDrill(d.date)} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 0",borderBottom:`1px solid ${t.border}`,cursor:"pointer"}}
+                  onMouseEnter={e=>e.currentTarget.style.opacity="0.75"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+                  <div style={{width:72,fontSize:12,fontWeight:700,color:t.text,flexShrink:0}}>{d.date}</div>
+                  <div style={{flex:1,display:"flex",height:8,borderRadius:4,overflow:"hidden",minWidth:60}}>
+                    <div style={{width:pctS(d.A1,d.total),background:P.a1}}/>
+                    <div style={{width:pctS(d.A2,d.total),background:P.a2}}/>
+                    <div style={{width:pctS(d.A3,d.total),background:P.a3}}/>
+                  </div>
+                  <div style={{display:"flex",gap:10,fontSize:10,color:t.muted,flexShrink:0}}>
+                    <span style={{color:P.a1,fontWeight:700}}>{pctS(d.A1,d.total)}</span>
+                    <span style={{color:P.a2,fontWeight:700}}>{pctS(d.A2,d.total)}</span>
+                    <span style={{color:P.a3,fontWeight:700}}>{pctS(d.A3,d.total)}</span>
+                  </div>
+                  <div style={{fontSize:13,fontWeight:800,color:t.text,width:56,textAlign:"right",flexShrink:0}}>{d.total.toLocaleString()}</div>
+                </div>
+              ))}
+              <div style={{marginTop:10}}><Pagination page={tPg} setPage={setTPg} total={tRev.length} pageSize={TPG} t={t}/></div>
             </div>
             );})()}
           </div>
@@ -2830,40 +2876,45 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
 
         {/* ════ OUTLET ════ */}
         {tab==="outlet"&&(
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:16}}>
-            {["Volume","Persentase"].map((title,mi)=>(
-              <div key={mi} style={card()}>
-                <div style={{fontWeight:700,marginBottom:14}}>{title} per Outlet Type</div>
-                <ResponsiveContainer width="100%" height={250}>
-                  <BarChart data={view.outletData.map(d=>mi===0
-                    ?{name:d.type.replace("RO ",""),A1:d.A1,A2:d.A2,A3:d.A3,_type:d.type}
-                    :{name:d.type.replace("RO ",""),A1:pct(d.A1,d.total),A2:pct(d.A2,d.total),A3:pct(d.A3,d.total),_type:d.type}
-                  )} margin={{top:10,right:10,bottom:20,left:0}}
-                  onClick={d=>{if(d?.activePayload?.[0]?.payload?._type)openOutletDrill(d.activePayload[0].payload._type);}}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={t.border}/>
-                    <XAxis dataKey="name" tick={{fill:t.muted,fontSize:11}}/>
-                    <YAxis tick={{fill:t.muted,fontSize:10}} tickFormatter={mi===0?fmtK:v=>v+"%"} unit={mi===1?"%":""} domain={mi===1?[0,100]:undefined}/>
-                    <Tooltip content={mkTip}/>
-                    <Legend formatter={v=><span style={{color:t.text,fontSize:11}}>{v}</span>}/>
-                    <Bar dataKey="A1" name="A1 Normal"    stackId="a" fill={P.a1}><LabelList dataKey="A1" position="center" formatter={v=>v>0?(mi===0?fmtK(v):v.toFixed(0)+"%"):""} style={{fill:"#06210f",fontSize:9,fontWeight:800}}/></Bar>
-                    <Bar dataKey="A2" name="A2 Anomaly"   stackId="a" fill={P.a2}><LabelList dataKey="A2" position="center" formatter={v=>v>0?(mi===0?fmtK(v):v.toFixed(0)+"%"):""} style={{fill:"#3a2400",fontSize:9,fontWeight:800}}/></Bar>
-                    <Bar dataKey="A3" name="A3 Incomplete" stackId="a" fill={P.a3} radius={[4,4,0,0]}><LabelList dataKey="A3" position="center" formatter={v=>v>0?(mi===0?fmtK(v):v.toFixed(0)+"%"):""} style={{fill:"#fff",fontSize:9,fontWeight:800}}/></Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+          <div>
+            <div style={{marginBottom:28}}>
+              <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:2}}>
+                <span style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase"}}>Volume per Outlet Type</span>
+                <div style={{display:"flex",gap:14,marginLeft:"auto"}}>
+                  {["Jumlah","Persentase"].map((lbl,mi)=>(
+                    <button key={mi} onClick={()=>setOutletChartMode(mi)} style={{background:"none",border:"none",color:outletChartMode===mi?P.accent:t.muted,padding:0,fontSize:11,fontWeight:700,cursor:"pointer"}}>{lbl}</button>
+                  ))}
+                </div>
               </div>
-            ))}
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={view.outletData.map(d=>outletChartMode===0
+                  ?{name:d.type.replace("RO ",""),A1:d.A1,A2:d.A2,A3:d.A3,_type:d.type}
+                  :{name:d.type.replace("RO ",""),A1:pct(d.A1,d.total),A2:pct(d.A2,d.total),A3:pct(d.A3,d.total),_type:d.type}
+                )} margin={{top:10,right:10,bottom:20,left:0}}
+                onClick={d=>{if(d?.activePayload?.[0]?.payload?._type)openOutletDrill(d.activePayload[0].payload._type);}}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={t.border}/>
+                  <XAxis dataKey="name" tick={{fill:t.muted,fontSize:11}}/>
+                  <YAxis tick={{fill:t.muted,fontSize:10}} tickFormatter={outletChartMode===0?fmtK:v=>v+"%"} unit={outletChartMode===1?"%":""} domain={outletChartMode===1?[0,100]:undefined}/>
+                  <Tooltip content={mkTip}/>
+                  <Legend formatter={v=><span style={{color:t.text,fontSize:11}}>{v}</span>}/>
+                  <Bar dataKey="A1" name="A1 Normal"    stackId="a" fill={P.a1}><LabelList dataKey="A1" position="center" formatter={v=>v>0?(outletChartMode===0?fmtK(v):v.toFixed(0)+"%"):""} style={{fill:"#fff",fontSize:9,fontWeight:800,paintOrder:"stroke",stroke:"rgba(0,0,0,0.55)",strokeWidth:3}}/></Bar>
+                  <Bar dataKey="A2" name="A2 Anomaly"   stackId="a" fill={P.a2}><LabelList dataKey="A2" position="center" formatter={v=>v>0?(outletChartMode===0?fmtK(v):v.toFixed(0)+"%"):""} style={{fill:"#fff",fontSize:9,fontWeight:800,paintOrder:"stroke",stroke:"rgba(0,0,0,0.55)",strokeWidth:3}}/></Bar>
+                  <Bar dataKey="A3" name="A3 Incomplete" stackId="a" fill={P.a3} radius={[4,4,0,0]}><LabelList dataKey="A3" position="center" formatter={v=>v>0?(outletChartMode===0?fmtK(v):v.toFixed(0)+"%"):""} style={{fill:"#fff",fontSize:9,fontWeight:800,paintOrder:"stroke",stroke:"rgba(0,0,0,0.55)",strokeWidth:3}}/></Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
             {/* ── Outlet per Region ── */}
             {regionCodes.length>0&&(
-            <div style={card()}>
-              <div style={{fontWeight:700,marginBottom:6}}>🗺 Perbandingan per Region</div>
+            <div style={{marginBottom:28}}>
+              <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:6}}>Perbandingan per Region</div>
               {(()=>{const rows=regionCodes.map(code=>{const ra=regionAgg[code]||{actC:{},total:0};return{code,a1p:pct((ra.actC||{})["A1 - NORMAL"],ra.total)};});
                 const best=[...rows].sort((a,b)=>b.a1p-a.a1p)[0], worst=[...rows].sort((a,b)=>a.a1p-b.a1p)[0];
                 return best&&worst&&rows.length>1?(
-                <div style={{fontSize:11,color:t.text,marginBottom:12,background:"#f59e0b15",border:"1px solid #f59e0b30",borderRadius:8,padding:"7px 10px",lineHeight:1.6}}>
+                <div style={{fontSize:11,color:t.muted,marginBottom:14}}>
                   💡 Region <b style={{color:t.text}}>{best.code}</b> paling sehat (<span style={{color:P.a1,fontWeight:700}}>{best.a1p}% A1</span>), <b style={{color:t.text}}>{worst.code}</b> paling perlu perhatian (<span style={{color:P.a1,fontWeight:700}}>{worst.a1p}% A1</span>).
                 </div>):null;})()}
 
-              {/* Stacked Bar Chart per Region */}
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={regionCodes.map((code,i)=>{
                   const ra=regionAgg[code]||{actC:{},total:0};
@@ -2883,114 +2934,90 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                   <Tooltip contentStyle={{background:t.card,border:`1px solid ${t.border}`,borderRadius:8,fontSize:11}}
                     formatter={(v,n,p)=>[v.toLocaleString()+" ("+pctS(v,p.payload.total)+")",n]}/>
                   <Legend iconSize={8} wrapperStyle={{fontSize:10}}/>
-                  <Bar dataKey="A1" name="A1 Normal" fill={P.a1} stackId="a"><LabelList dataKey="A1" position="center" formatter={v=>v>0?fmtK(v):""} style={{fill:"#06210f",fontSize:9,fontWeight:800}}/></Bar>
-                  <Bar dataKey="A2" name="A2 Anomaly" fill={P.a2} stackId="a"><LabelList dataKey="A2" position="center" formatter={v=>v>0?fmtK(v):""} style={{fill:"#3a2400",fontSize:9,fontWeight:800}}/></Bar>
-                  <Bar dataKey="A3" name="A3 Incomplete" fill={P.a3} stackId="a" radius={[3,3,0,0]}><LabelList dataKey="A3" position="center" formatter={v=>v>0?fmtK(v):""} style={{fill:"#fff",fontSize:9,fontWeight:800}}/></Bar>
+                  <Bar dataKey="A1" name="A1 Normal" fill={P.a1} stackId="a"><LabelList dataKey="A1" position="center" formatter={v=>v>0?fmtK(v):""} style={{fill:"#fff",fontSize:9,fontWeight:800,paintOrder:"stroke",stroke:"rgba(0,0,0,0.55)",strokeWidth:3}}/></Bar>
+                  <Bar dataKey="A2" name="A2 Anomaly" fill={P.a2} stackId="a"><LabelList dataKey="A2" position="center" formatter={v=>v>0?fmtK(v):""} style={{fill:"#fff",fontSize:9,fontWeight:800,paintOrder:"stroke",stroke:"rgba(0,0,0,0.55)",strokeWidth:3}}/></Bar>
+                  <Bar dataKey="A3" name="A3 Incomplete" fill={P.a3} stackId="a" radius={[3,3,0,0]}><LabelList dataKey="A3" position="center" formatter={v=>v>0?fmtK(v):""} style={{fill:"#fff",fontSize:9,fontWeight:800,paintOrder:"stroke",stroke:"rgba(0,0,0,0.55)",strokeWidth:3}}/></Bar>
                 </BarChart>
               </ResponsiveContainer>
-              <div style={{fontSize:10,color:"#f59e0b",marginBottom:12,textAlign:"center",background:"#f59e0b12",borderRadius:6,padding:"4px 0"}}>💡 Klik bar untuk drill-down ke region tersebut</div>
+              <div style={{fontSize:10,color:t.muted,marginTop:8,marginBottom:16,textAlign:"center"}}>💡 Klik bar untuk drill-down ke region tersebut</div>
 
-              {/* Table */}
-              <div style={{overflowX:"auto",scrollbarWidth:"none",msOverflowStyle:"none"}}>
-                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                  <thead><tr style={{background:t.cardAlt}}>
-                    {["Region","Total","A1","A2","A3","A1%","A2%","A3%"].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontSize:11,fontWeight:700,color:t.muted,borderBottom:`1px solid ${t.border}`,whiteSpace:"nowrap"}}>{h}</th>)}
-                  </tr></thead>
-                  <tbody>
-                    {regionCodes.map((code,i)=>{
-                      const ra=regionAgg[code]||{actC:{},total:0};
-                      const rA1=(ra.actC||{})["A1 - NORMAL"]||0;
-                      const rA2=(ra.actC||{})["A2 - ANOMALY"]||0;
-                      const rA3=(ra.actC||{})["A3 - INCOMPLETE"]||0;
-                      const rc=P.regions[i%P.regions.length];
-                      const a1pv=pct(rA1,ra.total);
-                      const healthTint=a1pv>=70?P.a1:a1pv>=40?P.a2:P.a3;
-                      return(
-                        <tr key={code} style={{borderBottom:`1px solid ${t.border}`,background:i%2===0?healthTint+"08":healthTint+"10"}}>
-                          <td style={{padding:"8px 12px",display:"flex",alignItems:"center",gap:6}}>
-                            <span style={{background:rc+"22",color:rc,padding:"1px 8px",borderRadius:999,fontSize:10,fontWeight:700}}>{code}</span>
-                            <span style={{fontSize:11,color:t.text,fontWeight:600}}>{regionFullName(code)}</span>
-                          </td>
-                          <td style={{padding:"8px 12px",fontWeight:700}}>{(ra.total||0).toLocaleString()}</td>
-                          <td style={{padding:"8px 12px",color:P.a1,fontWeight:700}}>{rA1.toLocaleString()}</td>
-                          <td style={{padding:"8px 12px",color:P.a2,fontWeight:700}}>{rA2.toLocaleString()}</td>
-                          <td style={{padding:"8px 12px",color:P.a3,fontWeight:700}}>{rA3.toLocaleString()}</td>
-                          <td style={{padding:"8px 12px",color:P.a1,fontWeight:800}}>{pctS(rA1,ra.total)}</td>
-                          <td style={{padding:"8px 12px",color:pct(rA2,ra.total)>=30?P.a2:t.muted,fontWeight:600}}>{pctS(rA2,ra.total)}</td>
-                          <td style={{padding:"8px 12px",color:t.muted,fontWeight:600}}>{pctS(rA3,ra.total)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              {regionCodes.map((code,i)=>{
+                const ra=regionAgg[code]||{actC:{},total:0};
+                const rA1=(ra.actC||{})["A1 - NORMAL"]||0;
+                const rA2=(ra.actC||{})["A2 - ANOMALY"]||0;
+                const rA3=(ra.actC||{})["A3 - INCOMPLETE"]||0;
+                return(
+                  <div key={code} onClick={()=>{setSelRegion(code);setSelCluster(null);setTab("overview");}} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:i<regionCodes.length-1?`1px solid ${t.border}`:"none",cursor:"pointer"}}>
+                    <div style={{width:36,fontSize:10,fontWeight:800,color:t.muted,flexShrink:0}}>{code}</div>
+                    <div style={{flex:1,minWidth:0,fontSize:12,fontWeight:600,color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{regionFullName(code)}</div>
+                    <div style={{fontSize:11,color:t.muted,width:56,textAlign:"right",flexShrink:0}}>{fmtK(ra.total||0)}</div>
+                    <div style={{fontSize:12,fontWeight:800,color:P.a1,width:52,textAlign:"right",flexShrink:0}}>{pctS(rA1,ra.total)}</div>
+                    <div style={{fontSize:11,fontWeight:700,color:pct(rA2,ra.total)>=30?P.a2:t.muted,width:48,textAlign:"right",flexShrink:0}}>{pctS(rA2,ra.total)}</div>
+                    <div style={{fontSize:11,fontWeight:700,color:t.muted,width:48,textAlign:"right",flexShrink:0}}>{pctS(rA3,ra.total)}</div>
+                  </div>
+                );
+              })}
             </div>
             )}
 
-            <div style={{...card(),gridColumn:"1/-1"}}>
-              <div style={{fontWeight:700,marginBottom:6}}>Detail per Outlet Type</div>
+            <div style={{marginBottom:28}}>
+              <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:6}}>Detail per Outlet Type</div>
               {(()=>{const worst=[...view.outletData].sort((a,b)=>pct(a.A1,a.total)-pct(b.A1,b.total))[0];const best=[...view.outletData].sort((a,b)=>pct(b.A1,b.total)-pct(a.A1,a.total))[0];
                 return worst&&best?(
-                <div style={{fontSize:11,color:t.text,marginBottom:12,background:"#f59e0b15",border:"1px solid #f59e0b30",borderRadius:8,padding:"7px 10px",lineHeight:1.6}}>
+                <div style={{fontSize:11,color:t.muted,marginBottom:12}}>
                   💡 <b style={{color:t.text}}>{best.type.replace("RO ","")}</b> paling sehat (<span style={{color:P.a1,fontWeight:700}}>{pctS(best.A1,best.total)} A1</span>), <b style={{color:t.text}}>{worst.type.replace("RO ","")}</b> paling perlu perhatian (<span style={{color:P.a1,fontWeight:700}}>{pctS(worst.A1,worst.total)} A1</span>).
                 </div>):null;})()}
               <div style={{overflowX:"auto",scrollbarWidth:"none",msOverflowStyle:"none"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
-                  <thead><tr style={{background:t.cardAlt}}>
-                    {["Outlet Type","Total","A1","A2","A3","Inv","Dist","A1%","A2%"].map(h=><th key={h} style={{padding:isMobile?"6px 8px":"9px 12px",textAlign:"left",fontSize:11,fontWeight:700,color:t.muted,whiteSpace:"nowrap",borderBottom:`1px solid ${t.border}`}}>{h}</th>)}
+                  <thead><tr>
+                    {["Outlet Type","Total","A1","A2","A3","Inv","Dist","A1%","A2%"].map(h=><th key={h} style={{padding:isMobile?"0 8px 8px 0":"0 12px 8px 0",textAlign:"left",fontSize:10,fontWeight:700,color:t.muted,textTransform:"uppercase",letterSpacing:"0.04em",whiteSpace:"nowrap",borderBottom:`1px solid ${t.border}`}}>{h}</th>)}
                   </tr></thead>
                   <tbody>
-                    {view.outletData.map((d,i)=>{
-                      const a1p=pct(d.A1,d.total);
-                      const rowTint=a1p>=70?P.a1:a1p>=40?P.a2:P.a3;
-                      return(
-                      <tr key={i} style={{borderBottom:`1px solid ${t.border}`,background:i%2===0?rowTint+"08":rowTint+"10"}}>
-                        <td style={{padding:isMobile?"6px 8px":"9px 12px",fontWeight:700,color:P.accent,cursor:"pointer",whiteSpace:"nowrap"}} onClick={()=>openOutletDrill(d.type)}>{d.type}</td>
-                        <td style={{padding:isMobile?"6px 8px":"9px 12px",fontWeight:700}}>{d.total.toLocaleString()}</td>
-                        <td style={{padding:"9px 12px"}}>
-                          {(d.A1||0)>0?<span onClick={()=>setOutletTypeDrill({type:d.type,status:"A1 - NORMAL",label:"A1 Normal"})} style={{color:P.a1,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.a1}}>{(d.A1||0).toLocaleString()}</span>:<span style={{color:t.muted}}>0</span>}
+                    {view.outletData.map((d,i)=>(
+                      <tr key={i} style={{borderBottom:`1px solid ${t.border}`}}>
+                        <td style={{padding:isMobile?"8px 8px 8px 0":"9px 12px 9px 0",fontWeight:700,color:t.text,cursor:"pointer",whiteSpace:"nowrap"}} onClick={()=>openOutletDrill(d.type)}>{d.type}</td>
+                        <td style={{padding:"9px 12px 9px 0",fontWeight:700,color:t.muted}}>{d.total.toLocaleString()}</td>
+                        <td style={{padding:"9px 12px 9px 0"}}>
+                          {(d.A1||0)>0?<span onClick={()=>setOutletTypeDrill({type:d.type,status:"A1 - NORMAL",label:"A1 Normal"})} style={{color:P.a1,fontWeight:700,cursor:"pointer"}}>{(d.A1||0).toLocaleString()}</span>:<span style={{color:t.muted}}>0</span>}
                         </td>
-                        <td style={{padding:"9px 12px"}}>
-                          {(d.A2||0)>0?<span onClick={()=>setOutletTypeDrill({type:d.type,status:"A2 - ANOMALY",label:"A2 Anomaly"})} style={{color:P.a2,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.a2}}>{(d.A2||0).toLocaleString()}</span>:<span style={{color:t.muted}}>0</span>}
+                        <td style={{padding:"9px 12px 9px 0"}}>
+                          {(d.A2||0)>0?<span onClick={()=>setOutletTypeDrill({type:d.type,status:"A2 - ANOMALY",label:"A2 Anomaly"})} style={{color:P.a2,fontWeight:700,cursor:"pointer"}}>{(d.A2||0).toLocaleString()}</span>:<span style={{color:t.muted}}>0</span>}
                         </td>
-                        <td style={{padding:"9px 12px"}}>
-                          {(d.A3||0)>0?<span onClick={()=>setOutletTypeDrill({type:d.type,status:"A3 - INCOMPLETE",label:"A3 Incomplete"})} style={{color:P.a3,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.a3}}>{(d.A3||0).toLocaleString()}</span>:<span style={{color:t.muted}}>0</span>}
+                        <td style={{padding:"9px 12px 9px 0"}}>
+                          {(d.A3||0)>0?<span onClick={()=>setOutletTypeDrill({type:d.type,status:"A3 - INCOMPLETE",label:"A3 Incomplete"})} style={{color:P.a3,fontWeight:700,cursor:"pointer"}}>{(d.A3||0).toLocaleString()}</span>:<span style={{color:t.muted}}>0</span>}
                         </td>
-                        <td style={{padding:"9px 12px"}}>
-                          {(d.INVESTIGATE||0)>0?<span onClick={()=>setOutletTypeDrill({type:d.type,status:"INVESTIGATE",label:"Investigate"})} style={{color:t.muted,fontWeight:600,cursor:"pointer",borderBottom:"1px dotted "+t.muted}}>{(d.INVESTIGATE||0).toLocaleString()}</span>:<span style={{color:t.muted}}>0</span>}
+                        <td style={{padding:"9px 12px 9px 0"}}>
+                          {(d.INVESTIGATE||0)>0?<span onClick={()=>setOutletTypeDrill({type:d.type,status:"INVESTIGATE",label:"Investigate"})} style={{color:t.muted,fontWeight:600,cursor:"pointer"}}>{(d.INVESTIGATE||0).toLocaleString()}</span>:<span style={{color:t.muted}}>0</span>}
                         </td>
-                        <td style={{padding:"9px 12px",minWidth:90}}><Bar3 A1={d.A1||0} A2={d.A2||0} A3={d.A3||0} total={d.total}/></td>
-                        <td style={{padding:"9px 12px",color:P.a1,fontWeight:800}}>{pctS(d.A1,d.total)}</td>
-                        <td style={{padding:"9px 12px",color:pct(d.A2,d.total)>=40?P.investigate:t.muted,fontWeight:600}}>{pctS(d.A2,d.total)}</td>
-                        <td style={{padding:"9px 12px",color:t.muted,fontWeight:600}}>{pctS(d.A3,d.total)}</td>
+                        <td style={{padding:"9px 12px 9px 0",minWidth:90}}><Bar3 A1={d.A1||0} A2={d.A2||0} A3={d.A3||0} total={d.total}/></td>
+                        <td style={{padding:"9px 12px 9px 0",color:P.a1,fontWeight:800}}>{pctS(d.A1,d.total)}</td>
+                        <td style={{padding:"9px 0",color:pct(d.A2,d.total)>=40?P.investigate:t.muted,fontWeight:600}}>{pctS(d.A2,d.total)}</td>
                       </tr>
-                    );})}
+                    ))}
                   </tbody>
                 </table>
               </div>
             </div>
 
-
             {/* ── Census vs Non-Census ── */}
             {(view.censusData||[]).length>0&&(
-            <div style={{...card(),gridColumn:"1/-1"}}>
-              <div style={{fontWeight:700,marginBottom:14}}>🏘 Census vs Non-Census</div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:14}}>
+            <div>
+              <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:14}}>Census vs Non-Census</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:20}}>
                 {(view.censusData||[]).map((d,i)=>{
-                  const col=i===0?"#22c55e":"#6366f1";
+                  const col=i===0?P.a1:"#6366f1";
                   return(
-                  <div key={i} style={{background:t.cardAlt,border:`1px solid ${t.border}`,borderRadius:12,padding:16,borderLeft:`4px solid ${col}`}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-                      <div style={{fontWeight:700,fontSize:14,color:col}}>{d.type}</div>
-                      <div style={{fontSize:13,fontWeight:800}}>{d.total.toLocaleString()}</div>
+                  <div key={i}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                      <div style={{fontWeight:700,fontSize:13,color:col}}>{d.type}</div>
+                      <div style={{fontSize:13,fontWeight:800,color:t.text}}>{d.total.toLocaleString()}</div>
                     </div>
                     <Bar3 A1={d.A1||0} A2={d.A2||0} A3={d.A3||0} total={d.total}/>
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginTop:10}}>
+                    <div style={{display:"flex",gap:16,marginTop:10}}>
                       {[{l:"A1 Normal",v:d.A1||0,c:P.a1},{l:"A2 Anomaly",v:d.A2||0,c:P.a2},{l:"A3 Incomplete",v:d.A3||0,c:P.a3}].map((s,j)=>(
-                        <div key={j} style={{textAlign:"center",padding:"8px 4px",background:t.card,borderRadius:8}}>
-                          <div style={{fontSize:15,fontWeight:800,color:s.c}}>{s.v.toLocaleString()}</div>
-                          <div style={{fontSize:11,fontWeight:600,color:s.c}}>{pctS(s.v,d.total)}</div>
-                          <div style={{fontSize:10,color:t.muted,marginTop:1}}>{s.l}</div>
+                        <div key={j}>
+                          <div style={{fontSize:13,fontWeight:800,color:s.c}}>{pctS(s.v,d.total)}</div>
+                          <div style={{fontSize:9,color:t.muted,marginTop:1}}>{s.l}</div>
                         </div>
                       ))}
                     </div>
@@ -3002,105 +3029,53 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
           </div>
         )}
         {tab==="detail"&&(
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:16}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:"24px 40px"}}>
             {[
               {title:"Duration Status",icon:"⏱",data:[{l:"Normal",c:P.normal,v:dc["NORMAL"]||0,dk:"DUR_NORMAL"},{l:"Short",c:P.short,v:dc["SHORT"]||0,dk:"DUR_SHORT"},{l:"Long",c:P.long,v:dc["LONG"]||0,dk:"DUR_LONG"}]},
               {title:"Distance Status",icon:"📍",data:[{l:"Near",c:P.near,v:di["NEAR"]||0,dk:"DIS_NEAR"},{l:"Mid",c:P.mid,v:di["MID"]||0,dk:"DIS_MID"},{l:"Far",c:P.far,v:di["FAR"]||0,dk:"DIS_FAR"},{l:"Incomplete",c:P.a3,v:di["INCOMPLETE"]||0,dk:"DIS_INC"}]},
               {title:"Location Status",icon:"📌",data:[{l:"Match",c:P.match,v:lc["MATCH"]||0,dk:"LOC_MATCH"},{l:"Not Match",c:P.notmatch,v:lc["NOT MATCH"]||0,dk:"LOC_NOTMATCH"},{l:"Incomplete",c:P.a3,v:lc["INCOMPLETE"]||0,dk:"LOC_INC"}]},
+              {title:"In Range Status",icon:"🎯",data:[{l:"In Range",c:P.a1,v:(view.inRangeC||{})["YES"]||0,dk:"IR_YES"},{l:"Out of Range",c:P.investigate,v:(view.inRangeC||{})["NO"]||0,dk:"IR_NO"}]},
             ].map((sec,si)=>{
               const hasData = sec.data.some(d=>d.v>0);
+              const secTotal = sec.data.reduce((s,d)=>s+d.v,0)||1;
               return(
-              <div key={si} style={card()}>
-                <div style={{fontWeight:700,marginBottom:12}}>{sec.icon} {sec.title}</div>
+              <div key={si}>
+                <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:10}}>{sec.icon} {sec.title}</div>
                 {hasData?(
-                  <>
-                  <ResponsiveContainer width="100%" height={150}>
-                    <PieChart>
-                      <Pie data={sec.data.map(d=>({name:d.l,value:d.v,color:d.c,dk:d.dk}))} cx="50%" cy="50%" outerRadius={65} innerRadius={26} dataKey="value" strokeWidth={0}
-                        onClick={d=>{if(d&&d.dk)openDrill(sec.title+" · "+d.name, d.color||d.fill||"#888", d.dk);}}>
-                        {sec.data.map((d,i)=><Cell key={i} fill={d.c} style={{cursor:d.dk?"pointer":"default"}}/>)}
-                      </Pie>
-                      <Tooltip content={mkTip}/>
-                    </PieChart>
-                  </ResponsiveContainer>
-                  {sec.data.map((d,i)=>(
+                  sec.data.map((d,i)=>(
                     <div key={i} onClick={()=>d.dk&&openDrill(sec.title+" · "+d.l,d.c,d.dk)}
-                      style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",background:t.cardAlt,borderRadius:8,marginBottom:5,cursor:d.dk?"pointer":"default",transition:"opacity 0.15s"}}
-                      onMouseEnter={e=>{if(d.dk)e.currentTarget.style.opacity="0.75";}}
-                      onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                      <div style={{width:8,height:8,borderRadius:2,background:d.c,flexShrink:0}}/>
-                      <span style={{fontSize:11,color:t.muted,flex:1}}>{d.l}</span>
-                      <span style={{fontSize:12,fontWeight:700,color:d.c}}>{d.v.toLocaleString()}</span>
-                      <span style={{fontSize:10,color:t.muted,minWidth:40,textAlign:"right"}}>{pctS(d.v,T)}</span>
-                      {d.dk&&<span style={{fontSize:10,color:t.muted}}>›</span>}
+                      style={{padding:"8px 0",borderBottom:i<sec.data.length-1?`1px solid ${t.border}`:"none",cursor:d.dk?"pointer":"default"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
+                        <div style={{width:7,height:7,borderRadius:"50%",background:d.c,flexShrink:0}}/>
+                        <span style={{fontSize:12,color:t.text,fontWeight:600,flex:1}}>{d.l}</span>
+                        <span style={{fontSize:10,color:t.muted}}>{d.v.toLocaleString()}</span>
+                        <span style={{fontSize:12,fontWeight:800,color:d.c,minWidth:40,textAlign:"right"}}>{pctS(d.v,secTotal)}</span>
+                      </div>
+                      <div style={{height:3,borderRadius:99,background:t.border}}>
+                        <div style={{width:pctS(d.v,secTotal),height:"100%",borderRadius:99,background:d.c}}/>
+                      </div>
                     </div>
-                  ))}
-                  </>
+                  ))
                 ):(
-                  <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:180,color:t.muted,fontSize:12,gap:8}}>
-                    <span style={{fontSize:32,opacity:0.3}}>📭</span>
+                  <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:140,color:t.muted,fontSize:12,gap:6}}>
+                    <span style={{fontSize:28,opacity:0.3}}>📭</span>
                     <span>Data tidak tersedia</span>
                     <span style={{fontSize:10,opacity:0.6}}>Kolom tidak ada di file ini</span>
                   </div>
                 )}
               </div>
             );})}
-            <div style={card()}>
-              <div style={{fontWeight:700,marginBottom:14}}>📍 In Range Status</div>
-              {(()=>{
-                const irC=view.inRangeC||{};
-                const irYes=irC["YES"]||0, irNo=irC["NO"]||0, irTotal=irYes+irNo;
-                if(!irTotal) return <div style={{textAlign:"center",padding:20,color:t.muted,fontSize:12}}>Data tidak tersedia</div>;
-                return(
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:16}}>
-                    <div>
-                      <ResponsiveContainer width="100%" height={160}>
-                        <PieChart>
-                          <Pie data={[{name:"In Range",value:irYes,color:P.a1},{name:"Out of Range",value:irNo,color:P.investigate}]}
-                            cx="50%" cy="50%" outerRadius={68} innerRadius={28} dataKey="value" strokeWidth={0}
-                            onClick={d=>openDrill(d.name,d.color,d.name==="In Range"?"IR_YES":"IR_NO")}>
-                            {[P.a1,P.investigate].map((col,i)=><Cell key={i} fill={col} style={{cursor:"pointer"}}/>)}
-                          </Pie>
-                          <Tooltip content={mkTip}/>
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <div style={{display:"flex",flexDirection:"column",gap:10,justifyContent:"center"}}>
-                      {[{l:"✓ In Range",v:irYes,c:P.a1,dk:"IR_YES"},{l:"✗ Out of Range",v:irNo,c:P.investigate,dk:"IR_NO"}].map((d,i)=>(
-                        <div key={i} onClick={()=>openDrill(d.l,d.c,d.dk)} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",background:t.cardAlt,borderRadius:10,cursor:"pointer",border:`1px solid ${t.border}`,transition:"opacity 0.15s"}}
-                          onMouseEnter={e=>e.currentTarget.style.opacity="0.75"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                          <div style={{width:12,height:12,borderRadius:3,background:d.c,flexShrink:0}}/>
-                          <div style={{flex:1}}>
-                            <div style={{fontWeight:700,fontSize:13,color:d.c}}>{d.l}</div>
-                            <div style={{fontSize:11,color:t.muted,marginTop:1}}>{d.v.toLocaleString()} aktivitas</div>
-                          </div>
-                          <div style={{textAlign:"right"}}>
-                            <div style={{fontSize:18,fontWeight:800,color:d.c}}>{pctS(d.v,irTotal)}</div>
-                            <div style={{fontSize:10,color:t.muted}}>Klik untuk detail ›</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
 
-            <div style={{...card(),gridColumn:"1/-1"}}>
-              <div style={{fontWeight:700,marginBottom:14}}>🔍 Visit Status Breakdown</div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:10}}>
+            <div style={{gridColumn:"1/-1",marginTop:8}}>
+              <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:10}}>🔍 Visit Status Breakdown</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:16}}>
                 {VIS.map((s,i)=>(
-                  <div key={i} onClick={()=>openDrill(s.label,s.color,s.key)} style={{background:t.cardAlt,border:`1px solid ${t.border}`,borderRadius:10,padding:"14px 16px",borderTop:`3px solid ${s.color}`,cursor:"pointer",transition:"transform 0.15s,box-shadow 0.15s"}}
-                    onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow="0 6px 20px rgba(0,0,0,0.3)";}}
-                    onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="none";}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                      <div style={{fontSize:22,fontWeight:800,color:s.color}}>{(vc[s.key]||0).toLocaleString()}</div>
-                      <span style={{fontSize:10,color:t.muted,background:t.card,padding:"2px 6px",borderRadius:6}}>Klik ›</span>
-                    </div>
-                    <div style={{fontSize:11,color:t.muted,marginTop:2}}>{s.label}</div>
-                    <div style={{fontSize:17,fontWeight:700,color:s.color,marginTop:4}}>{pctS(vc[s.key],T)}</div>
-                    <div style={{height:4,borderRadius:3,background:t.border,marginTop:8}}>
-                      <div style={{width:pct(vc[s.key],T)+"%",height:"100%",borderRadius:3,background:s.color}}/>
+                  <div key={i} onClick={()=>openDrill(s.label,s.color,s.key)} style={{cursor:"pointer"}}>
+                    <div style={{fontSize:11,color:t.muted}}>{s.label}</div>
+                    <div style={{fontSize:20,fontWeight:800,color:s.color,marginTop:2}}>{pctS(vc[s.key],T)}</div>
+                    <div style={{fontSize:10,color:t.muted,marginTop:1}}>{(vc[s.key]||0).toLocaleString()} aktivitas</div>
+                    <div style={{height:3,borderRadius:99,background:t.border,marginTop:6}}>
+                      <div style={{width:pct(vc[s.key],T)+"%",height:"100%",borderRadius:99,background:s.color}}/>
                     </div>
                   </div>
                 ))}
@@ -3113,129 +3088,112 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
         {/* ════ CANVASSER ════ */}
         {tab==="canvasser"&&(()=>{
           return(<div>
-            <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap",alignItems:"center"}}>
-              <span style={{fontSize:11,color:t.muted,fontWeight:600}}>Sort:</span>
+            <div style={{display:"flex",gap:16,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>
+              <span style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase"}}>Sort:</span>
               {[["Jumlah A2","A2"],["% A2","a2p"],["Jumlah A3","A3"],["% A3","a3p"],["Jumlah Inv","INVESTIGATE"],["Total","total"]].map(([label,key])=>(
                 <button key={key} onClick={()=>handleSort(key)}
-                  style={{background:sk===key?P.accent:t.cardAlt,color:sk===key?"#fff":t.muted,border:"1px solid "+t.border,borderRadius:6,padding:"4px 10px",fontSize:10,fontWeight:700,cursor:"pointer"}}>
+                  style={{background:"none",border:"none",color:sk===key?P.accent:t.muted,padding:0,fontSize:11,fontWeight:700,cursor:"pointer"}}>
                   {label}{sk===key?(sd==="desc"?" ↓":" ↑"):""}
                 </button>
               ))}
             </div>
-            <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
+            <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
               <input placeholder="🔍 Cari nama / cluster..." value={search} onChange={e=>setSearch(e.target.value)}
                 style={{background:t.inputBg,border:`1px solid ${t.border}`,color:t.text,borderRadius:8,padding:"8px 14px",fontSize:12,outline:"none",width:210}}/>
               {[
-                {id:"all",label:"Semua"},{id:"high_a2",label:"⚠️ A2 ≥30%"},
-                {id:"high_a3",label:"🔵 A3 ≥20%"},{id:"top_a1",label:"✅ A1 ≥80%"},{id:"inv",label:"🔍 Inv ≥5%"},
+                {id:"all",label:"Semua"},{id:"high_a2",label:"A2 ≥30%"},
+                {id:"high_a3",label:"A3 ≥20%"},{id:"top_a1",label:"A1 ≥80%"},{id:"inv",label:"Inv ≥5%"},
               ].map(f=>(
-                <button key={f.id} onClick={()=>setFq(f.id)} style={{padding:"7px 14px",borderRadius:8,border:`1px solid ${fq===f.id?"transparent":t.border}`,cursor:"pointer",fontSize:11,fontWeight:700,background:fq===f.id?"linear-gradient(135deg,#1d5fc0,#2d8ef5)":t.card,color:fq===f.id?"#fff":t.muted}}>{f.label}</button>
+                <button key={f.id} onClick={()=>setFq(f.id)} style={{padding:"6px 12px",borderRadius:8,border:`1px solid ${fq===f.id?P.accent:t.border}`,cursor:"pointer",fontSize:11,fontWeight:700,background:fq===f.id?P.accent+"18":"none",color:fq===f.id?P.accent:t.muted}}>{f.label}</button>
               ))}
               <span style={{marginLeft:"auto",fontSize:11,color:t.muted}}>{sorted.length} canvasser</span>
             </div>
-            <div style={{...card({padding:0}),overflow:"hidden"}}>
-              <div style={{overflowX:"auto",scrollbarWidth:"none",msOverflowStyle:"none"}}>
-                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
-                  <thead><tr style={{background:t.cardAlt}}>
-                    {[["#",""],["Region","region"],["Cluster","cluster"],["Nama","name"],["Total","total"],
-                      ["A1","A1"],["A2","A2"],["A3","A3"],["Inv","INVESTIGATE"],
-                      ["A1%","a1p"],["A2%","a2p"],["A3%","a3p"],["Inv%","invP"],["Avg Dur","avgDur"],["Avg Dist","avgDis"]
-                    ].map(([label,key])=>(
-                      <th key={label} onClick={()=>key&&handleSort(key)} style={ths(key)}>
-                        {label} {key&&sk===key?(sd==="desc"?"↓":"↑"):""}
-                      </th>
-                    ))}
-                  </tr></thead>
-                  <tbody>
-                    {sorted.slice(cPg*CPG,(cPg+1)*CPG).map((c,i)=>{
-                      const healthTint=c.a1p>=70?P.a1:c.a1p>=40?P.a2:P.a3;
-                      return(
-                      <tr key={c.name+c.cluster} style={{borderBottom:`1px solid ${t.border}`,background:i%2===0?healthTint+"08":healthTint+"12",transition:"background 0.1s"}}
-                        onMouseEnter={e=>e.currentTarget.style.background=t.rowHover}
-                        onMouseLeave={e=>e.currentTarget.style.background=i%2===0?healthTint+"08":healthTint+"12"}>
-                        <td style={{padding:"7px 10px",color:t.muted,fontSize:10}}>{i+1}</td>
-                        <td style={{padding:"7px 10px"}}>
-                          <span style={{background:P.accent+"20",color:P.accent,padding:"2px 8px",borderRadius:6,fontSize:10,fontWeight:700}}>{c.region||"–"}</span>
-                        </td>
-                        <td style={{padding:"7px 10px",color:t.muted,fontSize:11,whiteSpace:"nowrap",maxWidth:140,overflow:"hidden",textOverflow:"ellipsis"}}>{c.cluster||"–"}</td>
-                        <td style={{padding:"7px 10px",fontWeight:600,whiteSpace:"nowrap"}}>{c.name}</td>
-                        <td style={{padding:"7px 10px",fontWeight:700}}>{c.total.toLocaleString()}</td>
-                        <td style={{padding:"7px 10px"}}>
-                          {c.A1>0
-                            ?<span onClick={()=>{const rows=getCanvasserRows(c.name,c.cluster,"A1");setCanvDetail({canvasser:c,drillLabel:"A1 - Normal",color:P.a1,rows,drillKey:"A1",sessionKey:Date.now()});}} style={{color:P.a1,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.a1}}>{c.A1.toLocaleString()}</span>
-                            :<span style={{color:t.muted}}>0</span>}
-                        </td>
-                        <td style={{padding:"7px 10px"}}>
-                          {c.A2>0
-                            ?<span onClick={()=>{const rows=getCanvasserRows(c.name,c.cluster,"A2");setCanvDetail({canvasser:c,drillLabel:"A2 - Anomaly",color:P.a2,rows,drillKey:"A2",sessionKey:Date.now()});}} style={{color:P.a2,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.a2}}>{c.A2.toLocaleString()}</span>
-                            :<span style={{color:t.muted}}>0</span>}
-                        </td>
-                        <td style={{padding:"7px 10px"}}>
-                          {c.A3>0
-                            ?<span onClick={()=>{const rows=getCanvasserRows(c.name,c.cluster,"A3");setCanvDetail({canvasser:c,drillLabel:"A3 - Incomplete",color:P.a3,rows,drillKey:"A3",sessionKey:Date.now()});}} style={{color:P.a3,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.a3}}>{c.A3.toLocaleString()}</span>
-                            :<span style={{color:t.muted}}>0</span>}
-                        </td>
-                        <td style={{padding:"7px 10px",color:c.INVESTIGATE>0?P.investigate:t.muted,fontWeight:c.INVESTIGATE>0?700:400}}>{c.INVESTIGATE}</td>
-                        <td style={{padding:"7px 10px"}}>
-                          <div style={{display:"flex",alignItems:"center",gap:4}}>
-                            <div style={{width:34,height:4,borderRadius:3,background:t.border,flexShrink:0}}>
-                              <div style={{width:c.a1p+"%",height:"100%",borderRadius:3,background:c.a1p>=70?P.a1:P.a2}}/>
-                            </div>
-                            <span style={{color:c.a1p>=70?P.a1:P.a2,fontWeight:700,fontSize:11}}>{c.a1p.toFixed(1)}%</span>
-                          </div>
-                        </td>
-                        <td style={{padding:"7px 10px",color:c.a2p>=40?P.investigate:P.a2}}>{c.a2p.toFixed(1)}%</td>
-                        <td style={{padding:"7px 10px",color:P.a3}}>{c.a3p.toFixed(1)}%</td>
-                        <td style={{padding:"7px 10px",color:c.invP>=5?P.investigate:t.muted,fontWeight:c.invP>=5?700:400}}>{c.invP.toFixed(1)}%</td>
-                        <td style={{padding:"7px 10px",color:c.avgDur!=null&&c.avgDur<2?P.short:t.muted}}>{c.avgDur!=null?c.avgDur.toFixed(1)+" m":"—"}</td>
-                        <td style={{padding:"7px 10px",color:(c.avgDis||0)>500?P.investigate:(c.avgDis||0)>100?P.a2:t.muted}}>{c.avgDis!=null?c.avgDis.toFixed(0)+" m":"—"}</td>
-                      </tr>
-                    );})}
-                  </tbody>
-                </table>
-              </div>
-              <Pagination page={cPg} setPage={setCPg} total={sorted.length} pageSize={CPG} t={t}/>
+            <div style={{overflowX:"auto",scrollbarWidth:"none",msOverflowStyle:"none"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
+                <thead><tr>
+                  {[["#",""],["Region","region"],["Cluster","cluster"],["Nama","name"],["Total","total"],
+                    ["A1","A1"],["A2","A2"],["A3","A3"],["Inv","INVESTIGATE"],
+                    ["A1%","a1p"],["A2%","a2p"],["A3%","a3p"],["Inv%","invP"],["Avg Dur","avgDur"],["Avg Dist","avgDis"]
+                  ].map(([label,key])=>(
+                    <th key={label} onClick={()=>key&&handleSort(key)} style={{...ths(key),borderBottom:`1px solid ${t.border}`}}>
+                      {label} {key&&sk===key?(sd==="desc"?"↓":"↑"):""}
+                    </th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {sorted.slice(cPg*CPG,(cPg+1)*CPG).map((c,i)=>{
+                    return(
+                    <tr key={c.name+c.cluster} style={{borderBottom:`1px solid ${t.border}`}}>
+                      <td style={{padding:"9px 10px 9px 0",color:t.muted,fontSize:10}}>{i+1}</td>
+                      <td style={{padding:"9px 10px",color:t.muted,fontSize:11,fontWeight:600}}>{c.region||"–"}</td>
+                      <td style={{padding:"9px 10px",color:t.muted,fontSize:11,whiteSpace:"nowrap",maxWidth:140,overflow:"hidden",textOverflow:"ellipsis"}}>{c.cluster||"–"}</td>
+                      <td style={{padding:"9px 10px",fontWeight:700,color:t.text,whiteSpace:"nowrap"}}>{c.name}</td>
+                      <td style={{padding:"9px 10px",fontWeight:700,color:t.muted}}>{c.total.toLocaleString()}</td>
+                      <td style={{padding:"9px 10px"}}>
+                        {c.A1>0
+                          ?<span onClick={()=>{const rows=getCanvasserRows(c.name,c.cluster,"A1");setCanvDetail({canvasser:c,drillLabel:"A1 - Normal",color:P.a1,rows,drillKey:"A1",sessionKey:Date.now()});}} style={{color:P.a1,fontWeight:700,cursor:"pointer"}}>{c.A1.toLocaleString()}</span>
+                          :<span style={{color:t.muted}}>0</span>}
+                      </td>
+                      <td style={{padding:"9px 10px"}}>
+                        {c.A2>0
+                          ?<span onClick={()=>{const rows=getCanvasserRows(c.name,c.cluster,"A2");setCanvDetail({canvasser:c,drillLabel:"A2 - Anomaly",color:P.a2,rows,drillKey:"A2",sessionKey:Date.now()});}} style={{color:P.a2,fontWeight:700,cursor:"pointer"}}>{c.A2.toLocaleString()}</span>
+                          :<span style={{color:t.muted}}>0</span>}
+                      </td>
+                      <td style={{padding:"9px 10px"}}>
+                        {c.A3>0
+                          ?<span onClick={()=>{const rows=getCanvasserRows(c.name,c.cluster,"A3");setCanvDetail({canvasser:c,drillLabel:"A3 - Incomplete",color:P.a3,rows,drillKey:"A3",sessionKey:Date.now()});}} style={{color:P.a3,fontWeight:700,cursor:"pointer"}}>{c.A3.toLocaleString()}</span>
+                          :<span style={{color:t.muted}}>0</span>}
+                      </td>
+                      <td style={{padding:"9px 10px",color:c.INVESTIGATE>0?P.investigate:t.muted,fontWeight:c.INVESTIGATE>0?700:400}}>{c.INVESTIGATE}</td>
+                      <td style={{padding:"9px 10px",color:c.a1p>=70?P.a1:P.a2,fontWeight:700}}>{c.a1p.toFixed(1)}%</td>
+                      <td style={{padding:"9px 10px",color:c.a2p>=40?P.investigate:P.a2}}>{c.a2p.toFixed(1)}%</td>
+                      <td style={{padding:"9px 10px",color:t.muted}}>{c.a3p.toFixed(1)}%</td>
+                      <td style={{padding:"9px 10px",color:c.invP>=5?P.investigate:t.muted,fontWeight:c.invP>=5?700:400}}>{c.invP.toFixed(1)}%</td>
+                      <td style={{padding:"9px 10px",color:c.avgDur!=null&&c.avgDur<2?P.short:t.muted}}>{c.avgDur!=null?c.avgDur.toFixed(1)+" m":"—"}</td>
+                      <td style={{padding:"9px 0",color:(c.avgDis||0)>500?P.investigate:(c.avgDis||0)>100?P.a2:t.muted}}>{c.avgDis!=null?c.avgDis.toFixed(0)+" m":"—"}</td>
+                    </tr>
+                  );})}
+                </tbody>
+              </table>
             </div>
+            <div style={{marginTop:10}}><Pagination page={cPg} setPage={setCPg} total={sorted.length} pageSize={CPG} t={t}/></div>
           </div>);})()}
 
         {tab==="findings"&&(
           <div>
-            <div style={{marginBottom:14}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                <div style={{fontWeight:800,fontSize:15,color:t.text}}>🔎 Temuan & Rekomendasi Otomatis</div>
-                <span style={{background:P.accent+"22",color:P.accent,fontSize:10,fontWeight:800,padding:"2px 9px",borderRadius:999}}>
+            <div style={{marginBottom:18}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:4}}>
+                <span style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase"}}>Temuan & Rekomendasi</span>
+                <span style={{background:P.accent+"18",color:P.accent,fontSize:10,fontWeight:800,padding:"2px 9px",borderRadius:999}}>
                   📍 {selCluster||selRegion||"Nasional (semua data)"}
                 </span>
               </div>
-              <div style={{fontSize:11,color:t.muted,marginTop:4}}>Dihasilkan otomatis dari pola di data yang di-upload — bukan pengganti verifikasi manual. Ganti scope lewat tab Overview (klik cluster/region).</div>
+              <div style={{fontSize:11,color:t.muted}}>Dihasilkan otomatis dari pola di data yang di-upload — bukan pengganti verifikasi manual. Ganti scope lewat tab Overview (klik cluster/region).</div>
             </div>
             {findings.length===0?(
-              <div style={{...card(),textAlign:"center",color:t.muted,padding:"32px 16px"}}>Belum ada temuan signifikan dari data saat ini. 👍</div>
+              <div style={{textAlign:"center",color:t.muted,padding:"32px 16px"}}>Belum ada temuan signifikan dari data saat ini. 👍</div>
             ):findings.map((f,i)=>{
-              const sevColor=f.severity==="fraud"?"#dc2626":f.severity==="high"?"#ef4444":f.severity==="medium"?"#f59e0b":f.severity==="low"?"#22c55e":"#3b82f6";
-              const sevLabel=f.severity==="fraud"?"🚨 POTENSI FRAUD":f.severity==="high"?"PERLU PERHATIAN":f.severity==="medium"?"PERLU DICEK":f.severity==="low"?"BAIK":"INFO";
+              const sevColor=f.severity==="fraud"?"#dc2626":f.severity==="high"?"#ef4444":f.severity==="medium"?P.a2:f.severity==="low"?P.a1:"#3b82f6";
+              const sevLabel=f.severity==="fraud"?"FRAUD":f.severity==="high"?"PERHATIAN":f.severity==="medium"?"CEK":f.severity==="low"?"BAIK":"INFO";
               return(
-                <div key={i} onClick={f.action||undefined} style={{...card({borderLeft:`4px solid ${sevColor}`}),marginBottom:12,cursor:f.action?"pointer":"default",transition:"transform 0.15s,box-shadow 0.15s"}}
-                  onMouseEnter={e=>{if(f.action){e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 6px 18px ${sevColor}30`;}}}
-                  onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="none";}}>
-                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap"}}>
-                    <span style={{fontSize:18}}>{f.icon}</span>
-                    <span style={{fontWeight:800,fontSize:14,color:t.text,flex:1,minWidth:120}}>{f.title}</span>
+                <div key={i} onClick={f.action||undefined} style={{padding:"16px 0",borderBottom:i<findings.length-1?`1px solid ${t.border}`:"none",cursor:f.action?"pointer":"default"}}
+                  onMouseEnter={e=>{if(f.action)e.currentTarget.style.opacity="0.8";}}
+                  onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+                  <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:6,flexWrap:"wrap"}}>
+                    <span style={{fontSize:16}}>{f.icon}</span>
+                    <span style={{fontWeight:700,fontSize:13,color:t.text,flex:1,minWidth:120}}>{f.title}</span>
                     <span style={{background:sevColor,color:"#fff",fontSize:9,fontWeight:800,padding:"3px 9px",borderRadius:999,letterSpacing:"0.03em",whiteSpace:"nowrap"}}>{sevLabel}</span>
                   </div>
-                  <div style={{fontSize:12,color:t.text,lineHeight:1.6,marginBottom:8}}>{f.desc}</div>
-                  <div style={{display:"flex",gap:8,alignItems:"flex-start",borderTop:`1px solid ${t.border}`,paddingTop:8}}>
-                    <span style={{fontSize:13,flexShrink:0}}>💡</span>
-                    <div style={{fontSize:11,color:t.text,lineHeight:1.6}}><b style={{color:sevColor}}>Rekomendasi: </b>{f.rec}</div>
-                  </div>
-                  {f.action&&<div style={{textAlign:"right",fontSize:10,color:sevColor,fontWeight:700,marginTop:8}}>Lihat detail ›</div>}
+                  <div style={{fontSize:12,color:t.muted,lineHeight:1.6,marginBottom:6}}>{f.desc}</div>
+                  <div style={{fontSize:11,color:t.text,lineHeight:1.6}}><b style={{color:sevColor}}>Rekomendasi: </b>{f.rec}</div>
+                  {f.action&&<div style={{fontSize:10,color:P.accent,fontWeight:700,marginTop:6}}>Lihat detail ›</div>}
                 </div>
               );
             })}
           </div>
         )}
       </div>
-      <div style={{textAlign:"center",fontSize:10,color:t.muted,padding:"14px 22px 28px",opacity:0.4}}>XLSMART Analytics Dashboard v102 · Klik status di chart untuk lihat breakdown canvasser</div>
+      <div style={{textAlign:"center",fontSize:10,color:t.muted,padding:"14px 22px 28px",opacity:0.4}}>XLSMART Analytics Dashboard · Klik status di chart untuk lihat breakdown canvasser</div>
     </div>
     <OutletDrillPanel drill={outletDrill} onClose={()=>setOutletDrill(null)} t={t} onDrill={handleOutletActivity}/>
     {trendDrill&&(
