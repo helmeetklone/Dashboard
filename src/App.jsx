@@ -1565,6 +1565,8 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
   const [selRegion,setSelRegion]=useState(null);
   const [selCluster,setSelCluster]=useState(null);
   const [tab,setTab]=useState("overview");
+  const [kpiMode,setKpiMode]=useState("activity"); // "activity" | "canvasser"
+  const [showGlossary,setShowGlossary]=useState(false);
   const [drill,setDrill]=useState(null);
   const [canvDetail,setCanvDetail]=useState(null);
   const [outletDrill,setOutletDrill]=useState(null);
@@ -1941,6 +1943,18 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
   const di=view.disC||{};
   const lc=view.locC||{};
 
+  // Klasifikasi tiap CANVASSER ke A1/A2/A3 berdasarkan status yang paling dominan (terbanyak) di antara aktivitasnya
+  const canvStatusCounts=useMemo(()=>{
+    const cvs=view.canvassers||[];
+    const counts={A1:0,A2:0,A3:0};
+    cvs.forEach(c=>{
+      const vals=[["A1",c.A1||0],["A2",c.A2||0],["A3",c.A3||0]];
+      vals.sort((a,b)=>b[1]-a[1]);
+      counts[vals[0][0]]++;
+    });
+    return {counts, total:cvs.length};
+  },[view.canvassers]);
+
   // Current level label
   const levelLabel=selCluster?"Cluster":selRegion?"Region":regionCodes.length===1?`${regionCodes[0]} — ${regionFullName(regionCodes[0])}`:"Nasional";
   const compLabel=selCluster?`Outlet Type — ${selCluster}`:selRegion?`Cluster dalam ${selRegion}`:regionCodes.length>1?`Perbandingan Region`:`Cluster dalam Region ${regionCodes[0]||""}`;
@@ -2284,17 +2298,52 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
 
       <div style={{padding:"14px 22px"}}>
 
+        {/* ── TOGGLE: By Activity ID vs By Canvasser ── */}
+        <div style={{display:"flex",gap:6,marginBottom:10,alignItems:"center",flexWrap:"wrap"}}>
+          {[{id:"activity",label:"📋 By Activity ID"},{id:"canvasser",label:"👤 By Canvasser"}].map(m=>(
+            <button key={m.id} onClick={()=>setKpiMode(m.id)} style={{padding:"6px 12px",borderRadius:8,border:`1px solid ${kpiMode===m.id?"transparent":t.border}`,cursor:"pointer",fontSize:10,fontWeight:700,background:kpiMode===m.id?"linear-gradient(135deg,#7c3aed,#a78bfa)":t.card,color:kpiMode===m.id?"#fff":t.muted,transition:"all 0.15s"}}>{m.label}</button>
+          ))}
+          <button onClick={()=>setShowGlossary(v=>!v)} style={{padding:"6px 10px",borderRadius:8,border:`1px solid ${showGlossary?P.accent:t.border}`,cursor:"pointer",fontSize:10,fontWeight:700,background:showGlossary?P.accent+"22":t.cardAlt,color:showGlossary?P.accent:t.muted}}>ℹ️ Apa itu A1/A2/A3?</button>
+        </div>
+        {showGlossary&&(
+          <div style={{...card(),marginBottom:14,fontSize:12,lineHeight:1.7}}>
+            <div style={{fontWeight:800,fontSize:13,marginBottom:10,color:t.text}}>📖 Glossary Status Aktivitas</div>
+            {[
+              {c:P.a1,icon:"✅",title:"A1 — Normal",desc:"Aktivitas berjalan sesuai standar: durasi kunjungan wajar, lokasi GPS sesuai/dekat outlet, dan checkout tercatat lengkap. Gak ada indikasi masalah."},
+              {c:P.a2,icon:"⚠️",title:"A2 — Anomaly",desc:"Aktivitas terdeteksi ada kejanggalan — bisa karena durasi terlalu singkat/panjang, lokasi GPS gak match/jauh dari outlet, atau visit status Observe/Investigate. Checkout tetap ada, tapi datanya mencurigakan."},
+              {c:P.a3,icon:"🔵",title:"A3 — Incomplete",desc:"Aktivitas gak lengkap — canvasser check-in tapi gak ada checkout tercatat. Prioritas paling tinggi dicek karena kunjungannya gak bisa divalidasi sama sekali."},
+            ].map((g,i)=>(
+              <div key={i} style={{display:"flex",gap:10,marginBottom:i<2?10:14,paddingBottom:i<2?10:0,borderBottom:i<2?`1px solid ${t.border}`:"none"}}>
+                <span style={{fontSize:16,flexShrink:0}}>{g.icon}</span>
+                <div>
+                  <div style={{fontWeight:700,color:g.c,marginBottom:2}}>{g.title}</div>
+                  <div style={{color:t.muted}}>{g.desc}</div>
+                </div>
+              </div>
+            ))}
+            <div style={{background:t.cardAlt,borderRadius:8,padding:"9px 11px",fontSize:11,color:t.muted,lineHeight:1.6}}>
+              <b style={{color:t.text}}>📋 By Activity ID</b> = persen & jumlah dihitung dari total <b>aktivitas/kunjungan</b> (1 canvasser bisa nyumbang banyak baris).<br/>
+              <b style={{color:t.text}}>👤 By Canvasser</b> = persen & jumlah dihitung dari total <b>orang</b> — tiap canvasser diklasifikasi ke A1/A2/A3 berdasarkan status yang paling sering muncul di antara aktivitas dia.
+            </div>
+          </div>
+        )}
         {/* ── KPI CARDS ── */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(95px,1fr))",gap:8,marginBottom:16}}>
-          {[
+          {(kpiMode==="canvasser"?[
+            {label:"Total",val:canvStatusCounts.total.toLocaleString(),icon:"👤",color:P.accent},
+            {label:"A1 Normal",val:pctS(canvStatusCounts.counts.A1,canvStatusCounts.total||1),icon:"✅",color:P.a1,sub:canvStatusCounts.counts.A1.toLocaleString()+" canvasser"},
+            {label:"A2 Anomaly",val:pctS(canvStatusCounts.counts.A2,canvStatusCounts.total||1),icon:"⚠️",color:P.a2,sub:canvStatusCounts.counts.A2.toLocaleString()+" canvasser"},
+            {label:"A3 Incomplete",val:pctS(canvStatusCounts.counts.A3,canvStatusCounts.total||1),icon:"🔵",color:P.a3,sub:canvStatusCounts.counts.A3.toLocaleString()+" canvasser"},
+            {label:"Investigate",val:pctS(vc["INVESTIGATE"],T),icon:"🔍",color:P.investigate,sub:(vc["INVESTIGATE"]||0).toLocaleString()+" aktivitas",drill:()=>openDrill("Investigate",P.investigate,"INVESTIGATE")},
+            {label:"Total Aktivitas",val:T.toLocaleString(),icon:"📋",color:"#a78bfa"},
+          ]:[
             {label:"Total",val:T.toLocaleString(),icon:"📋",color:P.accent},
             {label:"A1 Normal",val:pctS(ac["A1 - NORMAL"],T),icon:"✅",color:P.a1,sub:(ac["A1 - NORMAL"]||0).toLocaleString(),drill:()=>openDrill("A1 - Normal",P.a1,"A1")},
             {label:"A2 Anomaly",val:pctS(ac["A2 - ANOMALY"],T),icon:"⚠️",color:P.a2,sub:(ac["A2 - ANOMALY"]||0).toLocaleString(),drill:()=>openDrill("A2 - Anomaly",P.a2,"A2")},
             {label:"A3 Incomplete",val:pctS(ac["A3 - INCOMPLETE"],T),icon:"🔵",color:P.a3,sub:(ac["A3 - INCOMPLETE"]||0).toLocaleString(),drill:()=>openDrill("A3 - Incomplete",P.a3,"A3")},
             {label:"Investigate",val:pctS(vc["INVESTIGATE"],T),icon:"🔍",color:P.investigate,sub:(vc["INVESTIGATE"]||0).toLocaleString(),drill:()=>openDrill("Investigate",P.investigate,"INVESTIGATE")},
             {label:"Canvasser",val:view.canvassers.length,icon:"👤",color:"#a78bfa"},
-
-          ].map((k,i)=>(
+          ]).map((k,i)=>(
             <div key={i} onClick={k.drill||undefined} style={{...card({borderTop:`3px solid ${k.color}`,cursor:k.drill?"pointer":"default",padding:isMobile?"8px 8px":12,minWidth:0}),transition:"transform 0.15s,box-shadow 0.15s",overflow:"hidden"}}
               onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";if(k.drill)e.currentTarget.style.boxShadow=`0 6px 20px ${k.color}30`;}}
               onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="none";}}>
