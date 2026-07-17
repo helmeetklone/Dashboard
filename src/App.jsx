@@ -2431,37 +2431,24 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
           <div style={{display:"grid",gap:16}}>
 
             {/* ── ROW 1: Activity Status Pie (left) + Key Insights (right) ── */}
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:16}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:16,alignItems:"start"}}>
               <div style={card()}>
                 <div style={{fontWeight:700,marginBottom:2,fontSize:11,letterSpacing:"0.06em",textTransform:"uppercase",color:t.muted}}>Activity Status</div>
-                <div style={{fontSize:11,color:t.muted,marginBottom:10}}>
+                <div style={{fontSize:11,color:t.muted,marginBottom:12}}>
                   {view.label}
                   {view.label&&view.label.length<=3&&REGION_NAMES[view.label]&&<span style={{color:t.muted}}> ({REGION_NAMES[view.label]})</span>}
                   {view.label&&view.label.startsWith&&(()=>{const m=view.label.match(/^([A-Z]{2,3})-/);return m&&REGION_NAMES[m[1]]?<span style={{color:t.muted}}> · {REGION_NAMES[m[1]]}</span>:null;})()}
                 </div>
-                <ResponsiveContainer width="100%" height={190}>
-                  <PieChart>
-                    <Pie data={ACT.map(s=>({name:s.label,value:ac[s.key]||0,color:s.color,skey:s.key}))} cx="50%" cy="50%" outerRadius={75} innerRadius={32} dataKey="value" strokeWidth={0}
-                      label={({value})=>value>0?pctS(value,T):""} labelLine={false}
-                      onClick={d=>{const m={"A1 - NORMAL":"A1","A2 - ANOMALY":"A2","A3 - INCOMPLETE":"A3"};openDrill(d.name,d.color,m[d.skey]);}}>
-                      {ACT.map((s,i)=><Cell key={i} fill={s.color} style={{cursor:"pointer"}}/>)}
-                    </Pie>
-                    <Tooltip content={mkTip}/>
-                  </PieChart>
-                </ResponsiveContainer>
-                {ACT.map((s,i)=>{
-                  const aKey={"A1 - NORMAL":"A1","A2 - ANOMALY":"A2","A3 - INCOMPLETE":"A3"}[s.key];
-                  return(
-                  <div key={i} style={{borderBottom:i<2?`1px solid ${t.border}`:"none"}}>
-                    <div onClick={()=>openDrill(s.label,s.color,aKey)} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 0",cursor:"pointer"}} onMouseEnter={e=>e.currentTarget.style.opacity="0.75"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                      <div style={{width:7,height:7,borderRadius:"50%",background:s.color,flexShrink:0}}/>
-                      <span style={{fontSize:12,color:t.text,flex:1,fontWeight:600}}>{s.label}</span>
-                      <span style={{fontSize:12,fontWeight:800,color:s.color}}>{pctS(ac[s.key],T)}</span>
-                    </div>
-                    {aKey!=="A1"&&<div onClick={e=>{e.stopPropagation();const bd=computeReasonBreakdown(aKey);setReasonDrill({statusKey:aKey,label:s.label,color:s.color,reasons:bd.reasons,topCanvassers:bd.topCanvassers});}} style={{fontSize:10,fontWeight:700,color:P.accent,cursor:"pointer",paddingBottom:8}}>🔍 Lihat penyebab ›</div>}
+                <div style={{fontSize:11,color:t.muted,marginBottom:10}}>Angka A1/A2/A3 udah keliatan di atas — di sini tinggal cari tau <b style={{color:t.text}}>penyebabnya</b>:</div>
+                {[{aKey:"A2",label:"A2 - Anomaly",color:P.a2},{aKey:"A3",label:"A3 - Incomplete",color:P.a3}].map((s,i)=>(
+                  <div key={i} onClick={()=>{const bd=computeReasonBreakdown(s.aKey);setReasonDrill({statusKey:s.aKey,label:s.label,color:s.color,reasons:bd.reasons,topCanvassers:bd.topCanvassers});}}
+                    style={{display:"flex",alignItems:"center",gap:8,padding:"10px 0",borderBottom:i===0?`1px solid ${t.border}`:"none",cursor:"pointer"}}
+                    onMouseEnter={e=>e.currentTarget.style.opacity="0.75"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+                    <div style={{width:7,height:7,borderRadius:"50%",background:s.color,flexShrink:0}}/>
+                    <span style={{fontSize:12,color:t.text,flex:1,fontWeight:600}}>🔍 Lihat penyebab {s.label}</span>
+                    <span style={{fontSize:12,color:P.accent,fontWeight:700}}>›</span>
                   </div>
-                  );
-                })}
+                ))}
                 <div style={{marginTop:10,padding:"8px 0 4px",fontSize:11,color:t.muted,fontWeight:700,letterSpacing:"0.06em",borderTop:`1px solid ${t.border}`}}>VISIT STATUS</div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:5,marginTop:4}}>
                   {VIS.map((s,i)=>(
@@ -2524,102 +2511,108 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                   const invTotal=Object.values(rm.investigate||{}).reduce((s,v)=>s+v,0);
                   const obsTotal=Object.values(rm.observe||{}).reduce((s,v)=>s+v,0);
 
-                  return(<>
-                    {/* Section 1 */}
-                    {topCanvasserItems.length>0&&<>
-                      <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Top Canvasser per Status</div>
-                      <div style={{fontSize:10,color:t.muted,marginBottom:8}}>Klik buat lihat detail kunjungannya</div>
-                      {topCanvasserItems.map((it,i)=>(
-                        <div key={i} onClick={it.onClick} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:`1px solid ${t.border}`,cursor:"pointer"}}
-                          onMouseEnter={e=>e.currentTarget.style.opacity="0.75"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                          <div style={{width:24,height:24,borderRadius:7,background:it.color+"1f",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,flexShrink:0}}>{it.icon}</div>
-                          <div style={{flex:1,minWidth:0}}>
-                            <div style={{fontSize:10,color:t.muted}}>{it.title}</div>
-                            <div style={{fontSize:12,fontWeight:700,color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.name}</div>
-                            <div style={{fontSize:9,color:t.muted}}>{it.cluster}</div>
+                  return(
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:24}}>
+                    <div>
+                      {/* Section 1 */}
+                      {topCanvasserItems.length>0&&<>
+                        <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Top Canvasser per Status</div>
+                        <div style={{fontSize:10,color:t.muted,marginBottom:8}}>Klik buat lihat detail kunjungannya</div>
+                        {topCanvasserItems.map((it,i)=>(
+                          <div key={i} onClick={it.onClick} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:`1px solid ${t.border}`,cursor:"pointer"}}
+                            onMouseEnter={e=>e.currentTarget.style.opacity="0.75"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+                            <div style={{width:24,height:24,borderRadius:7,background:it.color+"1f",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,flexShrink:0}}>{it.icon}</div>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{fontSize:10,color:t.muted}}>{it.title}</div>
+                              <div style={{fontSize:12,fontWeight:700,color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.name}</div>
+                              <div style={{fontSize:9,color:t.muted}}>{it.cluster}</div>
+                            </div>
+                            <div style={{fontSize:13,fontWeight:800,color:it.color,flexShrink:0}}>{it.val.toLocaleString()}</div>
                           </div>
-                          <div style={{fontSize:13,fontWeight:800,color:it.color,flexShrink:0}}>{it.val.toLocaleString()}</div>
-                        </div>
-                      ))}
-                    </>}
-
-                    {/* Section 2 */}
-                    {(topRegions.length>0||topClusters.length>0)&&<div style={{marginTop:18}}>
-                      <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:8}}>Ranking Cluster & Region</div>
-                      <div style={{display:"flex",gap:14,marginBottom:10}}>
-                        {["A1","A2","A3"].map(k=>(
-                          <span key={k} onClick={()=>setInsightRankTab(k)} style={{fontSize:11,fontWeight:700,color:insightRankTab===k?rankColorMap[k]:t.muted,paddingBottom:5,borderBottom:`2px solid ${insightRankTab===k?rankColorMap[k]:"transparent"}`,cursor:"pointer"}}>{k}</span>
                         ))}
-                      </div>
-                      <div style={{display:"flex",gap:20}}>
-                        {topRegions.length>0&&<div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:9,color:t.muted,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>🗺 Top Region</div>
-                          {topRegions.map((r,ri)=>(
-                            <div key={ri} onClick={()=>openRank(r)} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"5px 0",borderBottom:ri<topRegions.length-1?`1px solid ${t.border}`:"none",cursor:r.v?"pointer":"default"}}
-                              onMouseEnter={e=>{if(r.v)e.currentTarget.style.opacity="0.7";}} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                              <span style={{color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{["🥇","🥈","🥉"][ri]} {r.code}</span>
-                              <span style={{color:t.muted,fontWeight:700,flexShrink:0,marginLeft:6}}>{r.v.toLocaleString()}</span>
-                            </div>
-                          ))}
-                        </div>}
-                        {topClusters.length>0&&<div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:9,color:t.muted,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>📍 Top Cluster</div>
-                          {topClusters.map((r,ri)=>(
-                            <div key={ri} onClick={()=>openRank(r)} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"5px 0",borderBottom:ri<topClusters.length-1?`1px solid ${t.border}`:"none",cursor:r.v?"pointer":"default"}}
-                              onMouseEnter={e=>{if(r.v)e.currentTarget.style.opacity="0.7";}} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                              <span style={{color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{["🥇","🥈","🥉"][ri]} {r.code}</span>
-                              <span style={{color:t.muted,fontWeight:700,flexShrink:0,marginLeft:6}}>{r.v.toLocaleString()}</span>
-                            </div>
-                          ))}
-                        </div>}
-                      </div>
-                    </div>}
+                      </>}
 
-                    {/* Section 3 */}
-                    <div style={{marginTop:18}}>
-                      <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:8}}>Pola Kunjungan</div>
-                      <div style={{display:"flex",border:`1px solid ${t.border}`,borderRadius:10,overflow:"hidden"}}>
-                        {regularVt&&<div onClick={()=>openVtDrill("Regular Visit",null)} style={{flex:1,padding:"10px 6px",textAlign:"center",borderRight:`1px solid ${t.border}`,cursor:"pointer"}}>
-                          <div style={{fontSize:14,fontWeight:800,color:P.accent}}>{pctS(regularVt.total,vtTotal)}</div>
-                          <div style={{fontSize:8,color:t.muted,marginTop:2,textTransform:"uppercase"}}>Regular<br/>Visit</div>
-                        </div>}
-                        {adhocVt&&<div onClick={()=>openVtDrill("Ad-Hoc Visit",null)} style={{flex:1,padding:"10px 6px",textAlign:"center",borderRight:`1px solid ${t.border}`,cursor:"pointer"}}>
-                          <div style={{fontSize:14,fontWeight:800,color:P.accent}}>{pctS(adhocVt.total,vtTotal)}</div>
-                          <div style={{fontSize:8,color:t.muted,marginTop:2,textTransform:"uppercase"}}>Ad-Hoc<br/>Visit</div>
-                        </div>}
-                        <div onClick={()=>openDrill("Durasi Singkat (SHORT)","#f97316","DUR_SHORT")} style={{flex:1,padding:"10px 6px",textAlign:"center",cursor:"pointer"}}>
-                          <div style={{fontSize:14,fontWeight:800,color:P.accent}}>{pctS(shortCnt,T)}</div>
-                          <div style={{fontSize:8,color:t.muted,marginTop:2,textTransform:"uppercase"}}>Durasi<br/>&lt;2 Menit</div>
+                      {/* Section 3 */}
+                      <div style={{marginTop:18}}>
+                        <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:8}}>Pola Kunjungan</div>
+                        <div style={{display:"flex",border:`1px solid ${t.border}`,borderRadius:10,overflow:"hidden"}}>
+                          {regularVt&&<div onClick={()=>openVtDrill("Regular Visit",null)} style={{flex:1,padding:"10px 6px",textAlign:"center",borderRight:`1px solid ${t.border}`,cursor:"pointer"}}>
+                            <div style={{fontSize:14,fontWeight:800,color:P.accent}}>{pctS(regularVt.total,vtTotal)}</div>
+                            <div style={{fontSize:8,color:t.muted,marginTop:2,textTransform:"uppercase"}}>Regular<br/>Visit</div>
+                          </div>}
+                          {adhocVt&&<div onClick={()=>openVtDrill("Ad-Hoc Visit",null)} style={{flex:1,padding:"10px 6px",textAlign:"center",borderRight:`1px solid ${t.border}`,cursor:"pointer"}}>
+                            <div style={{fontSize:14,fontWeight:800,color:P.accent}}>{pctS(adhocVt.total,vtTotal)}</div>
+                            <div style={{fontSize:8,color:t.muted,marginTop:2,textTransform:"uppercase"}}>Ad-Hoc<br/>Visit</div>
+                          </div>}
+                          <div onClick={()=>openDrill("Durasi Singkat (SHORT)","#f97316","DUR_SHORT")} style={{flex:1,padding:"10px 6px",textAlign:"center",cursor:"pointer"}}>
+                            <div style={{fontSize:14,fontWeight:800,color:P.accent}}>{pctS(shortCnt,T)}</div>
+                            <div style={{fontSize:8,color:t.muted,marginTop:2,textTransform:"uppercase"}}>Durasi<br/>&lt;2 Menit</div>
+                          </div>
                         </div>
                       </div>
                     </div>
 
-                    {/* Section 4 */}
-                    {(invReasons.length>0||obsReasons.length>0)&&<div style={{marginTop:18}}>
-                      <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Alasan Utama di Balik Visit Status</div>
-                      <div style={{fontSize:10,color:t.muted,marginBottom:10}}>Catatan lapangan yang paling sering disebut canvasser</div>
-                      {invReasons.length>0&&<>
-                        <div onClick={()=>openDrill("Investigate",P.investigate,"INVESTIGATE")} style={{fontSize:10,fontWeight:700,color:P.investigate,marginBottom:6,cursor:"pointer"}}>🔍 Investigate ({invTotal.toLocaleString()} kunjungan) ›</div>
-                        {invReasons.map(([k,v],i)=>(
-                          <div key={i} onClick={()=>openDrill("Investigate",P.investigate,"INVESTIGATE")} style={{display:"flex",alignItems:"center",gap:10,padding:"5px 0",cursor:"pointer"}}>
-                            <div style={{fontSize:11,color:t.text,width:120,flexShrink:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k}</div>
-                            <div style={{flex:1,height:5,background:t.border,borderRadius:99,overflow:"hidden"}}><div style={{width:(v/invReasons[0][1]*100)+"%",height:"100%",background:P.investigate,borderRadius:99}}/></div>
-                            <div style={{fontSize:11,fontWeight:700,color:P.investigate,width:70,textAlign:"right",flexShrink:0}}>{v.toLocaleString()} kunjungan</div>
-                          </div>
-                        ))}
-                      </>}
-                      {obsReasons.length>0&&<>
-                        <div onClick={()=>openDrill("Observe",P.a2,"OBSERVE")} style={{fontSize:10,fontWeight:700,color:P.a2,marginTop:14,marginBottom:6,cursor:"pointer"}}>⚠️ Observe ({obsTotal.toLocaleString()} kunjungan) ›</div>
-                        {obsReasons.map(([k,v],i)=>(
-                          <div key={i} onClick={()=>openDrill("Observe",P.a2,"OBSERVE")} style={{display:"flex",alignItems:"center",gap:10,padding:"5px 0",cursor:"pointer"}}>
-                            <div style={{fontSize:11,color:t.text,width:120,flexShrink:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k}</div>
-                            <div style={{flex:1,height:5,background:t.border,borderRadius:99,overflow:"hidden"}}><div style={{width:(v/obsReasons[0][1]*100)+"%",height:"100%",background:P.a2,borderRadius:99}}/></div>
-                            <div style={{fontSize:11,fontWeight:700,color:P.a2,width:70,textAlign:"right",flexShrink:0}}>{v.toLocaleString()} kunjungan</div>
-                          </div>
-                        ))}
-                      </>}
-                    </div>}
-                  </>);
+                    <div>
+                      {/* Section 2 */}
+                      {(topRegions.length>0||topClusters.length>0)&&<div>
+                        <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:8}}>Ranking Cluster & Region</div>
+                        <div style={{display:"flex",gap:14,marginBottom:10}}>
+                          {["A1","A2","A3"].map(k=>(
+                            <span key={k} onClick={()=>setInsightRankTab(k)} style={{fontSize:11,fontWeight:700,color:insightRankTab===k?rankColorMap[k]:t.muted,paddingBottom:5,borderBottom:`2px solid ${insightRankTab===k?rankColorMap[k]:"transparent"}`,cursor:"pointer"}}>{k}</span>
+                          ))}
+                        </div>
+                        <div style={{display:"flex",gap:20}}>
+                          {topRegions.length>0&&<div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:9,color:t.muted,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>🗺 Top Region</div>
+                            {topRegions.map((r,ri)=>(
+                              <div key={ri} onClick={()=>openRank(r)} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"5px 0",borderBottom:ri<topRegions.length-1?`1px solid ${t.border}`:"none",cursor:r.v?"pointer":"default"}}
+                                onMouseEnter={e=>{if(r.v)e.currentTarget.style.opacity="0.7";}} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+                                <span style={{color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{["🥇","🥈","🥉"][ri]} {r.code}</span>
+                                <span style={{color:t.muted,fontWeight:700,flexShrink:0,marginLeft:6}}>{r.v.toLocaleString()}</span>
+                              </div>
+                            ))}
+                          </div>}
+                          {topClusters.length>0&&<div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:9,color:t.muted,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>📍 Top Cluster</div>
+                            {topClusters.map((r,ri)=>(
+                              <div key={ri} onClick={()=>openRank(r)} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"5px 0",borderBottom:ri<topClusters.length-1?`1px solid ${t.border}`:"none",cursor:r.v?"pointer":"default"}}
+                                onMouseEnter={e=>{if(r.v)e.currentTarget.style.opacity="0.7";}} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+                                <span style={{color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{["🥇","🥈","🥉"][ri]} {r.code}</span>
+                                <span style={{color:t.muted,fontWeight:700,flexShrink:0,marginLeft:6}}>{r.v.toLocaleString()}</span>
+                              </div>
+                            ))}
+                          </div>}
+                        </div>
+                      </div>}
+
+                      {/* Section 4 */}
+                      {(invReasons.length>0||obsReasons.length>0)&&<div style={{marginTop:18}}>
+                        <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Alasan Utama di Balik Visit Status</div>
+                        <div style={{fontSize:10,color:t.muted,marginBottom:10}}>Catatan lapangan yang paling sering disebut canvasser</div>
+                        {invReasons.length>0&&<>
+                          <div onClick={()=>openDrill("Investigate",P.investigate,"INVESTIGATE")} style={{fontSize:10,fontWeight:700,color:P.investigate,marginBottom:6,cursor:"pointer"}}>🔍 Investigate ({invTotal.toLocaleString()} kunjungan) ›</div>
+                          {invReasons.map(([k,v],i)=>(
+                            <div key={i} onClick={()=>openDrill("Investigate",P.investigate,"INVESTIGATE")} style={{display:"flex",alignItems:"center",gap:10,padding:"5px 0",cursor:"pointer"}}>
+                              <div style={{fontSize:11,color:t.text,width:120,flexShrink:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k}</div>
+                              <div style={{flex:1,height:5,background:t.border,borderRadius:99,overflow:"hidden"}}><div style={{width:(v/invReasons[0][1]*100)+"%",height:"100%",background:P.investigate,borderRadius:99}}/></div>
+                              <div style={{fontSize:11,fontWeight:700,color:P.investigate,width:70,textAlign:"right",flexShrink:0}}>{v.toLocaleString()} kunjungan</div>
+                            </div>
+                          ))}
+                        </>}
+                        {obsReasons.length>0&&<>
+                          <div onClick={()=>openDrill("Observe",P.a2,"OBSERVE")} style={{fontSize:10,fontWeight:700,color:P.a2,marginTop:14,marginBottom:6,cursor:"pointer"}}>⚠️ Observe ({obsTotal.toLocaleString()} kunjungan) ›</div>
+                          {obsReasons.map(([k,v],i)=>(
+                            <div key={i} onClick={()=>openDrill("Observe",P.a2,"OBSERVE")} style={{display:"flex",alignItems:"center",gap:10,padding:"5px 0",cursor:"pointer"}}>
+                              <div style={{fontSize:11,color:t.text,width:120,flexShrink:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k}</div>
+                              <div style={{flex:1,height:5,background:t.border,borderRadius:99,overflow:"hidden"}}><div style={{width:(v/obsReasons[0][1]*100)+"%",height:"100%",background:P.a2,borderRadius:99}}/></div>
+                              <div style={{fontSize:11,fontWeight:700,color:P.a2,width:70,textAlign:"right",flexShrink:0}}>{v.toLocaleString()} kunjungan</div>
+                            </div>
+                          ))}
+                        </>}
+                      </div>}
+                    </div>
+                  </div>
+                  );
                 })()}
               </div>
             </div>
