@@ -188,6 +188,35 @@ function regionFullName(code){
 }
 
 // ── READ FILE — reads critical cols by direct cell reference (100% reliable) ─────
+// Parser CSV ringan (tanpa dependency tambahan) — support quoted field & koma di dalam quote
+function parseCSVText(text) {
+  text=text.replace(/^\uFEFF/,"").replace(/\r\n/g,"\n").replace(/\r/g,"\n");
+  const rows=[];
+  let row=[],field="",inQuotes=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(inQuotes){
+      if(c==='"'){
+        if(text[i+1]==='"'){field+='"';i++;}
+        else inQuotes=false;
+      } else field+=c;
+    } else {
+      if(c==='"') inQuotes=true;
+      else if(c===','){row.push(field);field="";}
+      else if(c==='\n'){row.push(field);rows.push(row);row=[];field="";}
+      else field+=c;
+    }
+  }
+  if(field.length||row.length){row.push(field);rows.push(row);}
+  if(!rows.length) return [];
+  const headers=rows[0].map(h=>h.trim());
+  return rows.slice(1).filter(r=>r.length>1||r[0]!=="").map(r=>{
+    const obj={};
+    headers.forEach((h,i)=>{obj[h]=r[i]!==undefined&&r[i]!==""?r[i]:null;});
+    return obj;
+  });
+}
+
 function readFileRows(wbOrBuf, sheetName=null) {
   // Terima workbook yang SUDAH di-parse (hindari re-parse buffer berkali-kali — берat utk file besar di mobile)
   const wb = (wbOrBuf && wbOrBuf.SheetNames) ? wbOrBuf : XLSX.read(wbOrBuf, {type:"array", cellDates:true, cellHTML:false});
@@ -1344,36 +1373,6 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
     }catch(e){console.error("RO parse error:",e);}
   };
 
-  // Parser CSV ringan (tanpa dependency tambahan) — support quoted field & koma di dalam quote
-  const parseCSVText=(text)=>{
-    // Normalisasi line ending & buang BOM
-    text=text.replace(/^\uFEFF/,"").replace(/\r\n/g,"\n").replace(/\r/g,"\n");
-    const rows=[];
-    let row=[],field="",inQuotes=false;
-    for(let i=0;i<text.length;i++){
-      const c=text[i];
-      if(inQuotes){
-        if(c==='"'){
-          if(text[i+1]==='"'){field+='"';i++;}
-          else inQuotes=false;
-        } else field+=c;
-      } else {
-        if(c==='"') inQuotes=true;
-        else if(c===','){row.push(field);field="";}
-        else if(c==='\n'){row.push(field);rows.push(row);row=[];field="";}
-        else field+=c;
-      }
-    }
-    if(field.length||row.length){row.push(field);rows.push(row);}
-    if(!rows.length) return [];
-    const headers=rows[0].map(h=>h.trim());
-    return rows.slice(1).filter(r=>r.length>1||r[0]!=="").map(r=>{
-      const obj={};
-      headers.forEach((h,i)=>{obj[h]=r[i]!==undefined&&r[i]!==""?r[i]:null;});
-      return obj;
-    });
-  };
-
     const handleFiles=useCallback(async files=>{
     setLoading(true);setError(null);
     try{
@@ -1398,12 +1397,12 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
                   const clRows=rows.filter(r=>String(r["Cluster"]||"").trim()===cl);
                   if(!clRows.length) return;
                   const rc=getRegionCode(cl);
-                  fileResults.push({name:f.name+"|"+cl,label:cl,regionCode:rc,rows:clRows});
+                  fileResults.push({name:f.name+"|"+cl,label:cl,regionCode:rc,rows:clRows,originFile:f,filterCluster:cl});
                 });
               } else {
                 const label=clusterNames.length===1?clusterNames[0]:(sn?sn:f.name.replace(/\.[^.]+$/,""));
                 const regionCode=getRegionCode(clusterNames[0]||sn||"");
-                fileResults.push({name:sn?f.name+"|"+sn:f.name,label,regionCode,rows});
+                fileResults.push({name:sn?f.name+"|"+sn:f.name,label,regionCode,rows,originFile:f});
               }
             };
             if(isCsv){
@@ -1624,11 +1623,50 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
         ...processRows(reRows),
         rawRows:reRows,  // kept for canvasser detail lookup
         label:f.label,regionCode:f.regionCode,fileName:f.name,
+        originFile:f.originFile, // handle ke File asli — buat lazy-reload di tahap berikutnya
+        filterCluster:f.filterCluster, // nama cluster buat filter ulang kalau originFile-nya file multi-cluster
       };
       clusterCacheRef.current.set(f.name,{result,paramsKey,roMapRef:roMap,rowsRef:f.rows});
       return {...result,color:P.regions[i%P.regions.length]};
     });
   },[files,params,roMap]);
+
+  // ── FONDASI LAZY-LOAD (Tahap 1) ──────────────────────────────────────────
+  // Cache terpisah utk raw rows per-cluster, keyed by label. Belum dipakai fitur
+  // manapun (masih semua fitur baca dari cl.rawRows langsung, disimpan penuh).
+  // Ini disiapkan supaya di tahap berikutnya, fitur bisa dipindah pelan-pelan
+  // ke sini TANPA mengubah cara kerja yang sudah jalan sekarang.
+  const lazyRowsCacheRef=useRef(new Map()); // label -> rows[]
+  const ensureClusterRows=useCallback(async(clusterLabel)=>{
+    if(lazyRowsCacheRef.current.has(clusterLabel)) return lazyRowsCacheRef.current.get(clusterLabel);
+    const cl=clusters.find(c=>c.label===clusterLabel);
+    if(!cl) return [];
+    // Kalau rawRows udah ada di memori (cara kerja sekarang), pakai itu langsung —
+    // gak perlu baca ulang file.
+    if(cl.rawRows&&cl.rawRows.length){ lazyRowsCacheRef.current.set(clusterLabel,cl.rawRows); return cl.rawRows; }
+    // Fallback: baca ulang dari File asli (dipakai nanti kalau rawRows udah gak disimpan permanen)
+    if(!cl.originFile) return [];
+    const buf=await cl.originFile.arrayBuffer();
+    const isCsv=/\.csv$/i.test(cl.originFile.name);
+    let rows;
+    if(isCsv){ rows=parseCSVText(new TextDecoder().decode(buf)); }
+    else{ const wb=XLSX.read(buf,{type:"array",cellDates:true,cellHTML:false}); rows=readFileRows(wb).rows; }
+    if(cl.filterCluster) rows=rows.filter(r=>String(r["Cluster"]||"").trim()===cl.filterCluster);
+    const enriched=rows.map(r=>{
+      const rid=String(r["Outlet ID"]||"").trim();
+      const ro=roMap[rid];
+      const withRo=ro?{
+        ...r,
+        "RO Latitude":  r["RO Latitude"]  ?? ro.lat,
+        "RO Longitude": r["RO Longitude"] ?? ro.lon,
+        "RO Census":    r["RO Census"]    ?? (ro.census?"YES":"NO"),
+        "Outlet Type":  r["Outlet Type"]  || ro.type,
+      }:r;
+      return computeValidation(withRo,params);
+    });
+    lazyRowsCacheRef.current.set(clusterLabel,enriched);
+    return enriched;
+  },[clusters,params,roMap]);
 
   // ── Group clusters by region ─────────────────────────────────────────────
   const regionGroups=useMemo(()=>{
@@ -1791,8 +1829,8 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
               const {rows}=readFileRows(wb2,sn);
               if(!rows?.length) continue;
               const cls=[...new Set(rows.map(r=>r["Cluster"]).filter(Boolean))];
-              if(cls.length>1){cls.forEach(cl=>{const r2=rows.filter(r=>String(r["Cluster"]||"").trim()===cl);if(r2.length)fileResults.push({name:f.name+"|"+cl,label:cl,regionCode:getRegionCode(cl),rows:r2});});}
-              else{const lbl=cls[0]||(wb2.SheetNames.length>1?sn:f.name.split(".")[0]);fileResults.push({name:wb2.SheetNames.length>1?f.name+"|"+sn:f.name,label:lbl,regionCode:getRegionCode(lbl),rows});}
+              if(cls.length>1){cls.forEach(cl=>{const r2=rows.filter(r=>String(r["Cluster"]||"").trim()===cl);if(r2.length)fileResults.push({name:f.name+"|"+cl,label:cl,regionCode:getRegionCode(cl),rows:r2,originFile:f,filterCluster:cl});});}
+              else{const lbl=cls[0]||(wb2.SheetNames.length>1?sn:f.name.split(".")[0]);fileResults.push({name:wb2.SheetNames.length>1?f.name+"|"+sn:f.name,label:lbl,regionCode:getRegionCode(lbl),rows,originFile:f});}
             }
             if(!fileResults.length) throw new Error(f.name+": kosong");
             res(fileResults.length===1?fileResults[0]:{multi:true,results:fileResults,name:f.name});
@@ -1943,17 +1981,22 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
   const di=view.disC||{};
   const lc=view.locC||{};
 
-  // Klasifikasi tiap CANVASSER ke A1/A2/A3 berdasarkan status yang paling dominan (terbanyak) di antara aktivitasnya
+  // Klasifikasi tiap CANVASSER ke A1/A2/A3 berdasarkan status yang PALING DOMINAN (terbanyak) di antara aktivitasnya
   const canvStatusCounts=useMemo(()=>{
     const cvs=view.canvassers||[];
     const counts={A1:0,A2:0,A3:0};
+    const lists={A1:[],A2:[],A3:[]};
     cvs.forEach(c=>{
       const vals=[["A1",c.A1||0],["A2",c.A2||0],["A3",c.A3||0]];
       vals.sort((a,b)=>b[1]-a[1]);
-      counts[vals[0][0]]++;
+      const dom=vals[0][0];
+      counts[dom]++;
+      lists[dom].push(c);
     });
-    return {counts, total:cvs.length};
+    Object.keys(lists).forEach(k=>lists[k].sort((a,b)=>(b[k]||0)-(a[k]||0)));
+    return {counts, lists, total:cvs.length};
   },[view.canvassers]);
+  const [canvCategoryDrill,setCanvCategoryDrill]=useState(null); // {label,color,statusKey,list}
 
   // Current level label
   const levelLabel=selCluster?"Cluster":selRegion?"Region":regionCodes.length===1?`${regionCodes[0]} — ${regionFullName(regionCodes[0])}`:"Nasional";
@@ -2346,7 +2389,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
               <div style={{marginBottom:6}}><b style={{color:t.text}}>👤 By Canvasser</b></div>
               <ul style={{margin:0,paddingLeft:16}}>
                 <li>Persentase dan jumlah dihitung berdasarkan total orang (canvasser)</li>
-                <li>Setiap canvasser diklasifikasikan ke A1/A2/A3 berdasarkan status yang paling sering muncul di antara aktivitasnya</li>
+                <li>Setiap canvasser diklasifikasikan ke A1/A2/A3 berdasarkan status yang paling sering muncul (dominan) di antara aktivitasnya</li>
               </ul>
             </div>
           </div>
@@ -2355,9 +2398,9 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(95px,1fr))",gap:8,marginBottom:16}}>
           {(kpiMode==="canvasser"?[
             {label:"Total",val:canvStatusCounts.total.toLocaleString(),icon:"👤",color:P.accent},
-            {label:"A1 Normal",val:pctS(canvStatusCounts.counts.A1,canvStatusCounts.total||1),icon:"✅",color:P.a1,sub:canvStatusCounts.counts.A1.toLocaleString()+" canvasser"},
-            {label:"A2 Anomaly",val:pctS(canvStatusCounts.counts.A2,canvStatusCounts.total||1),icon:"⚠️",color:P.a2,sub:canvStatusCounts.counts.A2.toLocaleString()+" canvasser"},
-            {label:"A3 Incomplete",val:pctS(canvStatusCounts.counts.A3,canvStatusCounts.total||1),icon:"🔵",color:P.a3,sub:canvStatusCounts.counts.A3.toLocaleString()+" canvasser"},
+            {label:"A1 Normal",val:pctS(canvStatusCounts.counts.A1,canvStatusCounts.total||1),icon:"✅",color:P.a1,sub:canvStatusCounts.counts.A1.toLocaleString()+" canvasser",drill:()=>setCanvCategoryDrill({label:"A1 - Normal",color:P.a1,statusKey:"A1",list:canvStatusCounts.lists.A1})},
+            {label:"A2 Anomaly",val:pctS(canvStatusCounts.counts.A2,canvStatusCounts.total||1),icon:"⚠️",color:P.a2,sub:canvStatusCounts.counts.A2.toLocaleString()+" canvasser",drill:()=>setCanvCategoryDrill({label:"A2 - Anomaly",color:P.a2,statusKey:"A2",list:canvStatusCounts.lists.A2})},
+            {label:"A3 Incomplete",val:pctS(canvStatusCounts.counts.A3,canvStatusCounts.total||1),icon:"🔵",color:P.a3,sub:canvStatusCounts.counts.A3.toLocaleString()+" canvasser",drill:()=>setCanvCategoryDrill({label:"A3 - Incomplete",color:P.a3,statusKey:"A3",list:canvStatusCounts.lists.A3})},
             {label:"Investigate",val:pctS(vc["INVESTIGATE"],T),icon:"🔍",color:P.investigate,sub:(vc["INVESTIGATE"]||0).toLocaleString()+" aktivitas",drill:()=>openDrill("Investigate",P.investigate,"INVESTIGATE")},
             {label:"Total Aktivitas",val:T.toLocaleString(),icon:"📋",color:"#a78bfa"},
           ]:[
@@ -2798,49 +2841,6 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                 </ResponsiveContainer>
               </div>
             ))}
-            <div style={{...card(),gridColumn:"1/-1"}}>
-              <div style={{fontWeight:700,marginBottom:6}}>Detail per Outlet Type</div>
-              {(()=>{const worst=[...view.outletData].sort((a,b)=>pct(a.A1,a.total)-pct(b.A1,b.total))[0];const best=[...view.outletData].sort((a,b)=>pct(b.A1,b.total)-pct(a.A1,a.total))[0];
-                return worst&&best?(
-                <div style={{fontSize:11,color:t.text,marginBottom:12,background:"#f59e0b15",border:"1px solid #f59e0b30",borderRadius:8,padding:"7px 10px",lineHeight:1.6}}>
-                  💡 <b style={{color:t.text}}>{best.type.replace("RO ","")}</b> paling sehat (<span style={{color:P.a1,fontWeight:700}}>{pctS(best.A1,best.total)} A1</span>), <b style={{color:t.text}}>{worst.type.replace("RO ","")}</b> paling perlu perhatian (<span style={{color:P.a1,fontWeight:700}}>{pctS(worst.A1,worst.total)} A1</span>).
-                </div>):null;})()}
-              <div style={{overflowX:"auto",scrollbarWidth:"none",msOverflowStyle:"none"}}>
-                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
-                  <thead><tr style={{background:t.cardAlt}}>
-                    {["Outlet Type","Total","A1","A2","A3","Inv","Dist","A1%","A2%"].map(h=><th key={h} style={{padding:isMobile?"6px 8px":"9px 12px",textAlign:"left",fontSize:11,fontWeight:700,color:t.muted,whiteSpace:"nowrap",borderBottom:`1px solid ${t.border}`}}>{h}</th>)}
-                  </tr></thead>
-                  <tbody>
-                    {view.outletData.map((d,i)=>{
-                      const a1p=pct(d.A1,d.total);
-                      const rowTint=a1p>=70?P.a1:a1p>=40?P.a2:P.a3;
-                      return(
-                      <tr key={i} style={{borderBottom:`1px solid ${t.border}`,background:i%2===0?rowTint+"08":rowTint+"10"}}>
-                        <td style={{padding:isMobile?"6px 8px":"9px 12px",fontWeight:700,color:P.accent,cursor:"pointer",whiteSpace:"nowrap"}} onClick={()=>openOutletDrill(d.type)}>{d.type}</td>
-                        <td style={{padding:isMobile?"6px 8px":"9px 12px",fontWeight:700}}>{d.total.toLocaleString()}</td>
-                        <td style={{padding:"9px 12px"}}>
-                          {(d.A1||0)>0?<span onClick={()=>setOutletTypeDrill({type:d.type,status:"A1 - NORMAL",label:"A1 Normal"})} style={{color:P.a1,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.a1}}>{(d.A1||0).toLocaleString()}</span>:<span style={{color:t.muted}}>0</span>}
-                        </td>
-                        <td style={{padding:"9px 12px"}}>
-                          {(d.A2||0)>0?<span onClick={()=>setOutletTypeDrill({type:d.type,status:"A2 - ANOMALY",label:"A2 Anomaly"})} style={{color:P.a2,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.a2}}>{(d.A2||0).toLocaleString()}</span>:<span style={{color:t.muted}}>0</span>}
-                        </td>
-                        <td style={{padding:"9px 12px"}}>
-                          {(d.A3||0)>0?<span onClick={()=>setOutletTypeDrill({type:d.type,status:"A3 - INCOMPLETE",label:"A3 Incomplete"})} style={{color:P.a3,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.a3}}>{(d.A3||0).toLocaleString()}</span>:<span style={{color:t.muted}}>0</span>}
-                        </td>
-                        <td style={{padding:"9px 12px"}}>
-                          {(d.INVESTIGATE||0)>0?<span onClick={()=>setOutletTypeDrill({type:d.type,status:"INVESTIGATE",label:"Investigate"})} style={{color:t.muted,fontWeight:600,cursor:"pointer",borderBottom:"1px dotted "+t.muted}}>{(d.INVESTIGATE||0).toLocaleString()}</span>:<span style={{color:t.muted}}>0</span>}
-                        </td>
-                        <td style={{padding:"9px 12px",minWidth:90}}><Bar3 A1={d.A1||0} A2={d.A2||0} A3={d.A3||0} total={d.total}/></td>
-                        <td style={{padding:"9px 12px",color:P.a1,fontWeight:800}}>{pctS(d.A1,d.total)}</td>
-                        <td style={{padding:"9px 12px",color:pct(d.A2,d.total)>=40?P.investigate:t.muted,fontWeight:600}}>{pctS(d.A2,d.total)}</td>
-                        <td style={{padding:"9px 12px",color:t.muted,fontWeight:600}}>{pctS(d.A3,d.total)}</td>
-                      </tr>
-                    );})}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
             {/* ── Outlet per Region ── */}
             {regionCodes.length>0&&(
             <div style={card()}>
@@ -2916,6 +2916,50 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
             </div>
             )}
 
+            <div style={{...card(),gridColumn:"1/-1"}}>
+              <div style={{fontWeight:700,marginBottom:6}}>Detail per Outlet Type</div>
+              {(()=>{const worst=[...view.outletData].sort((a,b)=>pct(a.A1,a.total)-pct(b.A1,b.total))[0];const best=[...view.outletData].sort((a,b)=>pct(b.A1,b.total)-pct(a.A1,a.total))[0];
+                return worst&&best?(
+                <div style={{fontSize:11,color:t.text,marginBottom:12,background:"#f59e0b15",border:"1px solid #f59e0b30",borderRadius:8,padding:"7px 10px",lineHeight:1.6}}>
+                  💡 <b style={{color:t.text}}>{best.type.replace("RO ","")}</b> paling sehat (<span style={{color:P.a1,fontWeight:700}}>{pctS(best.A1,best.total)} A1</span>), <b style={{color:t.text}}>{worst.type.replace("RO ","")}</b> paling perlu perhatian (<span style={{color:P.a1,fontWeight:700}}>{pctS(worst.A1,worst.total)} A1</span>).
+                </div>):null;})()}
+              <div style={{overflowX:"auto",scrollbarWidth:"none",msOverflowStyle:"none"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
+                  <thead><tr style={{background:t.cardAlt}}>
+                    {["Outlet Type","Total","A1","A2","A3","Inv","Dist","A1%","A2%"].map(h=><th key={h} style={{padding:isMobile?"6px 8px":"9px 12px",textAlign:"left",fontSize:11,fontWeight:700,color:t.muted,whiteSpace:"nowrap",borderBottom:`1px solid ${t.border}`}}>{h}</th>)}
+                  </tr></thead>
+                  <tbody>
+                    {view.outletData.map((d,i)=>{
+                      const a1p=pct(d.A1,d.total);
+                      const rowTint=a1p>=70?P.a1:a1p>=40?P.a2:P.a3;
+                      return(
+                      <tr key={i} style={{borderBottom:`1px solid ${t.border}`,background:i%2===0?rowTint+"08":rowTint+"10"}}>
+                        <td style={{padding:isMobile?"6px 8px":"9px 12px",fontWeight:700,color:P.accent,cursor:"pointer",whiteSpace:"nowrap"}} onClick={()=>openOutletDrill(d.type)}>{d.type}</td>
+                        <td style={{padding:isMobile?"6px 8px":"9px 12px",fontWeight:700}}>{d.total.toLocaleString()}</td>
+                        <td style={{padding:"9px 12px"}}>
+                          {(d.A1||0)>0?<span onClick={()=>setOutletTypeDrill({type:d.type,status:"A1 - NORMAL",label:"A1 Normal"})} style={{color:P.a1,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.a1}}>{(d.A1||0).toLocaleString()}</span>:<span style={{color:t.muted}}>0</span>}
+                        </td>
+                        <td style={{padding:"9px 12px"}}>
+                          {(d.A2||0)>0?<span onClick={()=>setOutletTypeDrill({type:d.type,status:"A2 - ANOMALY",label:"A2 Anomaly"})} style={{color:P.a2,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.a2}}>{(d.A2||0).toLocaleString()}</span>:<span style={{color:t.muted}}>0</span>}
+                        </td>
+                        <td style={{padding:"9px 12px"}}>
+                          {(d.A3||0)>0?<span onClick={()=>setOutletTypeDrill({type:d.type,status:"A3 - INCOMPLETE",label:"A3 Incomplete"})} style={{color:P.a3,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.a3}}>{(d.A3||0).toLocaleString()}</span>:<span style={{color:t.muted}}>0</span>}
+                        </td>
+                        <td style={{padding:"9px 12px"}}>
+                          {(d.INVESTIGATE||0)>0?<span onClick={()=>setOutletTypeDrill({type:d.type,status:"INVESTIGATE",label:"Investigate"})} style={{color:t.muted,fontWeight:600,cursor:"pointer",borderBottom:"1px dotted "+t.muted}}>{(d.INVESTIGATE||0).toLocaleString()}</span>:<span style={{color:t.muted}}>0</span>}
+                        </td>
+                        <td style={{padding:"9px 12px",minWidth:90}}><Bar3 A1={d.A1||0} A2={d.A2||0} A3={d.A3||0} total={d.total}/></td>
+                        <td style={{padding:"9px 12px",color:P.a1,fontWeight:800}}>{pctS(d.A1,d.total)}</td>
+                        <td style={{padding:"9px 12px",color:pct(d.A2,d.total)>=40?P.investigate:t.muted,fontWeight:600}}>{pctS(d.A2,d.total)}</td>
+                        <td style={{padding:"9px 12px",color:t.muted,fontWeight:600}}>{pctS(d.A3,d.total)}</td>
+                      </tr>
+                    );})}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+
             {/* ── Census vs Non-Census ── */}
             {(view.censusData||[]).length>0&&(
             <div style={{...card(),gridColumn:"1/-1"}}>
@@ -2990,7 +3034,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                 )}
               </div>
             );})}
-            <div style={{...card(),gridColumn:"1/-1"}}>
+            <div style={card()}>
               <div style={{fontWeight:700,marginBottom:14}}>📍 In Range Status</div>
               {(()=>{
                 const irC=view.inRangeC||{};
@@ -3279,11 +3323,11 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                             if(clusterNames.length>1){
                               clusterNames.forEach(cln=>{
                                 const clRows=rows.filter(r=>String(r["Cluster"]||"").trim()===cln);
-                                if(clRows.length) newResults.push({name:file.name+"|"+cln,label:cln,regionCode:getRegionCode(cln),rows:clRows});
+                                if(clRows.length) newResults.push({name:file.name+"|"+cln,label:cln,regionCode:getRegionCode(cln),rows:clRows,originFile:file});
                               });
                             } else {
                               const label=clusterNames[0]||sn;
-                              newResults.push({name:file.name,label,regionCode:getRegionCode(label),rows});
+                              newResults.push({name:file.name,label,regionCode:getRegionCode(label),rows,originFile:file});
                             }
                           }
                           onAddFiles(prev=>{
@@ -3394,6 +3438,35 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
               ➕ Add Files
               <input type="file" accept=".xlsx,.xls" multiple style={{display:"none"}} onClick={e=>e.target.value=""} onChange={e=>{setShowFileManager(false);handleAddFiles(e.target.files);}}/>
             </label>
+          </div>
+        </div>
+      </div>
+    )}
+    {canvCategoryDrill&&(
+      <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:1200,display:"flex",alignItems:"flex-end",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)"}} onClick={()=>setCanvCategoryDrill(null)}>
+        <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxHeight:"78vh",background:t.card,borderRadius:"18px 18px 0 0",border:"1px solid "+t.border,overflow:"hidden",display:"flex",flexDirection:"column",fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
+          <div style={{padding:"16px 18px 12px",borderBottom:"1px solid "+t.border,display:"flex",alignItems:"center",gap:10}}>
+            <div style={{width:12,height:12,borderRadius:3,background:canvCategoryDrill.color,flexShrink:0}}/>
+            <div style={{flex:1}}>
+              <div style={{fontWeight:800,fontSize:14,color:t.text}}>{canvCategoryDrill.label}</div>
+              <div style={{fontSize:11,color:t.muted,marginTop:2}}>{canvCategoryDrill.list.length.toLocaleString()} canvasser (status dominan)</div>
+            </div>
+            <button onClick={()=>setCanvCategoryDrill(null)} style={{background:t.cardAlt,border:"1px solid "+t.border,color:t.text,borderRadius:8,padding:"4px 10px",cursor:"pointer",fontSize:12,fontWeight:700}}>✕</button>
+          </div>
+          <div style={{overflowY:"auto",flex:1,padding:"8px 18px 18px",scrollbarWidth:"none"}}>
+            {canvCategoryDrill.list.map((c,i)=>(
+              <div key={i} onClick={()=>{const rows=getCanvasserRows(c.name,c.cluster,canvCategoryDrill.statusKey);setCanvDetail({canvasser:c,drillLabel:canvCategoryDrill.label,color:canvCategoryDrill.color,rows,drillKey:canvCategoryDrill.statusKey,sessionKey:Date.now()});setCanvCategoryDrill(null);}}
+                style={{display:"flex",alignItems:"center",gap:10,padding:"10px 6px",cursor:"pointer",borderBottom:i<canvCategoryDrill.list.length-1?"1px solid "+t.border:"none"}}
+                onMouseEnter={e=>e.currentTarget.style.opacity="0.7"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+                <div style={{width:22,height:22,borderRadius:6,background:canvCategoryDrill.color+"22",color:canvCategoryDrill.color,fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{i+1}</div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:13,fontWeight:700,color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</div>
+                  <div style={{fontSize:10,color:t.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.cluster}</div>
+                </div>
+                <div style={{fontSize:13,fontWeight:800,color:canvCategoryDrill.color,flexShrink:0}}>{(c[canvCategoryDrill.statusKey]||0).toLocaleString()}</div>
+                <span style={{fontSize:12,color:t.muted,flexShrink:0}}>›</span>
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -3558,14 +3631,14 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
               const sevColor=f.severity==="fraud"?"#dc2626":f.severity==="high"?"#ef4444":f.severity==="medium"?"#f59e0b":f.severity==="low"?"#22c55e":"#3b82f6";
               const sevLabel=f.severity==="fraud"?"🚨 POTENSI FRAUD":f.severity==="high"?"PERLU PERHATIAN":f.severity==="medium"?"PERLU DICEK":f.severity==="low"?"BAIK":"INFO";
               return(
-                <div key={i} style={{...card({borderLeft:`4px solid ${sevColor}`,background:`linear-gradient(135deg, ${sevColor}0d, ${t.card})`}),marginBottom:12}}>
-                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                <div key={i} style={{...card({borderLeft:`4px solid ${sevColor}`,background:t.bg}),marginBottom:12}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap"}}>
                     <span style={{fontSize:18}}>{f.icon}</span>
-                    <span style={{fontWeight:800,fontSize:14,color:t.text,flex:1}}>{f.title}</span>
-                    <span style={{background:sevColor+"22",color:sevColor,fontSize:9,fontWeight:800,padding:"2px 8px",borderRadius:999,letterSpacing:"0.03em",whiteSpace:"nowrap"}}>{sevLabel}</span>
+                    <span style={{fontWeight:800,fontSize:14,color:t.text,flex:1,minWidth:120}}>{f.title}</span>
+                    <span style={{background:sevColor,color:"#fff",fontSize:9,fontWeight:800,padding:"3px 9px",borderRadius:999,letterSpacing:"0.03em",whiteSpace:"nowrap"}}>{sevLabel}</span>
                   </div>
-                  <div style={{fontSize:12,color:t.muted,lineHeight:1.6,marginBottom:8}}>{f.desc}</div>
-                  <div style={{display:"flex",gap:8,alignItems:"flex-start",background:sevColor+"12",borderRadius:8,padding:"8px 10px",border:`1px solid ${sevColor}25`}}>
+                  <div style={{fontSize:12,color:t.text,lineHeight:1.6,marginBottom:8}}>{f.desc}</div>
+                  <div style={{display:"flex",gap:8,alignItems:"flex-start",borderTop:`1px solid ${t.border}`,paddingTop:8}}>
                     <span style={{fontSize:13,flexShrink:0}}>💡</span>
                     <div style={{fontSize:11,color:t.text,lineHeight:1.6}}><b style={{color:sevColor}}>Rekomendasi: </b>{f.rec}</div>
                   </div>
