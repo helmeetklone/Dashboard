@@ -2716,38 +2716,32 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
             )}
 
 
-            {/* ── Visit Type chart ── */}
+            {/* ── Visit Type list (dulu ada chart bar, dihapus karena skalanya beda jauh antar tipe bikin bar tipis numpuk) ── */}
             {(view.visitTypeData||[]).length>0&&(
             <div>
               <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Volume per Tipe Kunjungan</div>
               <div style={{fontSize:11,color:t.muted,marginBottom:12}}>Perbandingan status A1/A2/A3 di tiap tipe kunjungan (Regular = rute terjadwal, Ad-Hoc = kunjungan tambahan di luar rute, Consignment = konsinyasi/titip barang)</div>
-              <ResponsiveContainer width="100%" height={180}>
-                <BarChart data={(view.visitTypeData||[]).map(d=>({name:d.type.replace(" Visit",""),A1:d.A1,A2:d.A2,A3:d.A3,_type:d.type}))} margin={{top:5,right:10,bottom:5,left:0}}
-                  onClick={d=>{if(d?.activePayload?.[0]?.payload?._type){const p=d.activePayload[0];const sk=p.dataKey;const sfMap={"A1":"A1 - NORMAL","A2":"A2 - ANOMALY","A3":"A3 - INCOMPLETE"};openVtDrill(p.payload._type,sfMap[sk]||null);}}}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={t.border}/>
-                  <XAxis dataKey="name" tick={{fill:t.muted,fontSize:11}} tickLine={false}/>
-                  <YAxis tick={{fill:t.muted,fontSize:10}} tickLine={false} axisLine={false}/>
-                  <Tooltip contentStyle={{background:t.card,border:`1px solid ${t.border}`,borderRadius:8,fontSize:11}}/>
-                  <Legend iconSize={8} wrapperStyle={{fontSize:10}}/>
-                  <Bar dataKey="A1" name="A1 Normal" fill={P.a1} stackId="a"><LabelList dataKey="A1" position="center" formatter={v=>v>0?fmtK(v):""} style={{fill:"#fff",fontSize:9,fontWeight:800,paintOrder:"stroke",stroke:"rgba(0,0,0,0.55)",strokeWidth:3}}/></Bar>
-                  <Bar dataKey="A2" name="A2 Anomaly" fill={P.a2} stackId="a"><LabelList dataKey="A2" position="center" formatter={v=>v>0?fmtK(v):""} style={{fill:"#fff",fontSize:9,fontWeight:800,paintOrder:"stroke",stroke:"rgba(0,0,0,0.55)",strokeWidth:3}}/></Bar>
-                  <Bar dataKey="A3" name="A3 Incomplete" fill={P.a3} stackId="a" radius={[3,3,0,0]}><LabelList dataKey="A3" position="center" formatter={v=>v>0?fmtK(v):""} style={{fill:"#fff",fontSize:9,fontWeight:800,paintOrder:"stroke",stroke:"rgba(0,0,0,0.55)",strokeWidth:3}}/></Bar>
-                </BarChart>
-              </ResponsiveContainer>
-              <div style={{marginTop:10}}>
-                {(view.visitTypeData||[]).map((d,vi)=>(
-                  <div key={d.type} onClick={()=>openVtDrill(d.type,null)} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:vi<(view.visitTypeData||[]).length-1?`1px solid ${t.border}`:"none",cursor:"pointer"}}>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontWeight:700,fontSize:12,color:t.text}}>{d.type}</div>
-                      <div style={{display:"flex",gap:10,marginTop:3,fontSize:10,flexWrap:"wrap"}}>
-                        <span onClick={e=>{e.stopPropagation();openVtDrill(d.type,"A1 - NORMAL");}} style={{color:P.a1,cursor:"pointer"}}>A1: {d.A1.toLocaleString()}</span>
-                        <span onClick={e=>{e.stopPropagation();openVtDrill(d.type,"A2 - ANOMALY");}} style={{color:P.a2,cursor:"pointer"}}>A2: {d.A2.toLocaleString()}</span>
-                        <span onClick={e=>{e.stopPropagation();openVtDrill(d.type,"A3 - INCOMPLETE");}} style={{color:P.a3,cursor:"pointer"}}>A3: {d.A3.toLocaleString()}</span>
-                      </div>
+              <div>
+                {(view.visitTypeData||[]).map((d,vi)=>{
+                  const dTotal=d.total||1;
+                  return(
+                  <div key={d.type} onClick={()=>openVtDrill(d.type,null)} style={{padding:"11px 0",borderBottom:vi<(view.visitTypeData||[]).length-1?`1px solid ${t.border}`:"none",cursor:"pointer"}}>
+                    <div style={{display:"flex",alignItems:"center",marginBottom:6}}>
+                      <div style={{fontWeight:700,fontSize:12,color:t.text,flex:1}}>{d.type}</div>
+                      <div style={{fontSize:13,fontWeight:800,color:t.text,flexShrink:0}}>{d.total.toLocaleString()}</div>
                     </div>
-                    <div style={{fontSize:13,fontWeight:800,color:t.text,flexShrink:0}}>{d.total.toLocaleString()}</div>
+                    <div style={{display:"flex",height:6,borderRadius:3,overflow:"hidden",marginBottom:6}}>
+                      <div style={{width:pctS(d.A1,dTotal),background:P.a1}}/>
+                      <div style={{width:pctS(d.A2,dTotal),background:P.a2}}/>
+                      <div style={{width:pctS(d.A3,dTotal),background:P.a3}}/>
+                    </div>
+                    <div style={{display:"flex",gap:14,fontSize:10,flexWrap:"wrap"}}>
+                      <span onClick={e=>{e.stopPropagation();openVtDrill(d.type,"A1 - NORMAL");}} style={{color:P.a1,cursor:"pointer",fontWeight:700}}>A1: {d.A1.toLocaleString()} ({pctS(d.A1,dTotal)})</span>
+                      <span onClick={e=>{e.stopPropagation();openVtDrill(d.type,"A2 - ANOMALY");}} style={{color:P.a2,cursor:"pointer",fontWeight:700}}>A2: {d.A2.toLocaleString()} ({pctS(d.A2,dTotal)})</span>
+                      <span onClick={e=>{e.stopPropagation();openVtDrill(d.type,"A3 - INCOMPLETE");}} style={{color:P.a3,cursor:"pointer",fontWeight:700}}>A3: {d.A3.toLocaleString()} ({pctS(d.A3,dTotal)})</span>
+                    </div>
                   </div>
-                ))}
+                );})}
               </div>
             </div>
             )}
