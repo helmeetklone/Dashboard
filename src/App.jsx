@@ -2309,21 +2309,45 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
           <div style={{...card(),marginBottom:14,fontSize:12,lineHeight:1.7}}>
             <div style={{fontWeight:800,fontSize:13,marginBottom:10,color:t.text}}>📖 Glossary Status Aktivitas</div>
             {[
-              {c:P.a1,icon:"✅",title:"A1 — Normal",desc:"Aktivitas berjalan sesuai standar: durasi kunjungan wajar, lokasi GPS sesuai/dekat outlet, dan checkout tercatat lengkap. Gak ada indikasi masalah."},
-              {c:P.a2,icon:"⚠️",title:"A2 — Anomaly",desc:"Aktivitas terdeteksi ada kejanggalan — bisa karena durasi terlalu singkat/panjang, lokasi GPS gak match/jauh dari outlet, atau visit status Observe/Investigate. Checkout tetap ada, tapi datanya mencurigakan."},
-              {c:P.a3,icon:"🔵",title:"A3 — Incomplete",desc:"Aktivitas gak lengkap — canvasser check-in tapi gak ada checkout tercatat. Prioritas paling tinggi dicek karena kunjungannya gak bisa divalidasi sama sekali."},
+              {c:P.a1,icon:"✅",title:"A1 — Normal",points:[
+                "Durasi kunjungan sesuai standar",
+                "Lokasi GPS sesuai dengan lokasi outlet",
+                "Checkout tercatat dengan lengkap",
+                "Tidak terdapat indikasi kejanggalan",
+              ]},
+              {c:P.a2,icon:"⚠️",title:"A2 — Anomaly",points:[
+                "Durasi kunjungan terlalu singkat atau terlalu panjang",
+                "Lokasi GPS tidak sesuai atau berjarak jauh dari outlet",
+                "Status kunjungan tercatat sebagai Observe atau Investigate",
+                "Checkout tetap tercatat, namun data mengindikasikan kejanggalan",
+              ]},
+              {c:P.a3,icon:"🔵",title:"A3 — Incomplete",points:[
+                "Canvasser melakukan check-in namun tidak ada checkout yang tercatat",
+                "Kunjungan tidak dapat divalidasi sepenuhnya",
+                "Merupakan prioritas pemeriksaan tertinggi",
+              ]},
             ].map((g,i)=>(
               <div key={i} style={{display:"flex",gap:10,marginBottom:i<2?10:14,paddingBottom:i<2?10:0,borderBottom:i<2?`1px solid ${t.border}`:"none"}}>
                 <span style={{fontSize:16,flexShrink:0}}>{g.icon}</span>
                 <div>
-                  <div style={{fontWeight:700,color:g.c,marginBottom:2}}>{g.title}</div>
-                  <div style={{color:t.muted}}>{g.desc}</div>
+                  <div style={{fontWeight:700,color:g.c,marginBottom:5}}>{g.title}</div>
+                  <ul style={{margin:0,paddingLeft:18,color:t.muted}}>
+                    {g.points.map((p,pi)=><li key={pi} style={{marginBottom:3}}>{p}</li>)}
+                  </ul>
                 </div>
               </div>
             ))}
             <div style={{background:t.cardAlt,borderRadius:8,padding:"9px 11px",fontSize:11,color:t.muted,lineHeight:1.6}}>
-              <b style={{color:t.text}}>📋 By Activity ID</b> = persen & jumlah dihitung dari total <b>aktivitas/kunjungan</b> (1 canvasser bisa nyumbang banyak baris).<br/>
-              <b style={{color:t.text}}>👤 By Canvasser</b> = persen & jumlah dihitung dari total <b>orang</b> — tiap canvasser diklasifikasi ke A1/A2/A3 berdasarkan status yang paling sering muncul di antara aktivitas dia.
+              <div style={{marginBottom:6}}><b style={{color:t.text}}>📋 By Activity ID</b></div>
+              <ul style={{margin:"0 0 8px",paddingLeft:16}}>
+                <li>Persentase dan jumlah dihitung berdasarkan total aktivitas/kunjungan</li>
+                <li>Satu canvasser dapat menyumbang lebih dari satu baris data</li>
+              </ul>
+              <div style={{marginBottom:6}}><b style={{color:t.text}}>👤 By Canvasser</b></div>
+              <ul style={{margin:0,paddingLeft:16}}>
+                <li>Persentase dan jumlah dihitung berdasarkan total orang (canvasser)</li>
+                <li>Setiap canvasser diklasifikasikan ke A1/A2/A3 berdasarkan status yang paling sering muncul di antara aktivitasnya</li>
+              </ul>
             </div>
           </div>
         )}
