@@ -2795,7 +2795,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                 const isGood=(key,delta)=>key==="A1"?delta>=0:delta<=0; // A1 naik=bagus, A2/A3 naik=jelek
 
                 return(<>
-                  <div style={{display:"flex",border:`1px solid ${t.border}`,borderRadius:12,overflow:"hidden",marginBottom:18}}>
+                  <div style={{display:"flex",border:`1px solid ${t.border}`,background:t.card,boxShadow:"0 1px 4px rgba(0,0,0,0.08)",borderRadius:12,overflow:"hidden",marginBottom:18}}>
                     <div style={{flex:1,padding:"14px 8px",textAlign:"center",borderRight:`1px solid ${t.border}`}}>
                       <div style={{fontSize:17,fontWeight:800,color:P.accent}}>{avgPerDay.toLocaleString()}</div>
                       <div style={{fontSize:9,color:t.muted,marginTop:3,textTransform:"uppercase"}}>Rata-rata Aktivitas<br/>per Hari</div>
@@ -2888,7 +2888,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                 const worstRegion=regionCodes.length>1?[...regionRows].sort((a,b)=>a.a1p-b.a1p)[0]:null;
 
                 return(<>
-                  <div style={{display:"flex",border:`1px solid ${t.border}`,borderRadius:12,overflow:"hidden",marginBottom:18}}>
+                  <div style={{display:"flex",border:`1px solid ${t.border}`,background:t.card,boxShadow:"0 1px 4px rgba(0,0,0,0.08)",borderRadius:12,overflow:"hidden",marginBottom:18}}>
                     <div style={{flex:1,padding:"14px 8px",textAlign:"center",borderRight:`1px solid ${t.border}`}}>
                       <div style={{fontSize:15,fontWeight:800,color:P.accent}}>{biggest.type.replace("RO ","")}</div>
                       <div style={{fontSize:9,color:t.muted,marginTop:3,textTransform:"uppercase"}}>Volume<br/>Terbesar</div>
