@@ -2603,93 +2603,98 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                   );
                 })()}
 
-            {/* ── ROW 2: Comparison chart (region/cluster) OR Top 5 per status (cluster level) ── */}
-            {selCluster?(
-              // Cluster level: Top 5 canvassers per A1, A2, A3
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:24,marginBottom:24}}>
-                {[
-                  {label:"Top 5 — A1 Normal",color:P.a1,key:"A1",sort:"A1"},
-                  {label:"Top 5 — A2 Anomaly",color:P.a2,key:"A2",sort:"A2"},
-                  {label:"Top 5 — A3 Incomplete",color:P.a3,key:"A3",sort:"A3"},
-                ].map((cat,ci)=>{
-                  const top5=[...view.canvassers].sort((a,b)=>b[cat.sort]-a[cat.sort]).slice(0,5);
-                  const maxV=top5[0]?.[cat.sort]||1;
-                  return(
-                  <div key={ci}>
-                    <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:10}}>{cat.label}</div>
-                    {top5.map((cv,i)=>(
-                      <div key={i} style={{marginBottom:9}}>
-                        <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
-                          <span style={{fontWeight:600,color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"70%"}}>{cv.name}</span>
-                          <span style={{fontWeight:700,color:cat.color}}>{(cv[cat.sort]||0).toLocaleString()}</span>
-                        </div>
-                        <div style={{height:3,borderRadius:99,background:t.border}}>
-                          <div style={{width:pct(cv[cat.sort]||0,maxV)+"%",height:"100%",borderRadius:99,background:cat.color}}/>
-                        </div>
-                        <div style={{fontSize:10,color:t.muted,marginTop:2}}>{cv.cluster} · {pctS(cv[cat.sort]||0,cv.total)} dari total aktivitas dia</div>
+            {/* ── ROW 2: Comparison (region/cluster) + Volume per Tipe Kunjungan — bersebelahan kayak Key Insights ── */}
+            {(()=>{
+              const visitTypeBlock=(view.visitTypeData||[]).length>0&&(
+                <div>
+                  <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Volume per Tipe Kunjungan</div>
+                  <div style={{fontSize:11,color:t.muted,marginBottom:12}}>Regular = rute terjadwal, Ad-Hoc = kunjungan tambahan di luar rute, Consignment = konsinyasi/titip barang</div>
+                  {(view.visitTypeData||[]).map((d,vi)=>{
+                    const dTotal=d.total||1;
+                    return(
+                    <div key={d.type} onClick={()=>openVtDrill(d.type,null)} style={{padding:"11px 0",borderBottom:vi<(view.visitTypeData||[]).length-1?`1px solid ${t.border}`:"none",cursor:"pointer"}}>
+                      <div style={{display:"flex",alignItems:"center",marginBottom:6}}>
+                        <div style={{fontWeight:700,fontSize:12,color:t.text,flex:1}}>{d.type}</div>
+                        <div style={{fontSize:13,fontWeight:800,color:t.text,flexShrink:0}}>{d.total.toLocaleString()}</div>
                       </div>
-                    ))}
-                    <div onClick={()=>openDrill(cat.label,cat.color,cat.key)} style={{fontSize:11,fontWeight:700,color:cat.color,cursor:"pointer",marginTop:6}}>
-                      Lihat semua ›
+                      <div style={{display:"flex",height:6,borderRadius:3,overflow:"hidden",marginBottom:6}}>
+                        <div style={{width:pctS(d.A1,dTotal),background:P.a1}}/>
+                        <div style={{width:pctS(d.A2,dTotal),background:P.a2}}/>
+                        <div style={{width:pctS(d.A3,dTotal),background:P.a3}}/>
+                      </div>
+                      <div style={{display:"flex",gap:14,fontSize:10,flexWrap:"wrap"}}>
+                        <span onClick={e=>{e.stopPropagation();openVtDrill(d.type,"A1 - NORMAL");}} style={{color:P.a1,cursor:"pointer",fontWeight:700}}>A1: {d.A1.toLocaleString()} ({pctS(d.A1,dTotal)})</span>
+                        <span onClick={e=>{e.stopPropagation();openVtDrill(d.type,"A2 - ANOMALY");}} style={{color:P.a2,cursor:"pointer",fontWeight:700}}>A2: {d.A2.toLocaleString()} ({pctS(d.A2,dTotal)})</span>
+                        <span onClick={e=>{e.stopPropagation();openVtDrill(d.type,"A3 - INCOMPLETE");}} style={{color:P.a3,cursor:"pointer",fontWeight:700}}>A3: {d.A3.toLocaleString()} ({pctS(d.A3,dTotal)})</span>
+                      </div>
                     </div>
-                  </div>
-                );})}
-              </div>
-            ):(
-              // National/Region level: comparison — angka aja, tanpa chart
-              compData.length>0&&(
-              <div style={{marginBottom:24}}>
-                <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase"}}>{selRegion?`Perbandingan Cluster dalam Region ${selRegion}`:regionCodes.length>1?"Perbandingan Antar Region":`Perbandingan Cluster`}</div>
-                <div style={{fontSize:11,color:t.muted,marginTop:2,marginBottom:14}}>Klik baris untuk lihat detail</div>
-                {[...compData].sort((a,b)=>b.total-a.total).map((d,i)=>(
-                  <div key={i} onClick={()=>{if(selRegion){setSelCluster(d.fullName);}else if(regionCodes.length>1){setSelRegion(d.name);}else{setSelRegion(regionCodes[0]);setSelCluster(d.fullName);}}}
-                    style={{padding:"12px 0",borderBottom:i<compData.length-1?`1px solid ${t.border}`:"none",cursor:"pointer"}}
-                    onMouseEnter={e=>e.currentTarget.style.opacity="0.75"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                    <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:6}}>
-                      <div style={{fontSize:13,fontWeight:700,color:t.text}}>{d.name}</div>
-                      <div style={{fontSize:11,color:t.muted}}>{fmtK(d.total)} aktivitas</div>
-                    </div>
-                    <div style={{display:"flex",gap:28}}>
-                      <div><div style={{fontSize:20,fontWeight:800,color:P.a1}}>{d.A1.toFixed(0)}%</div><div style={{fontSize:9,color:t.muted,textTransform:"uppercase"}}>A1 Normal</div></div>
-                      <div><div style={{fontSize:20,fontWeight:800,color:d.A2>=40?P.investigate:P.a2}}>{d.A2.toFixed(0)}%</div><div style={{fontSize:9,color:t.muted,textTransform:"uppercase"}}>A2 Anomaly</div></div>
-                      <div><div style={{fontSize:20,fontWeight:800,color:P.a3}}>{d.A3.toFixed(0)}%</div><div style={{fontSize:9,color:t.muted,textTransform:"uppercase"}}>A3 Incomplete</div></div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              )
-            )}
+                  );})}
+                </div>
+              );
 
+              const compBlock=selCluster?(
+                // Cluster level: Top 5 canvassers per A1, A2, A3
+                <div>
+                  {[
+                    {label:"Top 5 — A1 Normal",color:P.a1,key:"A1",sort:"A1"},
+                    {label:"Top 5 — A2 Anomaly",color:P.a2,key:"A2",sort:"A2"},
+                    {label:"Top 5 — A3 Incomplete",color:P.a3,key:"A3",sort:"A3"},
+                  ].map((cat,ci)=>{
+                    const top5=[...view.canvassers].sort((a,b)=>b[cat.sort]-a[cat.sort]).slice(0,5);
+                    const maxV=top5[0]?.[cat.sort]||1;
+                    return(
+                    <div key={ci} style={{marginBottom:ci<2?18:0}}>
+                      <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:10}}>{cat.label}</div>
+                      {top5.map((cv,i)=>(
+                        <div key={i} style={{marginBottom:9}}>
+                          <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
+                            <span style={{fontWeight:600,color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"70%"}}>{cv.name}</span>
+                            <span style={{fontWeight:700,color:cat.color}}>{(cv[cat.sort]||0).toLocaleString()}</span>
+                          </div>
+                          <div style={{height:3,borderRadius:99,background:t.border}}>
+                            <div style={{width:pct(cv[cat.sort]||0,maxV)+"%",height:"100%",borderRadius:99,background:cat.color}}/>
+                          </div>
+                          <div style={{fontSize:10,color:t.muted,marginTop:2}}>{cv.cluster} · {pctS(cv[cat.sort]||0,cv.total)} dari total aktivitas dia</div>
+                        </div>
+                      ))}
+                      <div onClick={()=>openDrill(cat.label,cat.color,cat.key)} style={{fontSize:11,fontWeight:700,color:cat.color,cursor:"pointer",marginTop:6}}>
+                        Lihat semua ›
+                      </div>
+                    </div>
+                  );})}
+                </div>
+              ):(
+                // National/Region level: comparison — angka aja, tanpa chart
+                compData.length>0&&(
+                <div>
+                  <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase"}}>{selRegion?`Perbandingan Cluster dalam Region ${selRegion}`:regionCodes.length>1?"Perbandingan Antar Region":`Perbandingan Cluster`}</div>
+                  <div style={{fontSize:11,color:t.muted,marginTop:2,marginBottom:14}}>Klik baris untuk lihat detail</div>
+                  {[...compData].sort((a,b)=>b.total-a.total).map((d,i)=>(
+                    <div key={i} onClick={()=>{if(selRegion){setSelCluster(d.fullName);}else if(regionCodes.length>1){setSelRegion(d.name);}else{setSelRegion(regionCodes[0]);setSelCluster(d.fullName);}}}
+                      style={{padding:"12px 0",borderBottom:i<compData.length-1?`1px solid ${t.border}`:"none",cursor:"pointer"}}
+                      onMouseEnter={e=>e.currentTarget.style.opacity="0.75"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+                      <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:6}}>
+                        <div style={{fontSize:13,fontWeight:700,color:t.text}}>{d.name}</div>
+                        <div style={{fontSize:11,color:t.muted}}>{fmtK(d.total)} aktivitas</div>
+                      </div>
+                      <div style={{display:"flex",gap:28}}>
+                        <div><div style={{fontSize:20,fontWeight:800,color:P.a1}}>{d.A1.toFixed(0)}%</div><div style={{fontSize:9,color:t.muted,textTransform:"uppercase"}}>A1 Normal</div></div>
+                        <div><div style={{fontSize:20,fontWeight:800,color:d.A2>=40?P.investigate:P.a2}}>{d.A2.toFixed(0)}%</div><div style={{fontSize:9,color:t.muted,textTransform:"uppercase"}}>A2 Anomaly</div></div>
+                        <div><div style={{fontSize:20,fontWeight:800,color:P.a3}}>{d.A3.toFixed(0)}%</div><div style={{fontSize:9,color:t.muted,textTransform:"uppercase"}}>A3 Incomplete</div></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                )
+              );
 
-            {/* ── Visit Type list (dulu ada chart bar, dihapus karena skalanya beda jauh antar tipe bikin bar tipis numpuk) ── */}
-            {(view.visitTypeData||[]).length>0&&(
-            <div>
-              <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Volume per Tipe Kunjungan</div>
-              <div style={{fontSize:11,color:t.muted,marginBottom:12}}>Perbandingan status A1/A2/A3 di tiap tipe kunjungan (Regular = rute terjadwal, Ad-Hoc = kunjungan tambahan di luar rute, Consignment = konsinyasi/titip barang)</div>
-              <div>
-                {(view.visitTypeData||[]).map((d,vi)=>{
-                  const dTotal=d.total||1;
-                  return(
-                  <div key={d.type} onClick={()=>openVtDrill(d.type,null)} style={{padding:"11px 0",borderBottom:vi<(view.visitTypeData||[]).length-1?`1px solid ${t.border}`:"none",cursor:"pointer"}}>
-                    <div style={{display:"flex",alignItems:"center",marginBottom:6}}>
-                      <div style={{fontWeight:700,fontSize:12,color:t.text,flex:1}}>{d.type}</div>
-                      <div style={{fontSize:13,fontWeight:800,color:t.text,flexShrink:0}}>{d.total.toLocaleString()}</div>
-                    </div>
-                    <div style={{display:"flex",height:6,borderRadius:3,overflow:"hidden",marginBottom:6}}>
-                      <div style={{width:pctS(d.A1,dTotal),background:P.a1}}/>
-                      <div style={{width:pctS(d.A2,dTotal),background:P.a2}}/>
-                      <div style={{width:pctS(d.A3,dTotal),background:P.a3}}/>
-                    </div>
-                    <div style={{display:"flex",gap:14,fontSize:10,flexWrap:"wrap"}}>
-                      <span onClick={e=>{e.stopPropagation();openVtDrill(d.type,"A1 - NORMAL");}} style={{color:P.a1,cursor:"pointer",fontWeight:700}}>A1: {d.A1.toLocaleString()} ({pctS(d.A1,dTotal)})</span>
-                      <span onClick={e=>{e.stopPropagation();openVtDrill(d.type,"A2 - ANOMALY");}} style={{color:P.a2,cursor:"pointer",fontWeight:700}}>A2: {d.A2.toLocaleString()} ({pctS(d.A2,dTotal)})</span>
-                      <span onClick={e=>{e.stopPropagation();openVtDrill(d.type,"A3 - INCOMPLETE");}} style={{color:P.a3,cursor:"pointer",fontWeight:700}}>A3: {d.A3.toLocaleString()} ({pctS(d.A3,dTotal)})</span>
-                    </div>
-                  </div>
-                );})}
-              </div>
-            </div>
-            )}
+              return(
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:16,marginBottom:24}}>
+                  <div style={{...card(),height:480,overflowY:"auto"}}>{compBlock}</div>
+                  <div style={{...card(),height:480,overflowY:"auto"}}>{visitTypeBlock}</div>
+                </div>
+              );
+            })()}
 
           </div>
         )}
