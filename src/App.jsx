@@ -2423,29 +2423,35 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
               const impactedA1=cvs.filter(c=>(c.A1||0)>0).length;
               const impactedA2=cvs.filter(c=>(c.A2||0)>0).length;
               const impactedA3=cvs.filter(c=>(c.A3||0)>0).length;
+              const a2p=pct(impactedA2,cvs.length||1), a3p=pct(impactedA3,cvs.length||1);
               const rows=[
                 {label:"Total Canvasser",val:cvs.length.toLocaleString(),color:t.text},
-                {label:"Terdampak A1 — Normal",val:pctS(impactedA1,cvs.length||1),color:P.a1,sub:impactedA1.toLocaleString()+" orang",drill:()=>setCanvCategoryDrill({label:"A1 - Normal",color:P.a1,statusKey:"A1",list:cvs.filter(c=>(c.A1||0)>0)})},
-                {label:"Terdampak A2 — Anomaly",val:pctS(impactedA2,cvs.length||1),color:P.a2,sub:impactedA2.toLocaleString()+" orang",drill:()=>setCanvCategoryDrill({label:"A2 - Anomaly",color:P.a2,statusKey:"A2",list:cvs.filter(c=>(c.A2||0)>0)})},
-                {label:"Terdampak A3 — Incomplete",val:pctS(impactedA3,cvs.length||1),color:P.a3,sub:impactedA3.toLocaleString()+" orang",drill:()=>setCanvCategoryDrill({label:"A3 - Incomplete",color:P.a3,statusKey:"A3",list:cvs.filter(c=>(c.A3||0)>0)})},
+                {label:"A1 — Normal",val:pctS(impactedA1,cvs.length||1),color:P.a1,sub:impactedA1.toLocaleString()+" orang",drill:()=>setCanvCategoryDrill({label:"A1 - Normal",color:P.a1,statusKey:"A1",list:cvs.filter(c=>(c.A1||0)>0)})},
+                {label:"A2 — Anomaly",val:pctS(impactedA2,cvs.length||1),color:P.a2,sub:impactedA2.toLocaleString()+" orang",drill:()=>setCanvCategoryDrill({label:"A2 - Anomaly",color:P.a2,statusKey:"A2",list:cvs.filter(c=>(c.A2||0)>0)})},
+                {label:"A3 — Incomplete",val:pctS(impactedA3,cvs.length||1),color:P.a3,sub:impactedA3.toLocaleString()+" orang",drill:()=>setCanvCategoryDrill({label:"A3 - Incomplete",color:P.a3,statusKey:"A3",list:cvs.filter(c=>(c.A3||0)>0)})},
                 {label:"Total Aktivitas",val:T.toLocaleString(),color:t.muted},
               ];
-              return rows.map((k,i,arr)=>{
-                const barPct=typeof k.val==="string"&&k.val.includes("%")?parseFloat(k.val):null;
-                return(
-                  <div key={i} onClick={k.drill||undefined} style={{display:"flex",alignItems:"center",padding:"11px 0",borderBottom:i<arr.length-1?`1px solid ${t.border}`:"none",cursor:k.drill?"pointer":"default"}}>
-                    <div style={{flex:1,minWidth:0,marginRight:12}}>
-                      <div style={{display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:600,color:t.text}}>
-                        {barPct!=null&&<span style={{width:7,height:7,borderRadius:"50%",background:k.color,flexShrink:0}}/>}
-                        <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.label}</span>
+              return(<>
+                {rows.map((k,i,arr)=>{
+                  const barPct=typeof k.val==="string"&&k.val.includes("%")?parseFloat(k.val):null;
+                  return(
+                    <div key={i} onClick={k.drill||undefined} style={{display:"flex",alignItems:"center",padding:"11px 0",borderBottom:i<arr.length-1?`1px solid ${t.border}`:"none",cursor:k.drill?"pointer":"default"}}>
+                      <div style={{flex:1,minWidth:0,marginRight:12}}>
+                        <div style={{display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:600,color:t.text}}>
+                          {barPct!=null&&<span style={{width:7,height:7,borderRadius:"50%",background:k.color,flexShrink:0}}/>}
+                          <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.label}</span>
+                        </div>
+                        {barPct!=null&&<div style={{width:"100%",height:3,background:t.border,borderRadius:99,marginTop:6}}><div style={{width:barPct+"%",height:3,background:k.color,borderRadius:99}}/></div>}
                       </div>
-                      {barPct!=null&&<div style={{width:"100%",height:3,background:t.border,borderRadius:99,marginTop:6}}><div style={{width:barPct+"%",height:3,background:k.color,borderRadius:99}}/></div>}
+                      {k.sub&&<div style={{fontSize:11,color:t.muted,width:isMobile?70:90,textAlign:"right",flexShrink:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.sub}</div>}
+                      <div style={{fontSize:isMobile?14:16,fontWeight:800,color:k.color,width:isMobile?58:70,textAlign:"right",flexShrink:0}}>{k.val}</div>
                     </div>
-                    {k.sub&&<div style={{fontSize:11,color:t.muted,width:isMobile?70:90,textAlign:"right",flexShrink:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.sub}</div>}
-                    <div style={{fontSize:isMobile?14:16,fontWeight:800,color:k.color,width:isMobile?58:70,textAlign:"right",flexShrink:0}}>{k.val}</div>
-                  </div>
-                );
-              });
+                  );
+                })}
+                {(a2p>=80||a3p>=80)&&<div style={{fontSize:10,color:t.muted,marginTop:8,lineHeight:1.6}}>
+                  💡 {a2p>=80&&a3p>=80?`${a2p}% canvasser kena A2 dan ${a3p}% kena A3`:a2p>=80?`${a2p}% canvasser kena A2`:`${a3p}% canvasser kena A3`} — wajar kalau volume aktivitas per canvasser tinggi (rata-rata {Math.round(T/(cvs.length||1)).toLocaleString()} aktivitas/orang), karena cukup 1 aktivitas bermasalah aja buat masuk hitungan ini.
+                </div>}
+              </>);
             })()}
           </div>
         </div>
@@ -2781,46 +2787,51 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                     ))}
                   </div>
 
-                  <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Hari Menonjol</div>
-                  <div style={{fontSize:11,color:t.muted,marginBottom:12}}>Klik buat lihat breakdown canvasser di tanggal itu</div>
-                  {[
-                    bestA1&&{icon:"🏆",color:P.a1,title:"Rate A1 Normal tertinggi (hari ini)",date:bestA1.date,val:pctS(bestA1.A1,bestA1.total)},
-                    worstA1&&{icon:"📉",color:"#ef4444",title:"Rate A1 Normal terendah (hari ini)",date:worstA1.date,val:pctS(worstA1.A1,worstA1.total)},
-                    worstA3&&{icon:"🔵",color:P.a3,title:"Rate A3 Incomplete tertinggi (hari ini)",date:worstA3.date,val:pctS(worstA3.A3,worstA3.total)},
-                    topVolume&&{icon:"📦",color:P.a2,title:"Jumlah aktivitas terbanyak (hari ini)",date:topVolume.date,val:topVolume.total.toLocaleString()},
-                  ].filter(Boolean).map((h,i,arr)=>(
-                    <div key={i} onClick={()=>setTrendDrill(h.date)} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 0",borderBottom:i<arr.length-1?`1px solid ${t.border}`:"none",cursor:"pointer"}}
-                      onMouseEnter={e=>e.currentTarget.style.opacity="0.75"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                      <div style={{width:26,height:26,borderRadius:7,background:h.color+"1f",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,flexShrink:0}}>{h.icon}</div>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:10,color:t.muted}}>{h.title}</div>
-                        <div style={{fontSize:12,fontWeight:700,color:t.text}}>{h.date}</div>
-                      </div>
-                      <div style={{fontSize:14,fontWeight:800,color:h.color,flexShrink:0}}>{h.val}</div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:16}}>
+                    <div style={{...card(),height:400,overflowY:"auto"}}>
+                      <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Hari Menonjol</div>
+                      <div style={{fontSize:11,color:t.muted,marginBottom:12}}>Klik buat lihat breakdown canvasser di tanggal itu</div>
+                      {[
+                        bestA1&&{icon:"🏆",color:P.a1,title:"Rate A1 Normal tertinggi (hari ini)",date:bestA1.date,val:pctS(bestA1.A1,bestA1.total)},
+                        worstA1&&{icon:"📉",color:"#ef4444",title:"Rate A1 Normal terendah (hari ini)",date:worstA1.date,val:pctS(worstA1.A1,worstA1.total)},
+                        worstA3&&{icon:"🔵",color:P.a3,title:"Rate A3 Incomplete tertinggi (hari ini)",date:worstA3.date,val:pctS(worstA3.A3,worstA3.total)},
+                        topVolume&&{icon:"📦",color:P.a2,title:"Jumlah aktivitas terbanyak (hari ini)",date:topVolume.date,val:topVolume.total.toLocaleString()},
+                      ].filter(Boolean).map((h,i,arr)=>(
+                        <div key={i} onClick={()=>setTrendDrill(h.date)} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 0",borderBottom:i<arr.length-1?`1px solid ${t.border}`:"none",cursor:"pointer"}}
+                          onMouseEnter={e=>e.currentTarget.style.opacity="0.75"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+                          <div style={{width:26,height:26,borderRadius:7,background:h.color+"1f",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,flexShrink:0}}>{h.icon}</div>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:10,color:t.muted}}>{h.title}</div>
+                            <div style={{fontSize:12,fontWeight:700,color:t.text}}>{h.date}</div>
+                          </div>
+                          <div style={{fontSize:14,fontWeight:800,color:h.color,flexShrink:0}}>{h.val}</div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+
+                    {(()=>{const tRev=[...view.trend].reverse();return(
+                    <div style={{...card(),height:400,overflowY:"auto"}}>
+                      <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Detail per Tanggal</div>
+                      <div style={{fontSize:11,color:t.muted,marginBottom:12}}>Klik tanggal untuk lihat breakdown canvasser</div>
+                      {tRev.slice(tPg*TPG,(tPg+1)*TPG).map((d,i)=>(
+                        <div key={i} onClick={()=>setTrendDrill(d.date)} style={{display:"flex",alignItems:"center",gap:16,padding:"11px 0",borderBottom:`1px solid ${t.border}`,cursor:"pointer"}}
+                          onMouseEnter={e=>e.currentTarget.style.opacity="0.75"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+                          <div style={{width:80,fontSize:12,fontWeight:700,color:t.text,flexShrink:0}}>{d.date}</div>
+                          <div style={{flex:1,display:"flex",gap:16,fontSize:11}}>
+                            <span style={{color:P.a1,fontWeight:700}}>{pctS(d.A1,d.total)} A1</span>
+                            <span style={{color:P.a2,fontWeight:700}}>{pctS(d.A2,d.total)} A2</span>
+                            <span style={{color:P.a3,fontWeight:700}}>{pctS(d.A3,d.total)} A3</span>
+                          </div>
+                          <div style={{fontSize:13,fontWeight:800,color:t.text,width:56,textAlign:"right",flexShrink:0}}>{d.total.toLocaleString()}</div>
+                        </div>
+                      ))}
+                      <div style={{marginTop:10}}><Pagination page={tPg} setPage={setTPg} total={tRev.length} pageSize={TPG} t={t}/></div>
+                    </div>
+                    );})()}
+                  </div>
                 </>);
               })()}
             </div>
-            {(()=>{const tRev=[...view.trend].reverse();return(
-            <div>
-              <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Detail per Tanggal</div>
-              <div style={{fontSize:11,color:t.muted,marginBottom:12}}>Klik tanggal untuk lihat breakdown canvasser</div>
-              {tRev.slice(tPg*TPG,(tPg+1)*TPG).map((d,i)=>(
-                <div key={i} onClick={()=>setTrendDrill(d.date)} style={{display:"flex",alignItems:"center",gap:16,padding:"11px 0",borderBottom:`1px solid ${t.border}`,cursor:"pointer"}}
-                  onMouseEnter={e=>e.currentTarget.style.opacity="0.75"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                  <div style={{width:80,fontSize:12,fontWeight:700,color:t.text,flexShrink:0}}>{d.date}</div>
-                  <div style={{flex:1,display:"flex",gap:16,fontSize:11}}>
-                    <span style={{color:P.a1,fontWeight:700}}>{pctS(d.A1,d.total)} A1</span>
-                    <span style={{color:P.a2,fontWeight:700}}>{pctS(d.A2,d.total)} A2</span>
-                    <span style={{color:P.a3,fontWeight:700}}>{pctS(d.A3,d.total)} A3</span>
-                  </div>
-                  <div style={{fontSize:13,fontWeight:800,color:t.text,width:56,textAlign:"right",flexShrink:0}}>{d.total.toLocaleString()}</div>
-                </div>
-              ))}
-              <div style={{marginTop:10}}><Pagination page={tPg} setPage={setTPg} total={tRev.length} pageSize={TPG} t={t}/></div>
-            </div>
-            );})()}
           </div>
         )}
 
@@ -2868,81 +2879,62 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                     </>}
                   </div>
 
-                  <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Ranking Outlet Type</div>
-                  <div style={{fontSize:11,color:t.muted,marginBottom:12}}>Urut dari volume terbesar · klik buat lihat detail</div>
-                  {byVolume.map((d,i)=>{
-                    const a1p=pct(d.A1,d.total);
-                    return(
-                      <div key={d.type} onClick={()=>openOutletDrill(d.type)} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:i<byVolume.length-1?`1px solid ${t.border}`:"none",cursor:"pointer"}}
-                        onMouseEnter={e=>e.currentTarget.style.opacity="0.75"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                        <div style={{width:22,textAlign:"center",fontSize:13,flexShrink:0}}>{i<3?["🥇","🥈","🥉"][i]:i+1}</div>
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:12,fontWeight:700,color:t.text}}>{d.type}</div>
-                          <div style={{fontSize:10,color:t.muted}}>{d.total.toLocaleString()} aktivitas</div>
-                        </div>
-                        <div style={{fontSize:13,fontWeight:800,color:a1p>=70?P.a1:a1p>=40?P.a2:"#ef4444",flexShrink:0}}>{pctS(d.A1,d.total)} A1</div>
-                      </div>
-                    );
-                  })}
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:16}}>
+                    <div style={{...card(),height:420,overflowY:"auto"}}>
+                      <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Ranking Outlet Type</div>
+                      <div style={{fontSize:11,color:t.muted,marginBottom:12}}>Urut dari volume terbesar · klik buat lihat detail</div>
+                      {byVolume.map((d,i)=>{
+                        const a1p=pct(d.A1,d.total);
+                        return(
+                          <div key={d.type} onClick={()=>openOutletDrill(d.type)} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:i<byVolume.length-1?`1px solid ${t.border}`:"none",cursor:"pointer"}}
+                            onMouseEnter={e=>e.currentTarget.style.opacity="0.75"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+                            <div style={{width:22,textAlign:"center",fontSize:13,flexShrink:0}}>{i<3?["🥇","🥈","🥉"][i]:i+1}</div>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{fontSize:12,fontWeight:700,color:t.text}}>{d.type}</div>
+                              <div style={{fontSize:10,color:t.muted}}>{d.total.toLocaleString()} aktivitas</div>
+                            </div>
+                            <div style={{fontSize:13,fontWeight:800,color:a1p>=70?P.a1:a1p>=40?P.a2:"#ef4444",flexShrink:0}}>{pctS(d.A1,d.total)} A1</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* ── Perbandingan per Region ── */}
+                    {regionCodes.length>0&&(
+                    <div style={{...card(),height:420,overflowY:"auto"}}>
+                      <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:6}}>Perbandingan per Region</div>
+                      {(()=>{const rows=regionCodes.map(code=>{const ra=regionAgg[code]||{actC:{},total:0};return{code,a1p:pct((ra.actC||{})["A1 - NORMAL"],ra.total)};});
+                        const best=[...rows].sort((a,b)=>b.a1p-a.a1p)[0], worst=[...rows].sort((a,b)=>a.a1p-b.a1p)[0];
+                        return best&&worst&&rows.length>1?(
+                        <div style={{fontSize:11,color:t.muted,marginBottom:14}}>
+                          💡 Region <b style={{color:t.text}}>{best.code}</b> paling sehat (<span style={{color:P.a1,fontWeight:700}}>{best.a1p}% A1</span>), <b style={{color:t.text}}>{worst.code}</b> paling perlu perhatian (<span style={{color:P.a1,fontWeight:700}}>{worst.a1p}% A1</span>).
+                        </div>):null;})()}
+                      {regionCodes.map((code,i)=>{
+                        const ra=regionAgg[code]||{actC:{},total:0};
+                        const rA1=(ra.actC||{})["A1 - NORMAL"]||0;
+                        const rA2=(ra.actC||{})["A2 - ANOMALY"]||0;
+                        const rA3=(ra.actC||{})["A3 - INCOMPLETE"]||0;
+                        return(
+                          <div key={code} onClick={()=>{setSelRegion(code);setSelCluster(null);setTab("overview");}} style={{padding:"11px 0",borderBottom:i<regionCodes.length-1?`1px solid ${t.border}`:"none",cursor:"pointer"}}
+                            onMouseEnter={e=>e.currentTarget.style.opacity="0.75"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+                            <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:6}}>
+                              <div style={{fontSize:12,fontWeight:700,color:t.text}}>{code} — {regionFullName(code)}</div>
+                              <div style={{fontSize:10,color:t.muted}}>{fmtK(ra.total||0)} aktivitas</div>
+                            </div>
+                            <div style={{display:"flex",gap:20}}>
+                              <div><span style={{fontSize:15,fontWeight:800,color:P.a1}}>{pctS(rA1,ra.total)}</span><span style={{fontSize:9,color:t.muted,marginLeft:4}}>A1</span></div>
+                              <div><span style={{fontSize:13,fontWeight:700,color:pct(rA2,ra.total)>=30?P.a2:t.muted}}>{pctS(rA2,ra.total)}</span><span style={{fontSize:9,color:t.muted,marginLeft:4}}>A2</span></div>
+                              <div><span style={{fontSize:13,fontWeight:700,color:t.muted}}>{pctS(rA3,ra.total)}</span><span style={{fontSize:9,color:t.muted,marginLeft:4}}>A3</span></div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    )}
+                  </div>
                 </>);
               })()}
             </div>
-
-            {/* ── Outlet per Region ── */}
-            {regionCodes.length>0&&(
-            <div style={{marginBottom:28}}>
-              <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:6}}>Perbandingan per Region</div>
-              {(()=>{const rows=regionCodes.map(code=>{const ra=regionAgg[code]||{actC:{},total:0};return{code,a1p:pct((ra.actC||{})["A1 - NORMAL"],ra.total)};});
-                const best=[...rows].sort((a,b)=>b.a1p-a.a1p)[0], worst=[...rows].sort((a,b)=>a.a1p-b.a1p)[0];
-                return best&&worst&&rows.length>1?(
-                <div style={{fontSize:11,color:t.muted,marginBottom:14}}>
-                  💡 Region <b style={{color:t.text}}>{best.code}</b> paling sehat (<span style={{color:P.a1,fontWeight:700}}>{best.a1p}% A1</span>), <b style={{color:t.text}}>{worst.code}</b> paling perlu perhatian (<span style={{color:P.a1,fontWeight:700}}>{worst.a1p}% A1</span>).
-                </div>):null;})()}
-
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={regionCodes.map((code,i)=>{
-                  const ra=regionAgg[code]||{actC:{},total:0};
-                  return {
-                    name:code,
-                    fullName:regionFullName(code),
-                    A1:(ra.actC||{})["A1 - NORMAL"]||0,
-                    A2:(ra.actC||{})["A2 - ANOMALY"]||0,
-                    A3:(ra.actC||{})["A3 - INCOMPLETE"]||0,
-                    total:ra.total||0,
-                  };
-                })} margin={{top:5,right:10,bottom:5,left:0}}
-                  onClick={d=>{if(d?.activePayload?.[0]?.payload?.name){setSelRegion(d.activePayload[0].payload.name);setSelCluster(null);setTab("overview");}}}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={t.border}/>
-                  <XAxis dataKey="name" tick={{fill:t.muted,fontSize:10}} tickLine={false}/>
-                  <YAxis tick={{fill:t.muted,fontSize:10}} tickLine={false} axisLine={false} tickFormatter={v=>v>=1000?Math.round(v/1000)+"K":v}/>
-                  <Tooltip contentStyle={{background:t.card,border:`1px solid ${t.border}`,borderRadius:8,fontSize:11}}
-                    formatter={(v,n,p)=>[v.toLocaleString()+" ("+pctS(v,p.payload.total)+")",n]}/>
-                  <Legend iconSize={8} wrapperStyle={{fontSize:10}}/>
-                  <Bar dataKey="A1" name="A1 Normal" fill={P.a1} stackId="a"><LabelList dataKey="A1" position="center" formatter={v=>v>0?fmtK(v):""} style={{fill:"#fff",fontSize:9,fontWeight:800,paintOrder:"stroke",stroke:"rgba(0,0,0,0.55)",strokeWidth:3}}/></Bar>
-                  <Bar dataKey="A2" name="A2 Anomaly" fill={P.a2} stackId="a"><LabelList dataKey="A2" position="center" formatter={v=>v>0?fmtK(v):""} style={{fill:"#fff",fontSize:9,fontWeight:800,paintOrder:"stroke",stroke:"rgba(0,0,0,0.55)",strokeWidth:3}}/></Bar>
-                  <Bar dataKey="A3" name="A3 Incomplete" fill={P.a3} stackId="a" radius={[3,3,0,0]}><LabelList dataKey="A3" position="center" formatter={v=>v>0?fmtK(v):""} style={{fill:"#fff",fontSize:9,fontWeight:800,paintOrder:"stroke",stroke:"rgba(0,0,0,0.55)",strokeWidth:3}}/></Bar>
-                </BarChart>
-              </ResponsiveContainer>
-              <div style={{fontSize:10,color:t.muted,marginTop:8,marginBottom:16,textAlign:"center"}}>💡 Klik bar untuk drill-down ke region tersebut</div>
-
-              {regionCodes.map((code,i)=>{
-                const ra=regionAgg[code]||{actC:{},total:0};
-                const rA1=(ra.actC||{})["A1 - NORMAL"]||0;
-                const rA2=(ra.actC||{})["A2 - ANOMALY"]||0;
-                const rA3=(ra.actC||{})["A3 - INCOMPLETE"]||0;
-                return(
-                  <div key={code} onClick={()=>{setSelRegion(code);setSelCluster(null);setTab("overview");}} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:i<regionCodes.length-1?`1px solid ${t.border}`:"none",cursor:"pointer"}}>
-                    <div style={{width:36,fontSize:10,fontWeight:800,color:t.muted,flexShrink:0}}>{code}</div>
-                    <div style={{flex:1,minWidth:0,fontSize:12,fontWeight:600,color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{regionFullName(code)}</div>
-                    <div style={{fontSize:11,color:t.muted,width:56,textAlign:"right",flexShrink:0}}>{fmtK(ra.total||0)}</div>
-                    <div style={{fontSize:12,fontWeight:800,color:P.a1,width:52,textAlign:"right",flexShrink:0}}>{pctS(rA1,ra.total)}</div>
-                    <div style={{fontSize:11,fontWeight:700,color:pct(rA2,ra.total)>=30?P.a2:t.muted,width:48,textAlign:"right",flexShrink:0}}>{pctS(rA2,ra.total)}</div>
-                    <div style={{fontSize:11,fontWeight:700,color:t.muted,width:48,textAlign:"right",flexShrink:0}}>{pctS(rA3,ra.total)}</div>
-                  </div>
-                );
-              })}
-            </div>
-            )}
 
             <div style={{marginBottom:28}}>
               <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:6}}>Detail per Outlet Type</div>
