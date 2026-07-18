@@ -2500,8 +2500,8 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                   const obsTotal=Object.values(rm.observe||{}).reduce((s,v)=>s+v,0);
 
                   return(
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:16,alignItems:"start"}}>
-                    <div style={card()}>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:16}}>
+                    <div style={{...card(),height:520,overflowY:"auto"}}>
                       {/* Section 1 */}
                       {topCanvasserItems.length>0&&<>
                         <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Top Canvasser per Status</div>
@@ -2553,7 +2553,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                       </div>}
                     </div>
 
-                    <div style={card()}>
+                    <div style={{...card(),height:520,overflowY:"auto"}}>
                       {/* Section 3 */}
                       <div>
                         <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:8}}>Pola Kunjungan</div>
