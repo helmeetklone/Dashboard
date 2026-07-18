@@ -2385,7 +2385,14 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
         )}
 
         {/* ── KPI 2 kolom: kiri Activity ID, kanan #Canvasser ── */}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:32,marginBottom:20}}>
+        {(()=>{
+          const cvs=view.canvassers||[];
+          const impactedA1=cvs.filter(c=>(c.A1||0)>0).length;
+          const impactedA2=cvs.filter(c=>(c.A2||0)>0).length;
+          const impactedA3=cvs.filter(c=>(c.A3||0)>0).length;
+          const a2p=pct(impactedA2,cvs.length||1), a3p=pct(impactedA3,cvs.length||1);
+          return(<>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:32,marginBottom:14}}>
           <div>
             <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:10}}>Activity ID</div>
             {[
@@ -2419,21 +2426,13 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
 
           <div>
             <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:10}}>#Canvasser</div>
-            {(()=>{
-              const cvs=view.canvassers||[];
-              const impactedA1=cvs.filter(c=>(c.A1||0)>0).length;
-              const impactedA2=cvs.filter(c=>(c.A2||0)>0).length;
-              const impactedA3=cvs.filter(c=>(c.A3||0)>0).length;
-              const a2p=pct(impactedA2,cvs.length||1), a3p=pct(impactedA3,cvs.length||1);
-              const rows=[
+            {[
                 {label:"Total Canvasser",val:cvs.length.toLocaleString(),color:t.text},
                 {label:"A1 — Normal",val:pctS(impactedA1,cvs.length||1),color:P.a1,sub:impactedA1.toLocaleString()+" orang",drill:()=>setCanvCategoryDrill({label:"A1 - Normal",color:P.a1,statusKey:"A1",list:cvs.filter(c=>(c.A1||0)>0)})},
                 {label:"A2 — Anomaly",val:pctS(impactedA2,cvs.length||1),color:P.a2,sub:impactedA2.toLocaleString()+" orang",drill:()=>setCanvCategoryDrill({label:"A2 - Anomaly",color:P.a2,statusKey:"A2",list:cvs.filter(c=>(c.A2||0)>0)})},
                 {label:"A3 — Incomplete",val:pctS(impactedA3,cvs.length||1),color:P.a3,sub:impactedA3.toLocaleString()+" orang",drill:()=>setCanvCategoryDrill({label:"A3 - Incomplete",color:P.a3,statusKey:"A3",list:cvs.filter(c=>(c.A3||0)>0)})},
                 {label:"Total Aktivitas",val:T.toLocaleString(),color:t.muted},
-              ];
-              return(<>
-                {rows.map((k,i,arr)=>{
+            ].map((k,i,arr)=>{
                   const barPct=typeof k.val==="string"&&k.val.includes("%")?parseFloat(k.val):null;
                   return(
                     <div key={i} onClick={k.drill||undefined} style={{display:"flex",alignItems:"center",padding:"11px 0",borderBottom:i<arr.length-1?`1px solid ${t.border}`:"none",cursor:k.drill?"pointer":"default"}}>
@@ -2448,19 +2447,20 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                       <div style={{fontSize:isMobile?14:16,fontWeight:800,color:k.color,width:isMobile?58:70,textAlign:"right",flexShrink:0}}>{k.val}</div>
                     </div>
                   );
-                })}
-                {(a2p>=80||a3p>=80)&&<div style={{fontSize:11,color:P.accent,marginTop:10,lineHeight:1.7,background:P.accent+"14",border:`1px solid ${P.accent}40`,borderRadius:8,padding:"10px 14px"}}>
-                  <div style={{fontWeight:700,marginBottom:4}}>💡 Catatan</div>
-                  <ul style={{margin:0,paddingLeft:16}}>
-                    {a2p>=80&&<li>Sebanyak {a2p}% canvasser tercatat memiliki minimal satu aktivitas berstatus A2.</li>}
-                    {a3p>=80&&<li>Sebanyak {a3p}% canvasser tercatat memiliki minimal satu aktivitas berstatus A3.</li>}
-                    <li>Hal ini wajar karena rata-rata volume aktivitas per canvasser cukup tinggi ({Math.round(T/(cvs.length||1)).toLocaleString()} aktivitas per orang), sehingga satu aktivitas bermasalah saja sudah tercatat dalam perhitungan ini.</li>
-                  </ul>
-                </div>}
-              </>);
-            })()}
+            })}
           </div>
         </div>
+
+        {(a2p>=80||a3p>=80)&&<div style={{fontSize:11,color:P.accent,marginBottom:20,lineHeight:1.7,background:P.accent+"14",border:`1px solid ${P.accent}40`,borderRadius:8,padding:"12px 16px"}}>
+          <div style={{fontWeight:700,marginBottom:4}}>💡 Catatan</div>
+          <ul style={{margin:0,paddingLeft:16}}>
+            {a2p>=80&&<li>Sebanyak {a2p}% canvasser tercatat memiliki minimal satu aktivitas berstatus A2.</li>}
+            {a3p>=80&&<li>Sebanyak {a3p}% canvasser tercatat memiliki minimal satu aktivitas berstatus A3.</li>}
+            <li>Hal ini wajar karena rata-rata volume aktivitas per canvasser cukup tinggi ({Math.round(T/(cvs.length||1)).toLocaleString()} aktivitas per orang), sehingga satu aktivitas bermasalah saja sudah tercatat dalam perhitungan ini.</li>
+          </ul>
+        </div>}
+          </>);
+        })()}
 
         {/* ── TAB BUTTONS ── */}
         <div style={{display:"flex",gap:22,marginBottom:20,borderBottom:`1px solid ${t.border}`,overflowX:"auto",overflowY:"hidden",scrollbarWidth:"none",msOverflowStyle:"none",touchAction:"pan-x"}}>
