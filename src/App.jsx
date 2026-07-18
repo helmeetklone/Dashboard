@@ -1572,6 +1572,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
   const [canvDetail,setCanvDetail]=useState(null);
   const [outletDrill,setOutletDrill]=useState(null);
   const [trendDrill,setTrendDrill]=useState(null);
+  const [trendDrillSort,setTrendDrillSort]=useState({key:"total",dir:"desc"});
   const [trendPeriod,setTrendPeriod]=useState("daily");
   const [addLoading,setAddLoading]=useState(null);
   const [showFileManager,setShowFileManager]=useState(false);
@@ -2448,8 +2449,13 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                     </div>
                   );
                 })}
-                {(a2p>=80||a3p>=80)&&<div style={{fontSize:11,color:P.accent,marginTop:10,lineHeight:1.6,background:P.accent+"14",border:`1px solid ${P.accent}40`,borderRadius:8,padding:"9px 12px"}}>
-                  💡 Wajar: rata-rata {Math.round(T/(cvs.length||1)).toLocaleString()} aktivitas/canvasser, jadi 1 aktivitas bermasalah saja sudah cukup tercatat di A2/A3.
+                {(a2p>=80||a3p>=80)&&<div style={{fontSize:11,color:P.accent,marginTop:10,lineHeight:1.7,background:P.accent+"14",border:`1px solid ${P.accent}40`,borderRadius:8,padding:"10px 14px"}}>
+                  <div style={{fontWeight:700,marginBottom:4}}>💡 Catatan</div>
+                  <ul style={{margin:0,paddingLeft:16}}>
+                    {a2p>=80&&<li>Sebanyak {a2p}% canvasser tercatat memiliki minimal satu aktivitas berstatus A2.</li>}
+                    {a3p>=80&&<li>Sebanyak {a3p}% canvasser tercatat memiliki minimal satu aktivitas berstatus A3.</li>}
+                    <li>Hal ini wajar karena rata-rata volume aktivitas per canvasser cukup tinggi ({Math.round(T/(cvs.length||1)).toLocaleString()} aktivitas per orang), sehingga satu aktivitas bermasalah saja sudah tercatat dalam perhitungan ini.</li>
+                  </ul>
                 </div>}
               </>);
             })()}
@@ -3188,8 +3194,11 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
               <thead style={{position:"sticky",top:0,background:t.card,zIndex:1}}>
                 <tr style={{background:t.cardAlt}}>
-                  {["#","Canvasser","Cluster","A1","A2","A3","Total"].map(h=>(
-                    <th key={h} style={{padding:"9px 12px",textAlign:"left",fontSize:11,fontWeight:700,color:t.muted,whiteSpace:"nowrap",borderBottom:`1px solid ${t.border}`}}>{h}</th>
+                  {[["#",null],["Canvasser","name"],["Cluster","cluster"],["A1","A1"],["A2","A2"],["A3","A3"],["Total","total"]].map(([h,key])=>(
+                    <th key={h} onClick={()=>key&&setTrendDrillSort(s=>({key,dir:s.key===key&&s.dir==="desc"?"asc":"desc"}))}
+                      style={{padding:"9px 12px",textAlign:"left",fontSize:11,fontWeight:700,color:trendDrillSort.key===key?P.accent:t.muted,whiteSpace:"nowrap",borderBottom:`1px solid ${t.border}`,cursor:key?"pointer":"default"}}>
+                      {h}{trendDrillSort.key===key?(trendDrillSort.dir==="desc"?" ↓":" ↑"):""}
+                    </th>
                   ))}
                 </tr>
               </thead>
@@ -3209,8 +3218,16 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                     map[cid].total++;
                     if(as1==="A1 - NORMAL")map[cid].A1++;else if(as1==="A2 - ANOMALY")map[cid].A2++;else if(as1==="A3 - INCOMPLETE")map[cid].A3++;
                   });
-                  return Object.values(map).sort((a,b)=>b.total-a.total).map((r,i)=>(
-                    <tr key={i} style={{borderBottom:`1px solid ${t.border}`,background:i%2===0?"transparent":t.rowAlt}}>
+                  const {key:sk2,dir:sd2}=trendDrillSort;
+                  const sorted=Object.values(map).sort((a,b)=>{
+                    const av=a[sk2],bv=b[sk2];
+                    const cmp=typeof av==="string"?av.localeCompare(bv):av-bv;
+                    return sd2==="desc"?-cmp:cmp;
+                  });
+                  return sorted.map((r,i)=>(
+                    <tr key={i} onClick={()=>{const rows=getCanvasserRows(r.name,r.cluster,null);setCanvDetail({canvasser:{name:r.name,cluster:r.cluster,total:r.total},drillLabel:"Aktivitas · "+trendDrill,color:P.accent,rows,drillKey:null,sessionKey:Date.now()});}}
+                      style={{borderBottom:`1px solid ${t.border}`,background:i%2===0?"transparent":t.rowAlt,cursor:"pointer"}}
+                      onMouseEnter={e=>e.currentTarget.style.opacity="0.7"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
                       <td style={{padding:"7px 10px",color:t.muted,fontSize:10}}>{i+1}</td>
                       <td style={{padding:"7px 10px",fontWeight:600,color:t.text}}>{r.name}</td>
                       <td style={{padding:"7px 10px",color:t.muted,fontSize:11}}>{r.cluster}</td>
