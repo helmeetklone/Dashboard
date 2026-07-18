@@ -2294,7 +2294,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
 
       {/* ── NAVIGATION: Level 1 — Nasional + Region tabs ── */}
       <div style={{padding:"0 22px",borderBottom:`1px solid ${t.border}`}}>
-        <div style={{display:"flex",gap:0,overflowX:"auto",scrollbarWidth:"none",msOverflowStyle:"none"}}>
+        <div style={{display:"flex",gap:0,overflowX:"auto",overflowY:"hidden",scrollbarWidth:"none",msOverflowStyle:"none",touchAction:"pan-x"}}>
           <button onClick={()=>{setSelRegion(null);setSelCluster(null);}} style={{padding:"0 16px 11px 0",marginRight:20,border:"none",cursor:"pointer",fontSize:13,fontWeight:700,background:"transparent",whiteSpace:"nowrap",color:!selRegion&&!selCluster?t.text:t.muted,borderBottom:`2px solid ${!selRegion&&!selCluster?P.accent:"transparent"}`,transition:"all 0.15s"}}>
             {regionCodes.length===1?`${regionCodes[0]} — ${regionFullName(regionCodes[0])}`:"Nasional"}
           </button>
@@ -2314,7 +2314,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
 
         {/* ── Level 2 — Cluster tabs (shown when region selected) ── */}
         {selRegion&&(
-          <div style={{padding:"0 0 0 16px",display:"flex",gap:0,overflowX:"auto",borderTop:`1px solid ${t.border}`}}>
+          <div style={{padding:"0 0 0 16px",display:"flex",gap:0,overflowX:"auto",overflowY:"hidden",borderTop:`1px solid ${t.border}`,touchAction:"pan-x"}}>
             <button onClick={()=>setSelCluster(null)} style={{padding:"8px 14px 8px 0",marginRight:14,border:"none",cursor:"pointer",fontSize:11,fontWeight:700,background:"transparent",whiteSpace:"nowrap",color:!selCluster?P.accent:t.muted,borderBottom:`2px solid ${!selCluster?P.accent:"transparent"}`,transition:"all 0.15s"}}>
               ∑ {selRegion} Total
             </button>
@@ -2332,12 +2332,9 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
 
       <div style={{padding:"14px 22px"}}>
 
-        {/* ── TOGGLE: By Activity ID vs By Canvasser ── */}
-        <div style={{display:"flex",gap:20,marginBottom:14,alignItems:"center",flexWrap:"wrap",borderBottom:`1px solid ${t.border}`}}>
-          {[{id:"activity",label:"By Activity ID"},{id:"canvasser",label:"By Canvasser"}].map(m=>(
-            <button key={m.id} onClick={()=>setKpiMode(m.id)} style={{padding:"0 0 10px",border:"none",background:"none",cursor:"pointer",fontSize:12,fontWeight:700,color:kpiMode===m.id?t.text:t.muted,borderBottom:`2px solid ${kpiMode===m.id?P.accent:"transparent"}`,marginBottom:-1}}>{m.label}</button>
-          ))}
-          <button onClick={()=>setShowGlossary(v=>!v)} style={{marginLeft:"auto",marginBottom:8,background:"none",border:"none",cursor:"pointer",fontSize:11,fontWeight:700,color:showGlossary?P.accent:t.muted}}>ℹ️ Apa itu A1/A2/A3?</button>
+        {/* ── Glossary toggle (toggle By Activity ID/By Canvasser dihapus, sekarang 2 kolom tampil bareng) ── */}
+        <div style={{display:"flex",justifyContent:"flex-end",marginBottom:14}}>
+          <button onClick={()=>setShowGlossary(v=>!v)} style={{background:"none",border:"none",cursor:"pointer",fontSize:11,fontWeight:700,color:showGlossary?P.accent:t.muted}}>ℹ️ Apa itu A1/A2/A3?</button>
         </div>
         {showGlossary&&(
           <div style={{...card(),marginBottom:14,fontSize:12,lineHeight:1.7}}>
@@ -2372,75 +2369,89 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
               </div>
             ))}
             <div style={{background:t.cardAlt,borderRadius:8,padding:"9px 11px",fontSize:11,color:t.muted,lineHeight:1.6}}>
-              <div style={{marginBottom:6}}><b style={{color:t.text}}>📋 By Activity ID</b></div>
+              <div style={{marginBottom:6}}><b style={{color:t.text}}>📋 Activity ID</b></div>
               <ul style={{margin:"0 0 8px",paddingLeft:16}}>
                 <li>Persentase dan jumlah dihitung berdasarkan total aktivitas/kunjungan</li>
                 <li>Satu canvasser dapat menyumbang lebih dari satu baris data</li>
               </ul>
-              <div style={{marginBottom:6}}><b style={{color:t.text}}>👤 By Canvasser</b></div>
+              <div style={{marginBottom:6}}><b style={{color:t.text}}>👤 #Canvasser</b></div>
               <ul style={{margin:0,paddingLeft:16}}>
-                <li>Persentase dan jumlah dihitung berdasarkan total orang (canvasser)</li>
-                <li>Setiap canvasser diklasifikasikan ke A1/A2/A3 berdasarkan status yang paling sering muncul (dominan) di antara aktivitasnya</li>
+                <li>Dihitung berdasarkan total orang (canvasser)</li>
+                <li>Seorang canvasser dihitung "terdampak" A1/A2/A3 kalau dia punya minimal 1 aktivitas dengan status tersebut — satu canvasser bisa terdampak lebih dari 1 status sekaligus</li>
               </ul>
             </div>
           </div>
         )}
-        {/* ── KPI LIST (flat row style, lebar dibatasi biar gak stretch penuh di layar lebar) ── */}
-        <div style={{marginBottom:10,maxWidth:480}}>
-          {(kpiMode==="canvasser"?[
-            {label:"Total",val:canvStatusCounts.total.toLocaleString(),color:t.text},
-            {label:"A1 — Normal",val:pctS(canvStatusCounts.counts.A1,canvStatusCounts.total||1),color:P.a1,sub:canvStatusCounts.counts.A1.toLocaleString()+" canvasser",drill:()=>setCanvCategoryDrill({label:"A1 - Normal",color:P.a1,statusKey:"A1",list:canvStatusCounts.lists.A1})},
-            {label:"A2 — Anomaly",val:pctS(canvStatusCounts.counts.A2,canvStatusCounts.total||1),color:P.a2,sub:canvStatusCounts.counts.A2.toLocaleString()+" canvasser",drill:()=>setCanvCategoryDrill({label:"A2 - Anomaly",color:P.a2,statusKey:"A2",list:canvStatusCounts.lists.A2})},
-            {label:"A3 — Incomplete",val:pctS(canvStatusCounts.counts.A3,canvStatusCounts.total||1),color:P.a3,sub:canvStatusCounts.counts.A3.toLocaleString()+" canvasser",drill:()=>setCanvCategoryDrill({label:"A3 - Incomplete",color:P.a3,statusKey:"A3",list:canvStatusCounts.lists.A3})},
-            {label:"Investigate",val:pctS(vc["INVESTIGATE"],T),color:t.muted,sub:(vc["INVESTIGATE"]||0).toLocaleString()+" aktivitas",drill:()=>openDrill("Investigate",P.investigate,"INVESTIGATE")},
-            {label:"Total Aktivitas",val:T.toLocaleString(),color:t.muted},
-          ]:[
-            {label:"Total Aktivitas",val:T.toLocaleString(),color:t.text},
-            {label:"A1 — Normal",val:pctS(ac["A1 - NORMAL"],T),color:P.a1,sub:(ac["A1 - NORMAL"]||0).toLocaleString(),drill:()=>openDrill("A1 - Normal",P.a1,"A1")},
-            {label:"A2 — Anomaly",val:pctS(ac["A2 - ANOMALY"],T),color:P.a2,sub:(ac["A2 - ANOMALY"]||0).toLocaleString(),drill:()=>openDrill("A2 - Anomaly",P.a2,"A2"),
-              sublink:()=>{const bd=computeReasonBreakdown("A2");setReasonDrill({statusKey:"A2",label:"A2 - Anomaly",color:P.a2,reasons:bd.reasons,topCanvassers:bd.topCanvassers});}},
-            {label:"A3 — Incomplete",val:pctS(ac["A3 - INCOMPLETE"],T),color:P.a3,sub:(ac["A3 - INCOMPLETE"]||0).toLocaleString(),drill:()=>openDrill("A3 - Incomplete",P.a3,"A3"),
-              sublink:()=>{const bd=computeReasonBreakdown("A3");setReasonDrill({statusKey:"A3",label:"A3 - Incomplete",color:P.a3,reasons:bd.reasons,topCanvassers:bd.topCanvassers});}},
-            {label:"Investigate",val:pctS(vc["INVESTIGATE"],T),color:t.muted,sub:(vc["INVESTIGATE"]||0).toLocaleString(),drill:()=>openDrill("Investigate",P.investigate,"INVESTIGATE")},
-            {label:"Canvasser",val:view.canvassers.length.toLocaleString(),color:t.muted},
-          ]).map((k,i)=>{
-            const barPct=typeof k.val==="string"&&k.val.includes("%")?parseFloat(k.val):null;
-            return(
-              <div key={i} style={{borderBottom:i<5?`1px solid ${t.border}`:"none"}}>
-                <div onClick={k.drill||undefined} style={{display:"flex",alignItems:"center",padding:"11px 0 "+(k.sublink?"2px":"11px"),cursor:k.drill?"pointer":"default"}}>
-                  <div style={{flex:1,minWidth:0,marginRight:12}}>
-                    <div style={{display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:600,color:t.text}}>
-                      {barPct!=null&&<span style={{width:7,height:7,borderRadius:"50%",background:k.color,flexShrink:0}}/>}
-                      <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.label}</span>
-                    </div>
-                    {barPct!=null&&<div style={{width:"100%",height:3,background:t.border,borderRadius:99,marginTop:6}}><div style={{width:barPct+"%",height:3,background:k.color,borderRadius:99}}/></div>}
-                  </div>
-                  {k.sub&&<div style={{fontSize:11,color:t.muted,width:isMobile?70:90,textAlign:"right",flexShrink:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.sub}</div>}
-                  <div style={{fontSize:isMobile?14:16,fontWeight:800,color:k.color,width:isMobile?58:70,textAlign:"right",flexShrink:0}}>{k.val}</div>
-                </div>
-                {k.sublink&&<div onClick={k.sublink} style={{fontSize:10,fontWeight:700,color:P.accent,cursor:"pointer",paddingBottom:11}}>🔍 Lihat penyebab ›</div>}
-              </div>
-            );
-          })}
-        </div>
 
-        {/* ── Visit Status (digabung nyambung sama KPI di atas, bukan card terpisah lagi) ── */}
-        <div style={{marginBottom:20}}>
-          <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.06em",marginBottom:6}}>VISIT STATUS</div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:5}}>
-            {VIS.map((s,i)=>(
-              <div key={i} onClick={()=>openDrill(s.label,s.color,s.key)} style={{display:"flex",alignItems:"center",gap:6,padding:"7px 10px",background:t.cardAlt,borderRadius:7,cursor:"pointer"}}
-                onMouseEnter={e=>e.currentTarget.style.opacity="0.75"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                <div style={{width:7,height:7,borderRadius:2,background:s.color}}/>
-                <span style={{fontSize:10,color:t.muted,flex:1}}>{s.label}</span>
-                <span style={{fontSize:11,fontWeight:700,color:s.color}}>{pctS(vc[s.key],T)}</span>
-              </div>
-            ))}
+        {/* ── KPI 2 kolom: kiri Activity ID, kanan #Canvasser ── */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:32,marginBottom:20}}>
+          <div>
+            <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:10}}>Activity ID</div>
+            {[
+              {label:"Total Aktivitas",val:T.toLocaleString(),color:t.text},
+              {label:"A1 — Normal",val:pctS(ac["A1 - NORMAL"],T),color:P.a1,sub:(ac["A1 - NORMAL"]||0).toLocaleString(),drill:()=>openDrill("A1 - Normal",P.a1,"A1")},
+              {label:"A2 — Anomaly",val:pctS(ac["A2 - ANOMALY"],T),color:P.a2,sub:(ac["A2 - ANOMALY"]||0).toLocaleString(),drill:()=>openDrill("A2 - Anomaly",P.a2,"A2"),
+                sublink:()=>{const bd=computeReasonBreakdown("A2");setReasonDrill({statusKey:"A2",label:"A2 - Anomaly",color:P.a2,reasons:bd.reasons,topCanvassers:bd.topCanvassers});}},
+              {label:"A3 — Incomplete",val:pctS(ac["A3 - INCOMPLETE"],T),color:P.a3,sub:(ac["A3 - INCOMPLETE"]||0).toLocaleString(),drill:()=>openDrill("A3 - Incomplete",P.a3,"A3"),
+                sublink:()=>{const bd=computeReasonBreakdown("A3");setReasonDrill({statusKey:"A3",label:"A3 - Incomplete",color:P.a3,reasons:bd.reasons,topCanvassers:bd.topCanvassers});}},
+              {label:"Investigate",val:pctS(vc["INVESTIGATE"],T),color:t.muted,sub:(vc["INVESTIGATE"]||0).toLocaleString(),drill:()=>openDrill("Investigate",P.investigate,"INVESTIGATE")},
+            ].map((k,i,arr)=>{
+              const barPct=typeof k.val==="string"&&k.val.includes("%")?parseFloat(k.val):null;
+              return(
+                <div key={i} style={{borderBottom:i<arr.length-1?`1px solid ${t.border}`:"none"}}>
+                  <div onClick={k.drill||undefined} style={{display:"flex",alignItems:"center",padding:"11px 0 "+(k.sublink?"2px":"11px"),cursor:k.drill?"pointer":"default"}}>
+                    <div style={{flex:1,minWidth:0,marginRight:12}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:600,color:t.text}}>
+                        {barPct!=null&&<span style={{width:7,height:7,borderRadius:"50%",background:k.color,flexShrink:0}}/>}
+                        <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.label}</span>
+                      </div>
+                      {barPct!=null&&<div style={{width:"100%",height:3,background:t.border,borderRadius:99,marginTop:6}}><div style={{width:barPct+"%",height:3,background:k.color,borderRadius:99}}/></div>}
+                    </div>
+                    {k.sub&&<div style={{fontSize:11,color:t.muted,width:isMobile?70:90,textAlign:"right",flexShrink:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.sub}</div>}
+                    <div style={{fontSize:isMobile?14:16,fontWeight:800,color:k.color,width:isMobile?58:70,textAlign:"right",flexShrink:0}}>{k.val}</div>
+                  </div>
+                  {k.sublink&&<div onClick={k.sublink} style={{fontSize:10,fontWeight:700,color:P.accent,cursor:"pointer",paddingBottom:11}}>🔍 Lihat penyebab ›</div>}
+                </div>
+              );
+            })}
+          </div>
+
+          <div>
+            <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:10}}>#Canvasser</div>
+            {(()=>{
+              const cvs=view.canvassers||[];
+              const impactedA1=cvs.filter(c=>(c.A1||0)>0).length;
+              const impactedA2=cvs.filter(c=>(c.A2||0)>0).length;
+              const impactedA3=cvs.filter(c=>(c.A3||0)>0).length;
+              const rows=[
+                {label:"Total Canvasser",val:cvs.length.toLocaleString(),color:t.text},
+                {label:"Terdampak A1 — Normal",val:pctS(impactedA1,cvs.length||1),color:P.a1,sub:impactedA1.toLocaleString()+" orang",drill:()=>setCanvCategoryDrill({label:"A1 - Normal",color:P.a1,statusKey:"A1",list:cvs.filter(c=>(c.A1||0)>0)})},
+                {label:"Terdampak A2 — Anomaly",val:pctS(impactedA2,cvs.length||1),color:P.a2,sub:impactedA2.toLocaleString()+" orang",drill:()=>setCanvCategoryDrill({label:"A2 - Anomaly",color:P.a2,statusKey:"A2",list:cvs.filter(c=>(c.A2||0)>0)})},
+                {label:"Terdampak A3 — Incomplete",val:pctS(impactedA3,cvs.length||1),color:P.a3,sub:impactedA3.toLocaleString()+" orang",drill:()=>setCanvCategoryDrill({label:"A3 - Incomplete",color:P.a3,statusKey:"A3",list:cvs.filter(c=>(c.A3||0)>0)})},
+                {label:"Total Aktivitas",val:T.toLocaleString(),color:t.muted},
+              ];
+              return rows.map((k,i,arr)=>{
+                const barPct=typeof k.val==="string"&&k.val.includes("%")?parseFloat(k.val):null;
+                return(
+                  <div key={i} onClick={k.drill||undefined} style={{display:"flex",alignItems:"center",padding:"11px 0",borderBottom:i<arr.length-1?`1px solid ${t.border}`:"none",cursor:k.drill?"pointer":"default"}}>
+                    <div style={{flex:1,minWidth:0,marginRight:12}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:600,color:t.text}}>
+                        {barPct!=null&&<span style={{width:7,height:7,borderRadius:"50%",background:k.color,flexShrink:0}}/>}
+                        <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.label}</span>
+                      </div>
+                      {barPct!=null&&<div style={{width:"100%",height:3,background:t.border,borderRadius:99,marginTop:6}}><div style={{width:barPct+"%",height:3,background:k.color,borderRadius:99}}/></div>}
+                    </div>
+                    {k.sub&&<div style={{fontSize:11,color:t.muted,width:isMobile?70:90,textAlign:"right",flexShrink:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.sub}</div>}
+                    <div style={{fontSize:isMobile?14:16,fontWeight:800,color:k.color,width:isMobile?58:70,textAlign:"right",flexShrink:0}}>{k.val}</div>
+                  </div>
+                );
+              });
+            })()}
           </div>
         </div>
 
         {/* ── TAB BUTTONS ── */}
-        <div style={{display:"flex",gap:22,marginBottom:20,borderBottom:`1px solid ${t.border}`,overflowX:"auto",scrollbarWidth:"none",msOverflowStyle:"none"}}>
+        <div style={{display:"flex",gap:22,marginBottom:20,borderBottom:`1px solid ${t.border}`,overflowX:"auto",overflowY:"hidden",scrollbarWidth:"none",msOverflowStyle:"none",touchAction:"pan-x"}}>
           {tabs.map(tb=>(
             <button key={tb.id} onClick={()=>setTab(tb.id)} style={{padding:"0 0 11px",border:"none",background:"none",cursor:"pointer",fontSize:12,fontWeight:700,whiteSpace:"nowrap",color:tab===tb.id?t.text:t.muted,borderBottom:`2px solid ${tab===tb.id?P.accent:"transparent"}`,marginBottom:-1,transition:"color 0.15s"}}>{tb.label}</button>
           ))}
