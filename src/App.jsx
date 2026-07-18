@@ -2386,8 +2386,8 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                 </div>
               </div>
             ))}
-            <div style={{fontSize:11,color:P.accent,background:P.accent+"14",border:`1px solid ${P.accent}40`,borderRadius:8,padding:"10px 14px",marginBottom:12,lineHeight:1.7}}>
-              📏 <b>Aturan ambang batas yang berlaku (bisa disesuaikan lewat ⚙️ Parameter):</b>
+            <div style={{fontSize:11,color:t.text,background:t.cardAlt,border:`1px solid ${P.accent}60`,borderRadius:8,padding:"10px 14px",marginBottom:12,lineHeight:1.7}}>
+              📏 <b style={{color:P.accent}}>Aturan ambang batas yang berlaku (bisa disesuaikan lewat ⚙️ Parameter):</b>
               <ul style={{margin:"6px 0 0",paddingLeft:16}}>
                 <li>Durasi minimal: <b>2 menit</b> — di bawah ini tergolong durasi singkat</li>
                 <li>Jarak In Range: maksimal <b>150 meter</b> dari lokasi outlet — di luar itu tergolong Out of Range</li>
@@ -2477,8 +2477,8 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
           </div>
         </div>
 
-        {(a2p>=80||a3p>=80)&&<div style={{fontSize:11,color:P.accent,marginBottom:20,lineHeight:1.7,background:P.accent+"14",border:`1px solid ${P.accent}40`,borderRadius:8,padding:"12px 16px"}}>
-          <div style={{fontWeight:700,marginBottom:4}}>💡 Catatan</div>
+        {(a2p>=80||a3p>=80)&&<div style={{fontSize:11,color:t.text,marginBottom:20,lineHeight:1.7,background:t.cardAlt,border:`1px solid ${P.accent}60`,borderRadius:8,padding:"12px 16px"}}>
+          <div style={{fontWeight:700,marginBottom:4,color:P.accent}}>💡 Catatan</div>
           <ul style={{margin:0,paddingLeft:16}}>
             {a2p>=80&&<li>Sebanyak {a2p}% canvasser tercatat memiliki minimal satu aktivitas berstatus A2.</li>}
             {a3p>=80&&<li>Sebanyak {a3p}% canvasser tercatat memiliki minimal satu aktivitas berstatus A3.</li>}
@@ -3276,8 +3276,8 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
         <div onClick={e=>e.stopPropagation()} style={{background:t.card,borderRadius:16,border:`1px solid ${t.border}`,padding:"24px 28px",minWidth:320,maxWidth:420,boxShadow:"0 8px 40px rgba(0,0,0,0.5)",fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
           <div style={{fontWeight:800,fontSize:16,color:t.text,marginBottom:4}}>⚙️ Parameter Validasi</div>
           <div style={{fontSize:11,color:t.muted,marginBottom:10}}>Perubahan parameter memerlukan persetujuan management</div>
-          <div style={{fontSize:11,color:"#f59e0b",background:"#f59e0b15",border:"1px solid #f59e0b40",borderRadius:8,padding:"8px 10px",marginBottom:16,lineHeight:1.6}}>
-            ⚠️ Kalau file asli km <b>sudah punya kolom Visit Status</b> (VALID/OBSERVE/INVESTIGATE/INCOMPLETE), status A1/A2/A3 ikut kolom itu — parameter di bawah cuma pengaruhi breakdown Duration/Distance Status & tabel. Tapi kalau kolom itu <b>tidak ada di file asli</b>, parameter <b>Durasi Minimal</b> & <b>Jarak In Range</b> di bawah ini yang menentukan langsung status A1/A2/A3.
+          <div style={{fontSize:11,color:t.text,background:t.cardAlt,border:"1px solid #f59e0b60",borderRadius:8,padding:"8px 10px",marginBottom:16,lineHeight:1.6}}>
+            ⚠️ Kalau file asli km <b style={{color:"#f59e0b"}}>sudah punya kolom Visit Status</b> (VALID/OBSERVE/INVESTIGATE/INCOMPLETE), status A1/A2/A3 ikut kolom itu — parameter di bawah cuma pengaruhi breakdown Duration/Distance Status & tabel. Tapi kalau kolom itu <b style={{color:"#f59e0b"}}>tidak ada di file asli</b>, parameter <b>Durasi Minimal</b> & <b>Jarak In Range</b> di bawah ini yang menentukan langsung status A1/A2/A3.
           </div>
           {[
             {key:"dur_short",label:"Durasi Minimal (menit)",desc:"Kunjungan di bawah ini = SHORT, dan jadi salah satu pemicu A2 kalau Visit Status gak ada di file asli",unit:"menit"},
