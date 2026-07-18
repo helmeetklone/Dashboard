@@ -10,10 +10,11 @@ const LIGHT = { bg:"#f0f4fa",card:"#ffffff",cardAlt:"#f5f8ff",border:"#d0dff0",t
 
 // ── DEFAULT VALIDATION PARAMETERS ────────────────────────────────────────────
 const DEFAULT_PARAMS = {
-  dur_short: 2,      // menit — di bawah ini = SHORT
+  dur_short: 2,      // menit — di bawah ini = SHORT (dan jadi salah satu pemicu A2 kalau Visit Status gak ada di file asli)
   dur_long:  30,     // menit — di atas ini = LONG
   dis_near:  50,     // meter — di bawah ini = NEAR
   dis_far:   200,    // meter — di atas ini = FAR
+  in_range_max: 150, // meter — batas In Range; di atas ini = Out of Range (dipakai kalau Visit Status gak ada di file asli)
 };
 
 const P = {
@@ -108,11 +109,19 @@ function computeValidation(row, params=DEFAULT_PARAMS){
   r["_DIS"] = disSt;
   r["_LOC"] = locSt;
 
-  // 5. Visit Status
+  // 4b. In Range — aturan kita: dalam radius in_range_max(meter) = In Range, di luar itu = Out of Range
+  const inRangeYes = !hasIn||!hasOut?null:maxDist<=p.in_range_max;
+  if(row["In Range"]==null||row["In Range"]===""){
+    r["In Range"] = inRangeYes===null?"":(inRangeYes?"Yes":"No");
+  }
+
+  // 5. Visit Status — aturan kita: durasi<dur_short(menit) ATAU jarak>in_range_max(meter) = anomali (A2)
+  const isShortDur = durSt==="SHORT";
+  const isOutOfRange = inRangeYes===false;
   const vs = !hasIn||!hasOut?"INCOMPLETE"
-    : durSt==="SHORT"&&(disSt==="MID"||disSt==="FAR")&&locSt==="NOT MATCH"?"INVESTIGATE"
-    : durSt==="NORMAL"&&disSt==="NEAR"&&locSt==="MATCH"?"VALID"
-    : "OBSERVE";
+    : (isShortDur&&isOutOfRange)?"INVESTIGATE"   // kedua masalah sekaligus = eskalasi
+    : (isShortDur||isOutOfRange)?"OBSERVE"        // salah satu masalah = anomali
+    : "VALID";
   r["Visit Status"] = vs;
   r["_VS"] = vs;
 
@@ -321,13 +330,21 @@ function processRows(rows) {
       else if(rawAS.startsWith("A2"))vs="OBSERVE";
       else if(rawAS.startsWith("A3"))vs="INCOMPLETE";
       else {
-        // Last resort: distance-based classification
+        // Last resort: durasi & jarak — aturan kita: durasi<2 menit ATAU jarak>150m = anomali (A2)
         const hasIn  = r["Check-In Latitude"]  != null && r["Check-In Longitude"]  != null;
         const hasOut = r["Check-Out Latitude"] != null && r["Check-Out Longitude"] != null;
         if(!hasIn||!hasOut) vs="INCOMPLETE";
         else {
           const mx=Math.max(parseFloat(r["Distance Check In (Meter)"])||0, parseFloat(r["Distance Check Out (Meter)"])||0);
-          vs = mx>5000?"INVESTIGATE":mx>500?"OBSERVE":"VALID";
+          let durMin2=parseFloat(r["Visit Duration (Menit)"]);
+          if(isNaN(durMin2)){
+            const tIn=r["Actual Visit Time"]?new Date(r["Actual Visit Time"]):null;
+            const tOut=r["Actual Check-Out Time"]?new Date(r["Actual Check-Out Time"]):null;
+            if(tIn&&tOut&&!isNaN(tIn)&&!isNaN(tOut)&&tOut>tIn) durMin2=(tOut-tIn)/60000;
+          }
+          const shortDur=!isNaN(durMin2)&&durMin2<2;
+          const outOfRange=mx>150;
+          vs = (shortDur&&outOfRange)?"INVESTIGATE":(shortDur||outOfRange)?"OBSERVE":"VALID";
         }
       }
     }
@@ -2342,20 +2359,20 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
             <div style={{fontWeight:800,fontSize:13,marginBottom:10,color:t.text}}>📖 Glossary Status Aktivitas</div>
             {[
               {c:P.a1,icon:"✅",title:"A1 — Normal",points:[
-                "Durasi kunjungan sesuai standar",
-                "Lokasi GPS sesuai dengan lokasi outlet",
-                "Checkout tercatat dengan lengkap",
-                "Tidak terdapat indikasi kejanggalan",
+                "Durasi kunjungan minimal 2 menit (tidak tergolong singkat)",
+                "Lokasi check-in/check-out dalam radius 150 meter dari lokasi outlet (In Range)",
+                "Check-in dan checkout tercatat lengkap",
+                "Tidak memenuhi kriteria anomali apa pun di atas",
               ]},
               {c:P.a2,icon:"⚠️",title:"A2 — Anomaly",points:[
-                "Durasi kunjungan terlalu singkat atau terlalu panjang",
-                "Lokasi GPS tidak sesuai atau berjarak jauh dari outlet",
-                "Status kunjungan tercatat sebagai Observe atau Investigate",
-                "Checkout tetap tercatat, namun data mengindikasikan kejanggalan",
+                "Durasi kunjungan kurang dari 2 menit, ATAU",
+                "Lokasi check-in/check-out berjarak lebih dari 150 meter dari lokasi outlet (Out of Range)",
+                "Kalau kedua kondisi di atas terjadi bersamaan, statusnya dieskalasi jadi Investigate (masih tergolong A2)",
+                "Checkout tetap tercatat, namun salah satu/kedua kriteria di atas terpenuhi",
               ]},
               {c:P.a3,icon:"🔵",title:"A3 — Incomplete",points:[
                 "Canvasser melakukan check-in namun tidak ada checkout yang tercatat",
-                "Kunjungan tidak dapat divalidasi sepenuhnya",
+                "Kunjungan tidak dapat divalidasi sepenuhnya karena data tidak lengkap",
                 "Merupakan prioritas pemeriksaan tertinggi",
               ]},
             ].map((g,i)=>(
@@ -2369,6 +2386,15 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                 </div>
               </div>
             ))}
+            <div style={{fontSize:11,color:P.accent,background:P.accent+"14",border:`1px solid ${P.accent}40`,borderRadius:8,padding:"10px 14px",marginBottom:12,lineHeight:1.7}}>
+              📏 <b>Aturan ambang batas yang berlaku (bisa disesuaikan lewat ⚙️ Parameter):</b>
+              <ul style={{margin:"6px 0 0",paddingLeft:16}}>
+                <li>Durasi minimal: <b>2 menit</b> — di bawah ini tergolong durasi singkat</li>
+                <li>Jarak In Range: maksimal <b>150 meter</b> dari lokasi outlet — di luar itu tergolong Out of Range</li>
+                <li>Aturan ini dipakai untuk menentukan A1/A2/A3 <b>hanya kalau file asli tidak punya kolom Visit Status</b>. Kalau kolom itu ada di file, status A1/A2/A3 mengikuti kolom tersebut apa adanya.</li>
+              </ul>
+            </div>
+
             <div style={{background:t.cardAlt,borderRadius:8,padding:"9px 11px",fontSize:11,color:t.muted,lineHeight:1.6}}>
               <div style={{marginBottom:6}}><b style={{color:t.text}}>📋 Activity ID</b></div>
               <ul style={{margin:"0 0 8px",paddingLeft:16}}>
@@ -3251,11 +3277,12 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
           <div style={{fontWeight:800,fontSize:16,color:t.text,marginBottom:4}}>⚙️ Parameter Validasi</div>
           <div style={{fontSize:11,color:t.muted,marginBottom:10}}>Perubahan parameter memerlukan persetujuan management</div>
           <div style={{fontSize:11,color:"#f59e0b",background:"#f59e0b15",border:"1px solid #f59e0b40",borderRadius:8,padding:"8px 10px",marginBottom:16,lineHeight:1.6}}>
-            ⚠️ Parameter ini <b>TIDAK mengubah status A1/A2/A3</b> (itu sudah ditentukan dari kolom Visit Status di file asli). Parameter ini cuma mempengaruhi breakdown Duration/Distance Status, filter drill-down, dan highlight tabel.
+            ⚠️ Kalau file asli km <b>sudah punya kolom Visit Status</b> (VALID/OBSERVE/INVESTIGATE/INCOMPLETE), status A1/A2/A3 ikut kolom itu — parameter di bawah cuma pengaruhi breakdown Duration/Distance Status & tabel. Tapi kalau kolom itu <b>tidak ada di file asli</b>, parameter <b>Durasi Minimal</b> & <b>Jarak In Range</b> di bawah ini yang menentukan langsung status A1/A2/A3.
           </div>
           {[
-            {key:"dur_short",label:"Durasi Minimal (menit)",desc:"Kunjungan di bawah ini = SHORT",unit:"menit"},
+            {key:"dur_short",label:"Durasi Minimal (menit)",desc:"Kunjungan di bawah ini = SHORT, dan jadi salah satu pemicu A2 kalau Visit Status gak ada di file asli",unit:"menit"},
             {key:"dur_long", label:"Durasi Maksimal (menit)",desc:"Kunjungan di atas ini = LONG",unit:"menit"},
+            {key:"in_range_max", label:"Jarak In Range (meter)",desc:"Kunjungan dalam radius ini = In Range; di luar itu = Out of Range, dan jadi salah satu pemicu A2 kalau Visit Status gak ada di file asli",unit:"meter"},
             {key:"dis_near", label:"Jarak NEAR (meter)",desc:"Jarak di bawah ini = NEAR (normal)",unit:"meter"},
             {key:"dis_far",  label:"Jarak FAR (meter)",desc:"Jarak di atas ini = FAR (anomali)",unit:"meter"},
           ].map(({key,label,desc,unit})=>(
