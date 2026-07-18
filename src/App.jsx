@@ -2386,7 +2386,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                 </div>
               </div>
             ))}
-            <div style={{fontSize:11,color:t.text,background:t.cardAlt,border:`1px solid ${P.accent}60`,borderRadius:8,padding:"10px 14px",marginBottom:12,lineHeight:1.7}}>
+            <div style={{fontSize:11,color:t.text,background:t.card,border:`1px solid ${P.accent}60`,borderRadius:8,padding:"10px 14px",marginBottom:12,lineHeight:1.7,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
               📏 <b style={{color:P.accent}}>Aturan ambang batas yang berlaku (bisa disesuaikan lewat ⚙️ Parameter):</b>
               <ul style={{margin:"6px 0 0",paddingLeft:16}}>
                 <li>Durasi minimal: <b>2 menit</b> — di bawah ini tergolong durasi singkat</li>
@@ -2477,7 +2477,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
           </div>
         </div>
 
-        {(a2p>=80||a3p>=80)&&<div style={{fontSize:11,color:t.text,marginBottom:20,lineHeight:1.7,background:t.cardAlt,border:`1px solid ${P.accent}60`,borderRadius:8,padding:"12px 16px"}}>
+        {(a2p>=80||a3p>=80)&&<div style={{fontSize:11,color:t.text,marginBottom:20,lineHeight:1.7,background:t.card,border:`1px solid ${P.accent}60`,borderRadius:8,padding:"12px 16px",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
           <div style={{fontWeight:700,marginBottom:4,color:P.accent}}>💡 Catatan</div>
           <ul style={{margin:0,paddingLeft:16}}>
             {a2p>=80&&<li>Sebanyak {a2p}% canvasser tercatat memiliki minimal satu aktivitas berstatus A2.</li>}
@@ -2810,7 +2810,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                     </div>
                   </div>
 
-                  <div style={{border:`1px solid ${t.border}`,background:t.cardAlt,borderRadius:12,padding:"14px 16px",marginBottom:18}}>
+                  <div style={{border:`1px solid ${t.border}`,background:t.card,borderRadius:12,padding:"14px 16px",marginBottom:18,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
                     <div style={{fontSize:10,color:t.muted,marginBottom:10}}>Metode: rata-rata <b style={{color:t.text}}>rate harian</b> di paruh awal periode ({rangeLabel(firstHalf)}) dibandingkan paruh akhir ({rangeLabel(secondHalf)})</div>
                     {deltas.map((d,i)=>(
                       <div key={d.key} style={{marginBottom:i<2?10:0,fontSize:12,color:t.text,lineHeight:1.6}}>
@@ -2903,7 +2903,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                     </div>
                   </div>
 
-                  <div style={{border:`1px solid ${t.border}`,background:t.cardAlt,borderRadius:12,padding:"14px 16px",marginBottom:18,fontSize:12,color:t.text,lineHeight:1.7}}>
+                  <div style={{border:`1px solid ${t.border}`,background:t.card,borderRadius:12,padding:"14px 16px",marginBottom:18,fontSize:12,color:t.text,lineHeight:1.7,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
                     ✅ <b style={{color:P.a1}}>{healthiest.type.replace("RO ","")} paling sehat</b> — {pctS(healthiest.A1,healthiest.total)} aktivitasnya Normal, dari total {healthiest.total.toLocaleString()} aktivitas.<br/><br/>
                     ⚠️ <b style={{color:"#ef4444"}}>{weakest.type.replace("RO ","")} paling perlu perhatian</b> — rate A1 cuma {pctS(weakest.A1,weakest.total)}, dari total {weakest.total.toLocaleString()} aktivitas.
                     {bestRegion&&worstRegion&&bestRegion.code!==worstRegion.code&&<>
@@ -3276,7 +3276,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
         <div onClick={e=>e.stopPropagation()} style={{background:t.card,borderRadius:16,border:`1px solid ${t.border}`,padding:"24px 28px",minWidth:320,maxWidth:420,boxShadow:"0 8px 40px rgba(0,0,0,0.5)",fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
           <div style={{fontWeight:800,fontSize:16,color:t.text,marginBottom:4}}>⚙️ Parameter Validasi</div>
           <div style={{fontSize:11,color:t.muted,marginBottom:10}}>Perubahan parameter memerlukan persetujuan management</div>
-          <div style={{fontSize:11,color:t.text,background:t.cardAlt,border:"1px solid #f59e0b60",borderRadius:8,padding:"8px 10px",marginBottom:16,lineHeight:1.6}}>
+          <div style={{fontSize:11,color:t.text,background:t.card,border:"1px solid #f59e0b60",borderRadius:8,padding:"8px 10px",marginBottom:16,lineHeight:1.6,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
             ⚠️ Kalau file asli km <b style={{color:"#f59e0b"}}>sudah punya kolom Visit Status</b> (VALID/OBSERVE/INVESTIGATE/INCOMPLETE), status A1/A2/A3 ikut kolom itu — parameter di bawah cuma pengaruhi breakdown Duration/Distance Status & tabel. Tapi kalau kolom itu <b style={{color:"#f59e0b"}}>tidak ada di file asli</b>, parameter <b>Durasi Minimal</b> & <b>Jarak In Range</b> di bawah ini yang menentukan langsung status A1/A2/A3.
           </div>
           {[
