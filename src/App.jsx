@@ -2448,8 +2448,8 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                     </div>
                   );
                 })}
-                {(a2p>=80||a3p>=80)&&<div style={{fontSize:10,color:t.muted,marginTop:8,lineHeight:1.6}}>
-                  💡 Sebanyak {a2p>=80&&a3p>=80?`${a2p}% canvasser tercatat memiliki minimal satu aktivitas berstatus A2, dan ${a3p}% memiliki minimal satu aktivitas berstatus A3`:a2p>=80?`${a2p}% canvasser tercatat memiliki minimal satu aktivitas berstatus A2`:`${a3p}% canvasser tercatat memiliki minimal satu aktivitas berstatus A3`}. Hal ini wajar mengingat rata-rata volume aktivitas per canvasser cukup tinggi ({Math.round(T/(cvs.length||1)).toLocaleString()} aktivitas per orang), sehingga satu aktivitas bermasalah saja sudah memenuhi kriteria perhitungan ini.
+                {(a2p>=80||a3p>=80)&&<div style={{fontSize:11,color:P.accent,marginTop:10,lineHeight:1.6,background:P.accent+"14",border:`1px solid ${P.accent}40`,borderRadius:8,padding:"9px 12px"}}>
+                  💡 Wajar: rata-rata {Math.round(T/(cvs.length||1)).toLocaleString()} aktivitas/canvasser, jadi 1 aktivitas bermasalah saja sudah cukup tercatat di A2/A3.
                 </div>}
               </>);
             })()}
