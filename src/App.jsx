@@ -2810,7 +2810,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                     </div>
                   </div>
 
-                  <div style={{border:`1px solid ${t.border}`,borderRadius:12,padding:"14px 16px",marginBottom:18}}>
+                  <div style={{border:`1px solid ${t.border}`,background:t.cardAlt,borderRadius:12,padding:"14px 16px",marginBottom:18}}>
                     <div style={{fontSize:10,color:t.muted,marginBottom:10}}>Metode: rata-rata <b style={{color:t.text}}>rate harian</b> di paruh awal periode ({rangeLabel(firstHalf)}) dibandingkan paruh akhir ({rangeLabel(secondHalf)})</div>
                     {deltas.map((d,i)=>(
                       <div key={d.key} style={{marginBottom:i<2?10:0,fontSize:12,color:t.text,lineHeight:1.6}}>
@@ -2903,7 +2903,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                     </div>
                   </div>
 
-                  <div style={{border:`1px solid ${t.border}`,borderRadius:12,padding:"14px 16px",marginBottom:18,fontSize:12,color:t.text,lineHeight:1.7}}>
+                  <div style={{border:`1px solid ${t.border}`,background:t.cardAlt,borderRadius:12,padding:"14px 16px",marginBottom:18,fontSize:12,color:t.text,lineHeight:1.7}}>
                     ✅ <b style={{color:P.a1}}>{healthiest.type.replace("RO ","")} paling sehat</b> — {pctS(healthiest.A1,healthiest.total)} aktivitasnya Normal, dari total {healthiest.total.toLocaleString()} aktivitas.<br/><br/>
                     ⚠️ <b style={{color:"#ef4444"}}>{weakest.type.replace("RO ","")} paling perlu perhatian</b> — rate A1 cuma {pctS(weakest.A1,weakest.total)}, dari total {weakest.total.toLocaleString()} aktivitas.
                     {bestRegion&&worstRegion&&bestRegion.code!==worstRegion.code&&<>
