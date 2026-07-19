@@ -326,6 +326,37 @@ function parseCSVText(text){
   return rows;
 }
 
+function classifyError(attempts){
+  // attempts = [{strategy, error}] — semua percobaan yg gagal
+  const allMsgs = attempts.map(a=>a.error).join(' | ').toLowerCase();
+  if(allMsgs.includes('bad uncompressed size') || allMsgs.includes('bad compressed size') || allMsgs.includes('zip')){
+    return {
+      kind: 'zip-structure',
+      penjelasan: 'File ini punya struktur ZIP internal yang gak standar (biasanya karena disimpan/diekspor lewat aplikasi selain Excel asli, misalnya sistem otomatis, LibreOffice, atau re-upload dari cloud). Library pembaca XLSX gagal parsing bagian internal file ini.',
+      saran: 'Buka file ini di Excel/Google Sheets/Numbers, lalu "Save As" atau "Download" ulang sebagai .xlsx dari aplikasi itu — ini menulis ulang strukturnya jadi format standar, biasanya langsung benerin masalahnya.',
+    };
+  }
+  if(allMsgs.includes('out of memory') || allMsgs.includes('allocation failed') || allMsgs.includes('maximum call stack')){
+    return {
+      kind: 'memory',
+      penjelasan: 'File ini kemungkinan besar terlalu banyak baris/kolom utk diproses sekaligus di memori browser saat ini.',
+      saran: 'Kalau file ini 1 cluster tunggal dgn baris sangat banyak, coba tutup tab/aplikasi lain dulu biar ada lebih banyak memori bebas, lalu upload ulang HANYA file ini sendirian (jangan digabung file lain). Kalau masih gagal, minta sistem export per periode lebih pendek (per 2 minggu, bukan sebulan penuh).',
+    };
+  }
+  if(allMsgs.includes('unsupported') || allMsgs.includes('corrupt') || allMsgs.includes('invalid')){
+    return {
+      kind: 'format',
+      penjelasan: 'Format file ini kemungkinan gak dikenali dgn benar sbg XLSX/XLS yg valid — mungkin file rusak/gak lengkap saat didownload, atau sebenarnya bukan format Excel asli meski ekstensinya .xlsx.',
+      saran: 'Coba download ulang file ini dari sumbernya (jangan-jangan proses download sebelumnya terputus), atau buka & save-as ulang lewat Excel.',
+    };
+  }
+  return {
+    kind: 'unknown',
+    penjelasan: 'Penyebab pastinya belum bisa dipastikan dari pesan error yang muncul.',
+    saran: 'Coba buka file ini di Excel/Google Sheets, lalu "Save As" ulang sebagai .xlsx baru, lalu upload lagi file hasil save-nya.',
+  };
+}
+
 function readFileAsRows(file){
   const isCsv = /\.csv$/i.test(file.name);
   return new Promise((resolve,reject)=>{
@@ -333,7 +364,12 @@ function readFileAsRows(file){
     reader.onload = e=>{
       if(isCsv){
         try{ resolve(parseCSVText(e.target.result).map(trimRow)); }
-        catch(err){ reject(err); }
+        catch(err){
+          const diag = classifyError([{strategy:'csv-parse', error:err.message}]);
+          const richErr = new Error(err.message);
+          richErr.diagnosis = diag; richErr.attempts=[{strategy:'csv-parse', error:err.message}];
+          reject(richErr);
+        }
         return;
       }
       // Coba beberapa strategi baca XLSX, dari yg paling "ringan/lenient" ke yg lebih lengkap.
@@ -344,7 +380,7 @@ function readFileAsRows(file){
         {label:'lenient',       opts:{type:'array', cellDates:true, cellHTML:false, cellStyles:false, cellNF:false, bookVBA:false}},
         {label:'default',       opts:{type:'array', cellDates:true}},
       ];
-      let lastErr = null;
+      const attempts = [];
       for(const strat of strategies){
         try{
           let wb = XLSX.read(e.target.result, strat.opts);
@@ -357,11 +393,19 @@ function readFileAsRows(file){
           wb = null;
           resolve(allRows);
           return;
-        }catch(err){ lastErr = err; /* coba strategi berikutnya */ }
+        }catch(err){ attempts.push({strategy:strat.label, error:err.message}); /* coba strategi berikutnya */ }
       }
-      reject(lastErr||new Error('Semua strategi baca gagal'));
+      const diag = classifyError(attempts);
+      const richErr = new Error(attempts[attempts.length-1]?.error || 'Semua strategi baca gagal');
+      richErr.diagnosis = diag; richErr.attempts = attempts;
+      reject(richErr);
     };
-    reader.onerror = ()=>reject(new Error('Gagal baca file (kemungkinan file kebesaran utk memori browser saat ini)'));
+    reader.onerror = ()=>{
+      const richErr = new Error('Gagal baca file dari disk (browser gak bisa buka file-nya sama sekali)');
+      richErr.diagnosis = {kind:'read-error', penjelasan:'Kemungkinan file kebesaran utk dibaca browser saat ini, atau ada masalah izin akses file.', saran:'Coba upload file ini sendirian (satu-satu), atau restart browser lalu coba lagi.'};
+      richErr.attempts = [];
+      reject(richErr);
+    };
     if(isCsv) reader.readAsText(file); else reader.readAsArrayBuffer(file);
   });
 }
@@ -386,6 +430,7 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
 
   const failedFiles = [];
   const summaries = []; // cuma ringkasan (nama, jumlah baris, dll) — BUKAN data barisnya, biar ringan
+  const splitNotices = []; // catatan cluster mana yg dipecah mingguan otomatis
   let totalRows = 0, totalSizeBytes = 0, a1=0, a2=0, a3=0;
 
   for(let fi=0; fi<uploadedFiles.length; fi++){
@@ -398,7 +443,7 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
     try{ rawRows = await readFileAsRows(file); }
     catch(err){
       console.error('Gagal proses '+file.name+':', err);
-      failedFiles.push({name:file.name, error:err.message});
+      failedFiles.push({name:file.name, error:err.message, diagnosis:err.diagnosis, attempts:err.attempts||[]});
       continue; // lanjut ke file berikutnya, jangan hentikan semuanya
     }
 
@@ -472,6 +517,7 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
         });
         const weekKeys = Object.keys(byWeek).sort();
         progressText.textContent = `${cl} kegedean (${rows.length.toLocaleString()} baris) — otomatis dipecah jadi ${weekKeys.length} minggu`;
+        splitNotices.push({label:cl, fileName:file.name, totalRows:rows.length, weekCount:weekKeys.length});
         await new Promise(r=>setTimeout(r,300));
         for(const wk of weekKeys){
           const label = `${cl}_minggu_${wk}`;
@@ -484,14 +530,32 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
 
   barFill.style.width = '100%';
 
+  if(splitNotices.length>0){
+    const infoDiv = document.createElement('div');
+    infoDiv.className = 'warn';
+    infoDiv.style.background = 'var(--accent-dim)';
+    infoDiv.style.borderColor = 'var(--accent)';
+    infoDiv.innerHTML = `ℹ️ <b>${splitNotices.length} cluster otomatis dipecah per minggu</b> (karena lebih dari 20.000 baris dalam 1 cluster):<br>` +
+      splitNotices.map(s=>`&nbsp;&nbsp;• <b>${s.label}</b> (dari file ${s.fileName}) — ${s.totalRows.toLocaleString()} baris → dipecah jadi ${s.weekCount} file mingguan`).join('<br>');
+    document.getElementById('breakdown').before(infoDiv);
+  }
+
   if(failedFiles.length>0){
     const warnDiv = document.createElement('div');
     warnDiv.className = 'warn';
-    warnDiv.innerHTML = `⚠️ <b>${failedFiles.length} file gagal diproses:</b><br>` +
-      failedFiles.map(f=>`&nbsp;&nbsp;• ${f.name} — <i>${f.error}</i>`).join('<br>') +
-      `<br><br>Kemungkinan penyebab: file terlalu besar/kompleks buat memori browser saat ini, atau formatnya sedikit bermasalah. ` +
-      `<br><br>Tools ini udah nyoba 3 cara baca berbeda buat file itu, tapi semuanya gagal. ` +
-      `<b>Saran terakhir:</b> buka file itu di Excel/Numbers/Google Sheets, lalu "Save As" ulang sebagai .xlsx baru (atau export ke .csv) dari aplikasi itu — biasanya ini benerin struktur file yang bermasalah — lalu upload ulang file hasil save-nya di sini.`;
+    warnDiv.innerHTML = `⚠️ <b>${failedFiles.length} file gagal diproses:</b><br><br>` +
+      failedFiles.map(f=>{
+        const d = f.diagnosis || {penjelasan:'Penyebab tidak diketahui.', saran:'Coba upload ulang file ini.'};
+        const attemptsHtml = (f.attempts||[]).length
+          ? `<div style="font-size:10px;color:var(--muted);margin:4px 0 8px;">Percobaan yg gagal: ${f.attempts.map(a=>`<i>${a.strategy}</i> → "${a.error}"`).join('; ')}</div>`
+          : '';
+        return `<div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid #e85c5c30;">` +
+          `<b>📄 ${f.name}</b><br>` +
+          `<div style="margin:4px 0;">🔍 <b>Kemungkinan penyebab:</b> ${d.penjelasan}</div>` +
+          attemptsHtml +
+          `<div>💡 <b>Saran:</b> ${d.saran}</div>` +
+        `</div>`;
+      }).join('');
     document.getElementById('breakdown').before(warnDiv);
   }
 
