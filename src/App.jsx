@@ -1362,6 +1362,7 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
   const [queue,setQueue]=useState([]);
   const fileRef=useRef();
   const folderRef=useRef();
+  const jsonRef=useRef();
 
   const handleRoFile=async(fileList)=>{
     if(!fileList||!fileList.length) return;
@@ -1390,6 +1391,36 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
     }catch(e){console.error("RO parse error:",e);}
   };
 
+  const handleJsonFile=useCallback(async files=>{
+    if(!files||!files.length) return;
+    setLoading(true);setError(null);
+    try{
+      const file=files[0];
+      if(!/\.json$/i.test(file.name)) throw new Error("File harus berformat .json (hasil dari tools Pre-Processor)");
+      const text=await file.text();
+      const parsed=JSON.parse(text);
+      if(!parsed||!Array.isArray(parsed.clusters)||!parsed.clusters.length)
+        throw new Error("Format JSON tidak dikenali — pastikan ini hasil dari tools Pre-Processor XLSMART");
+      const entries=parsed.clusters.map(c=>({
+        name:c.fileName?`${c.fileName}|${c.label}`:c.label,
+        label:c.label,
+        regionCode:c.regionCode||getRegionCode(c.label),
+        rows:c.rows||[],
+      }));
+      setQueue(prev=>{
+        const m=[...prev];
+        entries.forEach(r=>{
+          const byLabel=m.findIndex(x=>x.label===r.label);
+          if(byLabel>=0) m[byLabel]=r; else m.push(r);
+        });
+        return m;
+      });
+      setError(`✅ ${entries.length} cluster dimuat dari JSON (sudah tervalidasi, siap pakai — gak perlu proses ulang)`);
+      setTimeout(()=>setError(null),5000);
+    }catch(err){setError(err.message);}
+    setLoading(false);
+  },[]);
+
     const handleFiles=useCallback(async files=>{
     setLoading(true);setError(null);
     try{
@@ -1399,7 +1430,17 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
       if(bigFiles.length){
         setError(`⚠️ File ${bigFiles.map(f=>f.name).join(", ")} berukuran besar (>15MB). Di HP/tablet ini berisiko gagal karena keterbatasan memori browser — kalau macet di "Membaca file...", coba convert ke CSV (jauh lebih ringan) atau upload dari laptop/desktop.`);
       }
-      const results=await Promise.all(validFiles.map(f=>new Promise((res,rej)=>{
+      const totalSize=validFiles.reduce((s,f)=>s+f.size,0);
+      if(totalSize>50*1024*1024){
+        setError(`⚠️ Total ${(totalSize/1024/1024).toFixed(0)}MB sekaligus (${validFiles.length} file) — ini berat buat browser HP, terutama Safari iOS yang gampang nutup tab kalau memori kehabisan. Disarankan upload per region (bukan sekaligus nasional) kalau lagi di HP, atau pakai laptop/desktop buat scope nasional.`);
+      }
+      // Diproses SATU-SATU berurutan (bukan paralel/Promise.all) — biar gak semua workbook numpuk di memori bersamaan,
+      // yang sebelumnya bisa bikin Safari iOS nutup tab-nya sendiri pas upload banyak file besar sekaligus.
+      const results=[];
+      for(let fi=0; fi<validFiles.length; fi++){
+        const f=validFiles[fi];
+        setLoading(`Membaca ${f.name}... (${fi+1}/${validFiles.length})`);
+        const result=await new Promise((res,rej)=>{
         const isCsv=/\.csv$/i.test(f.name);
         const reader=new FileReader();
         reader.onload=e=>{
@@ -1438,7 +1479,11 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
           }catch(err){rej(err);}
         };
         if(isCsv) reader.readAsText(f); else reader.readAsArrayBuffer(f);
-      })));
+        });
+        results.push(result);
+        // Kasih browser jeda sekejap buat garbage-collect sblm lanjut ke file berikutnya
+        await new Promise(r=>setTimeout(r,30));
+      }
       setQueue(prev=>{
         const m=[...prev];
         const merged=[];
@@ -1497,7 +1542,7 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
         <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" multiple style={{display:"none"}} onChange={e=>handleFiles(e.target.files)}/>
         <input ref={folderRef} type="file" accept=".xlsx,.xls,.csv" multiple webkitdirectory="" style={{display:"none"}} onChange={e=>handleFiles(e.target.files)}/>
         {loading
-          ?<><div style={{fontSize:40,marginBottom:10}}>⚙️</div><div style={{color:"#60a5fa",fontWeight:700}}>Membaca file...</div></>
+          ?<><div style={{fontSize:40,marginBottom:10}}>⚙️</div><div style={{color:"#60a5fa",fontWeight:700}}>{typeof loading==="string"?loading:"Membaca file..."}</div></>
           :<>
             <div style={{fontSize:46,marginBottom:10}}>{drag?"📥":"📂"}</div>
             <div style={{color:t.text,fontSize:15,fontWeight:700,marginBottom:4}}>{drag?"Lepas di sini!":"Drag & drop file XLS/XLSX/CSV"}</div>
@@ -1507,6 +1552,20 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
               <button onClick={()=>folderRef.current.click()} style={{background:"linear-gradient(135deg,#065f46,#059669)",color:"#fff",border:"none",padding:"9px 22px",borderRadius:10,fontWeight:700,fontSize:13,cursor:"pointer"}}>📁 Upload Folder</button>
             </div>
           </>}
+      </div>
+
+      {/* Load Processed JSON — dari tools Pre-Processor terpisah */}
+      <div style={{width:"100%",maxWidth:520,marginTop:14,padding:"12px 16px",background:t.card,borderRadius:12,border:`1px solid ${P.accent}50`}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+          <span>📦</span>
+          <span style={{fontWeight:700,fontSize:12,color:t.text}}>Load Processed JSON</span>
+          <span style={{marginLeft:"auto",fontSize:10,color:t.muted}}>Lebih cepat</span>
+        </div>
+        <div style={{fontSize:10,color:t.muted,marginBottom:8}}>Udah proses file mentah pakai tools Pre-Processor? Upload hasil JSON-nya di sini — langsung dipakai tanpa hitung ulang GPS/durasi.</div>
+        <input ref={jsonRef} type="file" accept=".json" style={{display:"none"}} onClick={e=>e.target.value=""} onChange={e=>handleJsonFile(e.target.files)}/>
+        <label onClick={()=>jsonRef.current.click()} style={{display:"inline-flex",alignItems:"center",gap:6,background:P.accent+"22",color:P.accent,borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:11,fontWeight:700,border:`1px solid ${P.accent}60`}}>
+          📂 Pilih File JSON
+        </label>
       </div>
 
       {/* RO Master Data Upload */}
