@@ -377,6 +377,7 @@ function processRows(rows) {
   const outMap={},canvMap={},dateMap={},visitMap={},vtMap={};
   let minDate=null,maxDate=null;
   let sellInCount=0;
+  let avaTotalCount=0, avaYesCount=0;
   // Reason aggregation for Investigate & Observe
   const reasonMap={investigate:{},observe:{}};
   const addReason=(bucket,label)=>{ reasonMap[bucket][label]=(reasonMap[bucket][label]||0)+1; };
@@ -510,6 +511,12 @@ function processRows(rows) {
     const didSellIn = hasSellInVal(r["Sell-In"])||hasSellInVal(r["Online Sell-In"]);
     if(didSellIn) sellInCount++;
 
+    // AVA Tracking — dianggap "melakukan AVA" kalau kolom AVA Tracking? = Yes
+    const avaVal=String(r["AVA Tracking?"]||"").trim().toLowerCase();
+    const hasAvaData = r["AVA Tracking?"]!=null && avaVal!=="";
+    const didAva = avaVal==="yes"||avaVal==="ya"||avaVal==="true"||avaVal==="1";
+    if(hasAvaData){ avaTotalCount++; if(didAva) avaYesCount++; }
+
     if(!outMap[ot]) outMap[ot]={type:ot,total:0,A1:0,A2:0,A3:0,VALID:0,OBSERVE:0,INVESTIGATE:0,INCOMPLETE:0};
     outMap[ot].total++;
     if(as1==="A1 - NORMAL")    outMap[ot].A1++;
@@ -527,13 +534,14 @@ function processRows(rows) {
     if(as1==="A3 - INCOMPLETE")outMap["__"+ck].A3++;
 
     if(!canvMap[cid]) canvMap[cid]={id:cid,name:nm,cluster:cl,region:rgn,total:0,A1:0,A2:0,A3:0,VALID:0,OBSERVE:0,INVESTIGATE:0,INCOMPLETE:0,durSum:0,durCnt:0,disSum:0,disCnt:0,
-      DUR_NORMAL:0,DUR_SHORT:0,DUR_LONG:0,DIS_NEAR:0,DIS_MID:0,DIS_FAR:0,DIS_INC:0,LOC_MATCH:0,LOC_NOTMATCH:0,LOC_INC:0,IR_YES:0,IR_NO:0,sellIn:0};
+      DUR_NORMAL:0,DUR_SHORT:0,DUR_LONG:0,DIS_NEAR:0,DIS_MID:0,DIS_FAR:0,DIS_INC:0,LOC_MATCH:0,LOC_NOTMATCH:0,LOC_INC:0,IR_YES:0,IR_NO:0,sellIn:0,avaTotal:0,avaYes:0};
     canvMap[cid].total++;
     if(as1==="A1 - NORMAL")    canvMap[cid].A1++;
     if(as1==="A2 - ANOMALY")   canvMap[cid].A2++;
     if(as1==="A3 - INCOMPLETE")canvMap[cid].A3++;
     if(visC[vs]!==undefined)   canvMap[cid][vs]=(canvMap[cid][vs]||0)+1;
     if(didSellIn) canvMap[cid].sellIn++;
+    if(hasAvaData){ canvMap[cid].avaTotal++; if(didAva) canvMap[cid].avaYes++; }
     if(!isNaN(durM)){canvMap[cid].durSum+=durM;canvMap[cid].durCnt++;}
     if(!isNaN(disM)){canvMap[cid].disSum+=disM;canvMap[cid].disCnt++;}
     // In Range per canvasser
@@ -574,13 +582,13 @@ function processRows(rows) {
     avgDur:c.durCnt?+(c.durSum/c.durCnt).toFixed(1):null,
     avgDis:c.disCnt?+(c.disSum/c.disCnt).toFixed(1):null,
     a1p:pct(c.A1,c.total),a2p:pct(c.A2,c.total),a3p:pct(c.A3,c.total),invP:pct(c.INVESTIGATE,c.total),
-    sellInP:pct(c.sellIn,c.total),
+    sellInP:pct(c.sellIn,c.total),avaP:pct(c.avaYes,c.avaTotal),
   }));
 
   const censusData = Object.values(outMap).filter(d=>d._isCensus).sort((a,b)=>b.total-a.total);
   return {
     total,actC,visC,durC,disC,locC,inRangeC,
-    sellInCount,
+    sellInCount,avaTotalCount,avaYesCount,
     visitTypeData:Object.values(vtMap).sort((a,b)=>b.total-a.total),
     outletData:Object.values(outMap).filter(d=>!d._isCensus).sort((a,b)=>b.total-a.total),
     censusData,
@@ -609,7 +617,7 @@ function aggregateList(dataList) {
     if(!tMap[d.date])tMap[d.date]={date:d.date,total:0,A1:0,A2:0,A3:0,sellIn:0};
     ["total","A1","A2","A3","sellIn"].forEach(f=>{tMap[d.date][f]=(tMap[d.date][f]||0)+(d[f]||0);});
   }));
-  const CANV_KEYS=["total","A1","A2","A3","VALID","OBSERVE","INVESTIGATE","INCOMPLETE","durSum","durCnt","disSum","disCnt","DUR_NORMAL","DUR_SHORT","DUR_LONG","DIS_NEAR","DIS_MID","DIS_FAR","DIS_INC","LOC_MATCH","LOC_NOTMATCH","LOC_INC","IR_YES","IR_NO","sellIn"];
+  const CANV_KEYS=["total","A1","A2","A3","VALID","OBSERVE","INVESTIGATE","INCOMPLETE","durSum","durCnt","disSum","disCnt","DUR_NORMAL","DUR_SHORT","DUR_LONG","DIS_NEAR","DIS_MID","DIS_FAR","DIS_INC","LOC_MATCH","LOC_NOTMATCH","LOC_INC","IR_YES","IR_NO","sellIn","avaTotal","avaYes"];
   const cMap={};
   dataList.forEach(r=>(r.canvassers||[]).forEach(c=>{
     const key=c.id||c.name;
@@ -620,11 +628,13 @@ function aggregateList(dataList) {
     avgDur:c.durCnt?+(c.durSum/c.durCnt).toFixed(1):null,
     avgDis:c.disCnt?+(c.disSum/c.disCnt).toFixed(1):null,
     a1p:pct(c.A1,c.total),a2p:pct(c.A2,c.total),a3p:pct(c.A3,c.total),invP:pct(c.INVESTIGATE,c.total),
-    sellInP:pct(c.sellIn,c.total),
+    sellInP:pct(c.sellIn,c.total),avaP:pct(c.avaYes,c.avaTotal),
   }));
   return {
     total:dataList.reduce((s,r)=>s+(r.total||0),0),
     sellInCount:dataList.reduce((s,r)=>s+(r.sellInCount||0),0),
+    avaTotalCount:dataList.reduce((s,r)=>s+(r.avaTotalCount||0),0),
+    avaYesCount:dataList.reduce((s,r)=>s+(r.avaYesCount||0),0),
     actC:sumC("actC"),visC:sumC("visC"),durC:sumC("durC"),disC:sumC("disC"),locC:sumC("locC"),inRangeC:sumC("inRangeC"),
     visitTypeData:mergeArr("visitTypeData","type"),
     outletData:mergeArr("outletData","type"),
@@ -847,7 +857,7 @@ function OutletActivityPanel({detail,onClose,t}){
                   <td style={{padding:"7px 10px",color:!isNaN(dur)&&dur>0&&dur<2?P.short:t.muted}}>
                     {fmtDur(r["Visit Duration (Menit)"])}{!isNaN(dur)&&dur>0&&dur<1&&<span style={{fontSize:9,color:P.investigate,marginLeft:3}}>⚡</span>}
                   </td>
-                  <td style={{padding:"6px 8px",textAlign:"center"}}>{["AVA Poster XL/AXIS Comply?","AVA Poster Smartfren Comply?","AVA SP XL Comply?","AVA SP AXIS Comply?","AVA SP Smartfren Comply?","AVA Voucher XL Comply?","AVA Voucher AXIS Comply?","AVA Voucher Smartfren Comply?"].filter(k=>String(r[k]||"").toLowerCase()==="yes").length===8?<span style={{background:"#22c55e22",color:"#22c55e",padding:"2px 6px",borderRadius:999,fontSize:10,fontWeight:700}}>8/8</span>:["AVA Poster XL/AXIS Comply?","AVA Poster Smartfren Comply?","AVA SP XL Comply?","AVA SP AXIS Comply?","AVA SP Smartfren Comply?","AVA Voucher XL Comply?","AVA Voucher AXIS Comply?","AVA Voucher Smartfren Comply?"].filter(k=>String(r[k]||"").toLowerCase()==="yes").length>=4?<span style={{background:"#f59e0b22",color:"#f59e0b",padding:"2px 6px",borderRadius:999,fontSize:10,fontWeight:700}}>{["AVA Poster XL/AXIS Comply?","AVA Poster Smartfren Comply?","AVA SP XL Comply?","AVA SP AXIS Comply?","AVA SP Smartfren Comply?","AVA Voucher XL Comply?","AVA Voucher AXIS Comply?","AVA Voucher Smartfren Comply?"].filter(k=>String(r[k]||"").toLowerCase()==="yes").length}/8</span>:<span style={{background:"#ef444422",color:"#ef4444",padding:"2px 6px",borderRadius:999,fontSize:10,fontWeight:700}}>{["AVA Poster XL/AXIS Comply?","AVA Poster Smartfren Comply?","AVA SP XL Comply?","AVA SP AXIS Comply?","AVA SP Smartfren Comply?","AVA Voucher XL Comply?","AVA Voucher AXIS Comply?","AVA Voucher Smartfren Comply?"].filter(k=>String(r[k]||"").toLowerCase()==="yes").length}/8</span>}</td>
+                  <td style={{padding:"6px 8px",textAlign:"center"}}>{(()=>{const v=String(r["AVA Tracking?"]||"").trim().toLowerCase();if(v==="")return<span style={{color:t.muted}}>–</span>;const ok=v==="yes"||v==="ya"||v==="true"||v==="1";return<span style={{background:ok?"#22c55e22":"#ef444422",color:ok?"#22c55e":"#ef4444",padding:"2px 8px",borderRadius:999,fontSize:10,fontWeight:700}}>{ok?"✓ Ya":"✗ Tidak"}</span>;})()}</td>
                   <td style={{padding:"7px 10px",fontSize:11,color:t.muted}}>{getReason(r)}</td>
                 </tr>
               );})}
@@ -1380,10 +1390,8 @@ function CanvasserDetailPanel({detail,onClose,t}){
                     {dur>0&&dur<1&&<span style={{fontSize:9,color:P.investigate,marginLeft:4,fontWeight:700}}>⚡</span>}
                   </td>
                   <td style={{padding:"6px 8px",textAlign:"center"}}>
-                    {(()=>{const n=AVA_ITEMS.filter(a=>String(r[a.key]||"").toLowerCase()==="yes").length;const bg=n===8?"#22c55e22":n>=4?"#f59e0b22":"#ef444422";const fg=n===8?"#22c55e":n>=4?"#f59e0b":"#ef4444";return(
-                      <span onClick={()=>setAvaRowDetail({outlet:r["Outlet"],date:fmtDate(r["Actual Visit Time"]),items:AVA_ITEMS.map(a=>({label:a.label,ok:String(r[a.key]||"").toLowerCase()==="yes"})),n})}
-                        style={{background:bg,color:fg,padding:"2px 6px",borderRadius:999,fontSize:10,fontWeight:700,cursor:"pointer"}}
-                        onMouseEnter={e=>e.currentTarget.style.opacity="0.7"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>{n}/8</span>
+                    {(()=>{const v=String(r["AVA Tracking?"]||"").trim().toLowerCase();if(v==="")return<span style={{color:t.muted}}>–</span>;const ok=v==="yes"||v==="ya"||v==="true"||v==="1";return(
+                      <span style={{background:ok?"#22c55e22":"#ef444422",color:ok?"#22c55e":"#ef4444",padding:"2px 8px",borderRadius:999,fontSize:10,fontWeight:700}}>{ok?"✓ Ya":"✗ Tidak"}</span>
                     );})()}
                   </td>
                   <td style={{padding:"7px 10px",fontSize:11,color:t.muted}}>{reason(r)}</td>
@@ -2228,6 +2236,19 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
       :selRegion?clusters.filter(cl=>cl.regionCode===selRegion)
       :clusters;
     const scopeLabel=selCluster||selRegion||"Nasional";
+
+    // Guard: cek estimasi jumlah baris dulu SEBELUM bikin array baru — kalau kegedean, Temuan nasional
+    // sekaligus bisa bikin crash krn banyak proses scan berulang. Minta persempit scope drpd crash diam-diam.
+    const estRows=scopedClusters.reduce((s,cl)=>s+(cl.total||0),0);
+    const FINDINGS_SAFE_LIMIT=400000;
+    if(estRows>FINDINGS_SAFE_LIMIT){
+      out.push({severity:"medium",icon:"⚠️",
+        title:`Scope "${scopeLabel}" terlalu besar untuk Temuan (${estRows.toLocaleString()} aktivitas)`,
+        desc:`Analisis Temuan butuh scan detail per-baris yang berat untuk data sebesar ini — berisiko bikin browser crash kalau dipaksakan. Batas aman saat ini sekitar ${FINDINGS_SAFE_LIMIT.toLocaleString()} aktivitas per scope.`,
+        rec:"Pilih salah satu region atau cluster dulu (bukan Nasional) di tab navigasi atas, baru buka tab Temuan lagi."});
+      return out;
+    }
+
     // Ekstraksi field seperlunya aja (bukan spread seluruh row) — utk data jutaan baris,
     // spread {...r} penuh per baris bisa dobel-lipat pemakaian memori sesaat.
     const allRows=scopedClusters.flatMap(cl=>(cl.rawRows||[]).map(r=>pickFindingsFields(r,cl.label)));
@@ -2801,6 +2822,19 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                   const invTotal=Object.values(rm.investigate||{}).reduce((s,v)=>s+v,0);
                   const obsTotal=Object.values(rm.observe||{}).reduce((s,v)=>s+v,0);
 
+                  // ── Section 5: Ringkasan AVA & Sell-In (Tinggi/Sedang/Rendah berdasar tercile canvasser) ──
+                  const bucketize=(rateKey,minTotal=10)=>{
+                    const eligible=(view.canvassers||[]).filter(c=>c.total>=minTotal&&c[rateKey]!=null);
+                    const sorted=[...eligible].sort((a,b)=>(b[rateKey]||0)-(a[rateKey]||0));
+                    const n=sorted.length;
+                    if(!n) return null;
+                    const t1=Math.max(1,Math.ceil(n/3)), t2=Math.max(t1+1,Math.ceil(2*n/3));
+                    return {tinggi:sorted.slice(0,t1),sedang:sorted.slice(t1,t2),rendah:sorted.slice(t2)};
+                  };
+                  const avaBuckets=(view.avaTotalCount||0)>0?bucketize("avaP"):null;
+                  const sellInBuckets=(view.sellInCount||0)>0?bucketize("sellInP"):null;
+                  const openBucketDrill=(label,color,list,countKey,totalKey)=>setDrill({label,color,rows:list.map(c=>({...c,count:c[countKey]||0,total:c[totalKey]||c.total})),total:list.reduce((s,c)=>s+(c[countKey]||0),0)});
+
                   return(
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:16}}>
                     <div style={{...card(),height:520,overflowY:"auto"}}>
@@ -2852,6 +2886,34 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                             ))}
                           </div>}
                         </div>
+                      </div>}
+
+                      {/* Section 5: AVA & Sell-In */}
+                      {(avaBuckets||sellInBuckets)&&<div style={{marginTop:18}}>
+                        <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Ringkasan AVA & Sell-In</div>
+                        <div style={{fontSize:10,color:t.muted,marginBottom:10}}>Pengelompokan canvasser berdasar rate — klik buat lihat daftarnya</div>
+                        {avaBuckets&&<div style={{marginBottom:14}}>
+                          <div style={{fontSize:10,fontWeight:700,color:t.text,marginBottom:6}}>🏷 AVA Tracking</div>
+                          <div style={{display:"flex",gap:8}}>
+                            {[["Tinggi",avaBuckets.tinggi,"#22c55e"],["Sedang",avaBuckets.sedang,"#f59e0b"],["Rendah",avaBuckets.rendah,"#ef4444"]].map(([lbl,list,clr])=>(
+                              <div key={lbl} onClick={()=>list.length&&openBucketDrill(`AVA Tracking — ${lbl}`,clr,list,"avaYes","avaTotal")} style={{flex:1,textAlign:"center",padding:"8px 4px",borderRadius:8,background:clr+"14",cursor:list.length?"pointer":"default"}}>
+                                <div style={{fontSize:15,fontWeight:800,color:clr}}>{list.length}</div>
+                                <div style={{fontSize:8,color:t.muted,textTransform:"uppercase",marginTop:2}}>{lbl}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>}
+                        {sellInBuckets&&<div>
+                          <div style={{fontSize:10,fontWeight:700,color:t.text,marginBottom:6}}>💰 Sell-In</div>
+                          <div style={{display:"flex",gap:8}}>
+                            {[["Tinggi",sellInBuckets.tinggi,"#22c55e"],["Sedang",sellInBuckets.sedang,"#f59e0b"],["Rendah",sellInBuckets.rendah,"#ef4444"]].map(([lbl,list,clr])=>(
+                              <div key={lbl} onClick={()=>list.length&&openBucketDrill(`Sell-In — ${lbl}`,clr,list,"sellIn","total")} style={{flex:1,textAlign:"center",padding:"8px 4px",borderRadius:8,background:clr+"14",cursor:list.length?"pointer":"default"}}>
+                                <div style={{fontSize:15,fontWeight:800,color:clr}}>{list.length}</div>
+                                <div style={{fontSize:8,color:t.muted,textTransform:"uppercase",marginTop:2}}>{lbl}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>}
                       </div>}
                     </div>
 
