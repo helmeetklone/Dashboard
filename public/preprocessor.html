@@ -50,7 +50,18 @@
   .stat .l{font-size:10px;color:var(--muted);text-transform:uppercase;margin-top:3px;}
   .breakdown{font-size:12px;color:var(--muted);line-height:1.8;margin-bottom:16px;}
   .breakdown b{color:var(--text);}
-  .dl-btn{display:block;text-align:center;background:var(--ok);color:#06231a;border:none;border-radius:10px;padding:14px;font-size:14px;font-weight:800;text-decoration:none;cursor:pointer;}
+  .dl-btn{display:block;text-align:center;background:var(--ok);color:#06231a;border:none;border-radius:10px;padding:14px;font-size:14px;font-weight:800;text-decoration:none;cursor:pointer;transition:background .15s,color .15s;flex:1;}
+  .dl-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+  .dl-checkbox{width:20px;height:20px;flex-shrink:0;accent-color:var(--accent);cursor:pointer;}
+  .select-row{display:flex;gap:8px;margin-bottom:10px;}
+  .select-row button{background:var(--panel-alt);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:6px 12px;font-size:11px;cursor:pointer;}
+  .combine-btn{width:100%;background:var(--panel-alt);color:var(--text);border:1px solid var(--accent);border-radius:8px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:8px;}
+  .combine-btn:disabled{opacity:0.5;cursor:not-allowed;}
+  .dl-btn.downloaded{background:#2563eb;color:#eaf0ff;}
+  .dl-btn.downloaded::after{content:" ✓ Sudah didownload";font-weight:700;}
+  .dl-all-btn{display:block;width:100%;text-align:center;background:var(--panel-alt);color:var(--accent);border:2px solid var(--accent);border-radius:10px;padding:14px;font-size:14px;font-weight:800;cursor:pointer;margin-bottom:14px;}
+  .dl-all-btn:disabled{opacity:0.5;cursor:not-allowed;}
+  .dl-progress-label{font-size:11px;color:var(--muted);text-align:center;margin-bottom:10px;}
   .steps{font-size:12px;color:var(--muted);line-height:1.9;margin-top:18px;padding-top:16px;border-top:1px solid var(--border);}
   .steps b{color:var(--text);}
   .steps .num{display:inline-block;width:18px;height:18px;background:var(--accent-dim);color:var(--accent);border-radius:50%;text-align:center;line-height:18px;font-size:10px;font-weight:800;margin-right:6px;}
@@ -59,18 +70,18 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="eyebrow">XLSMART Analytics · Tools All-in-One</div>
-  <h1>📦 Pre-Processor Data Mentah</h1>
+  <div class="eyebrow">XLSMART Analytics · Perangkat Terintegrasi</div>
+  <h1>📦 Pra-Pemroses Data Mentah</h1>
   <div class="sub">
-    Upload file mentah (XLSX/XLS/CSV) <b>langsung di sini</b> — semua diproses di 1 tempat: baca file, validasi GPS/durasi, tentuin status A1/A2/A3, sampai jadi 1 file JSON kecil yang tinggal di-upload ke dashboard. Gak perlu convert manual atau buka tools lain dulu.
+    Unggah berkas mentah (XLSX/XLS/CSV) <b>langsung di sini</b> — seluruh proses dilakukan dalam satu tempat: membaca berkas, memvalidasi GPS/durasi, menentukan status A1/A2/A3, hingga menghasilkan satu berkas JSON berukuran kecil yang siap diunggah ke dashboard. Tidak perlu konversi manual atau membuka perangkat lain terlebih dahulu.
   </div>
 
   <div class="panel">
-    <h2>1. Upload File Mentah (.xlsx / .xls / .csv)</h2>
+    <h2>1. Unggah Berkas Mentah (.xlsx / .xls / .csv)</h2>
     <div class="drop" id="drop">
       <div class="big">📁</div>
-      <div class="t1">Klik atau drag file ke sini</div>
-      <div class="t2">Bisa pilih banyak file sekaligus (XLSX, XLS, atau CSV campur juga boleh) — nanti dikelompokkan otomatis per Cluster</div>
+      <div class="t1">Klik atau seret berkas ke sini</div>
+      <div class="t2">Dapat memilih beberapa berkas sekaligus (XLSX, XLS, atau CSV boleh dicampur) — akan dikelompokkan otomatis per Cluster</div>
     </div>
     <input type="file" id="fileInput" multiple accept=".xlsx,.xls,.csv">
     <div class="filelist" id="fileList"></div>
@@ -82,30 +93,30 @@
       <div class="pfield">
         <label>Durasi Minimal (menit)</label>
         <input type="number" id="p_dur_short" value="2" step="0.5">
-        <div class="hint">Di bawah ini = durasi singkat, salah satu pemicu A2</div>
+        <div class="hint">Di bawah nilai ini tergolong durasi singkat, salah satu pemicu status A2</div>
       </div>
       <div class="pfield">
         <label>Durasi Maksimal (menit)</label>
         <input type="number" id="p_dur_long" value="30" step="1">
-        <div class="hint">Di atas ini = durasi kelamaan (LONG)</div>
+        <div class="hint">Di atas nilai ini tergolong durasi terlalu lama (LONG)</div>
       </div>
       <div class="pfield">
         <label>Jarak In Range (meter)</label>
         <input type="number" id="p_in_range_max" value="150" step="10">
-        <div class="hint">Di atas ini = Out of Range, salah satu pemicu A2</div>
+        <div class="hint">Di atas nilai ini tergolong Out of Range, salah satu pemicu status A2</div>
       </div>
       <div class="pfield">
         <label>Jarak NEAR (meter)</label>
         <input type="number" id="p_dis_near" value="50" step="10">
-        <div class="hint">Buat breakdown Distance Status aja</div>
+        <div class="hint">Hanya digunakan untuk rincian Distance Status</div>
       </div>
     </div>
   </div>
 
   <div class="panel">
-    <h2>3. Proses & Download</h2>
-    <div class="warn">⚠️ Aturan ini <b>cuma dipakai kalau file mentah gak punya kolom Visit Status</b>. Kalau kolom itu udah ada (VALID/OBSERVE/INVESTIGATE/INCOMPLETE), datanya dipakai apa adanya — sama persis kayak logic di dashboard.</div>
-    <button class="primary" id="processBtn" disabled>Proses Semua File</button>
+    <h2>3. Proses & Unduh</h2>
+    <div class="warn">⚠️ Aturan ini <b>hanya berlaku apabila berkas mentah tidak memiliki kolom Visit Status</b>. Apabila kolom tersebut sudah tersedia (VALID/OBSERVE/INVESTIGATE/INCOMPLETE), data akan digunakan apa adanya — sesuai dengan logika yang berlaku di dashboard.</div>
+    <button class="primary" id="processBtn" disabled>Proses Semua Berkas</button>
     <div class="progress" id="progressWrap" style="display:none;">
       <div class="bar"><div class="bar-fill" id="barFill"></div></div>
       <div class="progress-text" id="progressText">Memproses...</div>
@@ -122,10 +133,10 @@
   </div>
 
   <div class="steps">
-    <div><span class="num">1</span> Upload semua file XLSX mentah km di sini, atur parameter kalau perlu, klik "Proses Semua File".</div>
-    <div><span class="num">2</span> Download file <b>xlsmart-processed.json</b> yang dihasilkan.</div>
-    <div><span class="num">3</span> Buka dashboard XLSMART, pilih opsi <b>"Load Processed JSON"</b> di halaman upload, dan pilih file JSON tadi.</div>
-    <div><span class="num">4</span> Dashboard langsung tampil — gak perlu parsing/hitung ulang GPS & durasi dari nol.</div>
+    <div><span class="num">1</span> Unggah seluruh berkas XLSX mentah pada bagian ini, atur parameter apabila diperlukan, lalu klik "Proses Semua Berkas".</div>
+    <div><span class="num">2</span> Unduh berkas JSON yang dihasilkan (satu per cluster, atau per minggu apabila dipecah otomatis).</div>
+    <div><span class="num">3</span> Buka dashboard XLSMART, pilih opsi <b>"Load Processed JSON"</b> pada halaman unggah, kemudian pilih berkas JSON tersebut.</div>
+    <div><span class="num">4</span> Dashboard akan langsung menampilkan data — tanpa perlu memproses ulang GPS dan durasi dari awal.</div>
   </div>
 </div>
 
@@ -332,28 +343,28 @@ function classifyError(attempts){
   if(allMsgs.includes('bad uncompressed size') || allMsgs.includes('bad compressed size') || allMsgs.includes('zip')){
     return {
       kind: 'zip-structure',
-      penjelasan: 'File ini punya struktur ZIP internal yang gak standar (biasanya karena disimpan/diekspor lewat aplikasi selain Excel asli, misalnya sistem otomatis, LibreOffice, atau re-upload dari cloud). Library pembaca XLSX gagal parsing bagian internal file ini.',
-      saran: 'Buka file ini di Excel/Google Sheets/Numbers, lalu "Save As" atau "Download" ulang sebagai .xlsx dari aplikasi itu — ini menulis ulang strukturnya jadi format standar, biasanya langsung benerin masalahnya.',
+      penjelasan: 'Berkas ini memiliki struktur ZIP internal yang tidak standar (umumnya karena disimpan atau diekspor melalui aplikasi selain Excel asli, misalnya sistem otomatis, LibreOffice, atau hasil unggah ulang dari cloud). Pustaka pembaca XLSX gagal mem-parsing bagian internal berkas ini.',
+      saran: 'Buka berkas ini di Excel/Google Sheets/Numbers, kemudian "Save As" atau "Download" ulang dalam format .xlsx dari aplikasi tersebut — langkah ini akan menulis ulang strukturnya menjadi format standar dan umumnya menyelesaikan masalah tersebut.',
     };
   }
   if(allMsgs.includes('out of memory') || allMsgs.includes('allocation failed') || allMsgs.includes('maximum call stack')){
     return {
       kind: 'memory',
-      penjelasan: 'File ini kemungkinan besar terlalu banyak baris/kolom utk diproses sekaligus di memori browser saat ini.',
-      saran: 'Kalau file ini 1 cluster tunggal dgn baris sangat banyak, coba tutup tab/aplikasi lain dulu biar ada lebih banyak memori bebas, lalu upload ulang HANYA file ini sendirian (jangan digabung file lain). Kalau masih gagal, minta sistem export per periode lebih pendek (per 2 minggu, bukan sebulan penuh).',
+      penjelasan: 'Berkas ini kemungkinan besar memiliki jumlah baris/kolom yang terlalu banyak untuk diproses sekaligus dalam memori peramban saat ini.',
+      saran: 'Apabila berkas ini merupakan satu cluster tunggal dengan jumlah baris sangat banyak, tutup terlebih dahulu tab/aplikasi lain agar tersedia lebih banyak memori bebas, kemudian unggah ulang HANYA berkas ini secara terpisah (tidak digabung dengan berkas lain). Apabila masih gagal, mintalah sistem untuk mengekspor data dengan periode yang lebih pendek (per dua minggu, bukan satu bulan penuh).',
     };
   }
   if(allMsgs.includes('unsupported') || allMsgs.includes('corrupt') || allMsgs.includes('invalid')){
     return {
       kind: 'format',
-      penjelasan: 'Format file ini kemungkinan gak dikenali dgn benar sbg XLSX/XLS yg valid — mungkin file rusak/gak lengkap saat didownload, atau sebenarnya bukan format Excel asli meski ekstensinya .xlsx.',
-      saran: 'Coba download ulang file ini dari sumbernya (jangan-jangan proses download sebelumnya terputus), atau buka & save-as ulang lewat Excel.',
+      penjelasan: 'Format berkas ini kemungkinan tidak dikenali dengan benar sebagai XLSX/XLS yang valid — kemungkinan berkas rusak atau tidak lengkap saat diunduh, atau sebenarnya bukan format Excel asli meskipun berekstensi .xlsx.',
+      saran: 'Unduh ulang berkas ini dari sumbernya (kemungkinan proses pengunduhan sebelumnya terputus), atau buka dan simpan ulang melalui Excel.',
     };
   }
   return {
     kind: 'unknown',
-    penjelasan: 'Penyebab pastinya belum bisa dipastikan dari pesan error yang muncul.',
-    saran: 'Coba buka file ini di Excel/Google Sheets, lalu "Save As" ulang sebagai .xlsx baru, lalu upload lagi file hasil save-nya.',
+    penjelasan: 'Penyebab pasti belum dapat dipastikan dari pesan galat yang muncul.',
+    saran: 'Buka berkas ini di Excel/Google Sheets, simpan ulang ("Save As") sebagai .xlsx baru, kemudian unggah kembali berkas hasil penyimpanan tersebut.',
   };
 }
 
@@ -396,13 +407,13 @@ function readFileAsRows(file){
         }catch(err){ attempts.push({strategy:strat.label, error:err.message}); /* coba strategi berikutnya */ }
       }
       const diag = classifyError(attempts);
-      const richErr = new Error(attempts[attempts.length-1]?.error || 'Semua strategi baca gagal');
+      const richErr = new Error(attempts[attempts.length-1]?.error || 'Seluruh strategi pembacaan berkas gagal');
       richErr.diagnosis = diag; richErr.attempts = attempts;
       reject(richErr);
     };
     reader.onerror = ()=>{
-      const richErr = new Error('Gagal baca file dari disk (browser gak bisa buka file-nya sama sekali)');
-      richErr.diagnosis = {kind:'read-error', penjelasan:'Kemungkinan file kebesaran utk dibaca browser saat ini, atau ada masalah izin akses file.', saran:'Coba upload file ini sendirian (satu-satu), atau restart browser lalu coba lagi.'};
+      const richErr = new Error('Gagal membaca berkas dari penyimpanan (peramban tidak dapat membuka berkas ini sama sekali)');
+      richErr.diagnosis = {kind:'read-error', penjelasan:'Kemungkinan berkas berukuran terlalu besar untuk dibaca oleh peramban saat ini, atau terdapat kendala izin akses berkas.', saran:'Unggah berkas ini secara terpisah (satu per satu), atau mulai ulang peramban kemudian coba kembali.'};
       richErr.attempts = [];
       reject(richErr);
     };
@@ -426,6 +437,7 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
   progressWrap.style.display = 'block';
   document.getElementById('result').classList.remove('show');
   const downloadArea = document.getElementById('downloadArea');
+  const allDownloadLinks = []; // nampung semua {a, url, baseCluster, checkbox} yg dibikin
   downloadArea.innerHTML = '';
 
   const failedFiles = [];
@@ -435,7 +447,7 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
 
   for(let fi=0; fi<uploadedFiles.length; fi++){
     const file = uploadedFiles[fi];
-    progressText.textContent = `Membaca ${file.name}... (${fi+1}/${uploadedFiles.length})`;
+    progressText.textContent = `Membaca berkas ${file.name}... (${fi+1}/${uploadedFiles.length})`;
     barFill.style.width = ((fi)/uploadedFiles.length*100)+'%';
     await new Promise(r=>setTimeout(r,10));
 
@@ -447,7 +459,7 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
       continue; // lanjut ke file berikutnya, jangan hentikan semuanya
     }
 
-    progressText.textContent = `Validasi ${file.name}... (${rawRows.length.toLocaleString()} baris)`;
+    progressText.textContent = `Memvalidasi ${file.name}... (${rawRows.length.toLocaleString()} baris)`;
     await new Promise(r=>setTimeout(r,10));
 
     // Kelompokkan per Cluster (kalau ada kolom Cluster), fallback ke nama file
@@ -468,7 +480,7 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
       for(let ci=0; ci<batchRows.length; ci+=CHUNK){
         const chunk = batchRows.slice(ci, ci+CHUNK);
         for(let i=0;i<chunk.length;i++) validatedRows.push(computeValidation(chunk[i], params));
-        progressText.textContent = `Validasi ${label}: ${Math.min(ci+CHUNK,batchRows.length).toLocaleString()}/${batchRows.length.toLocaleString()} baris...`;
+        progressText.textContent = `Memvalidasi ${label}: ${Math.min(ci+CHUNK,batchRows.length).toLocaleString()}/${batchRows.length.toLocaleString()} baris...`;
         if(ci+CHUNK<batchRows.length) await new Promise(r=>setTimeout(r,0));
       }
 
@@ -479,7 +491,7 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
       });
       a1+=cA1; a2+=cA2; a3+=cA3; totalRows+=validatedRows.length;
 
-      progressText.textContent = `Menyusun JSON: ${label}...`;
+      progressText.textContent = `Menyusun berkas JSON: ${label}...`;
       await new Promise(r=>setTimeout(r,0));
       const clLabel = fileNameForBatch.clusterLabel;
       const singleOutput = {
@@ -491,12 +503,19 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
       const blob = new Blob([jsonStr], {type:'application/json'});
       totalSizeBytes += blob.size;
       const url = URL.createObjectURL(blob);
+
+      const row = document.createElement('div');
+      row.className = 'dl-row';
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox'; checkbox.checked = true; checkbox.className = 'dl-checkbox';
       const a = document.createElement('a');
       a.className = 'dl-btn'; a.href = url;
       a.download = `xlsmart-processed-${label.replace(/[^a-z0-9]/gi,'_')}.json`;
-      a.style.marginBottom = '8px';
-      a.textContent = `⬇️ Download ${label} (${validatedRows.length.toLocaleString()} baris, ${(blob.size/1024).toFixed(0)} KB)`;
-      downloadArea.appendChild(a);
+      a.textContent = `⬇️ Unduh ${label} (${validatedRows.length.toLocaleString()} baris, ${(blob.size/1024).toFixed(0)} KB)`;
+      a.addEventListener('click', ()=>{ a.classList.add('downloaded'); });
+      row.appendChild(checkbox); row.appendChild(a);
+      downloadArea.appendChild(row);
+      allDownloadLinks.push({a, url, checkbox, baseCluster:fileNameForBatch.clusterBase||clLabel, label, rowCount:validatedRows.length});
 
       summaries.push({label, rows:validatedRows.length, a1:cA1, a2:cA2, a3:cA3});
       validatedRows = null;
@@ -505,7 +524,7 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
     for(const [cl, rows] of Object.entries(byCluster)){
       if(rows.length <= WEEKLY_SPLIT_THRESHOLD){
         // Cluster masih ukuran wajar — proses langsung sebagai 1 batch, kayak biasa
-        await processAndDownloadBatch(cl, rows, {clusterLabel:cl, name:file.name});
+        await processAndDownloadBatch(cl, rows, {clusterLabel:cl, clusterBase:cl, name:file.name});
       } else {
         // Cluster kegedean (>20.000 baris) — otomatis pecah per minggu (Senin-Minggu) berdasarkan Planned Visit Date,
         // biar tiap batch yg divalidasi & di-JSON-kan jauh lebih kecil, ngirit puncak memori.
@@ -516,12 +535,12 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
           byWeek[wk].push(row);
         });
         const weekKeys = Object.keys(byWeek).sort();
-        progressText.textContent = `${cl} kegedean (${rows.length.toLocaleString()} baris) — otomatis dipecah jadi ${weekKeys.length} minggu`;
+        progressText.textContent = `${cl} berukuran terlalu besar (${rows.length.toLocaleString()} baris) — otomatis dipecah menjadi ${weekKeys.length} bagian mingguan`;
         splitNotices.push({label:cl, fileName:file.name, totalRows:rows.length, weekCount:weekKeys.length});
         await new Promise(r=>setTimeout(r,300));
         for(const wk of weekKeys){
           const label = `${cl}_minggu_${wk}`;
-          await processAndDownloadBatch(label, byWeek[wk], {clusterLabel:cl+' ('+wk+')', name:file.name});
+          await processAndDownloadBatch(label, byWeek[wk], {clusterLabel:cl+' ('+wk+')', clusterBase:cl, name:file.name});
           byWeek[wk] = null; // buang batch minggu ini dr memori stlh didownload
         }
       }
@@ -530,24 +549,113 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
 
   barFill.style.width = '100%';
 
+  // Tombol pilih semua / kosongkan pilihan
+  if(allDownloadLinks.length>1){
+    const selectRow = document.createElement('div');
+    selectRow.className = 'select-row';
+    const selAllBtn = document.createElement('button');
+    selAllBtn.textContent = '☑️ Pilih Semua';
+    selAllBtn.onclick = ()=>allDownloadLinks.forEach(l=>l.checkbox.checked=true);
+    const selNoneBtn = document.createElement('button');
+    selNoneBtn.textContent = '⬜ Kosongkan Pilihan';
+    selNoneBtn.onclick = ()=>allDownloadLinks.forEach(l=>l.checkbox.checked=false);
+    selectRow.appendChild(selAllBtn); selectRow.appendChild(selNoneBtn);
+    downloadArea.insertBefore(selectRow, downloadArea.firstChild);
+
+    // Tombol download yg dicentang aja (default semua tercentang, jadi klik ini = download semua kalau blm diubah)
+    const dlAllBtn = document.createElement('button');
+    dlAllBtn.className = 'dl-all-btn';
+    dlAllBtn.textContent = `⬇️⬇️ Unduh yang Dicentang (${allDownloadLinks.length} berkas)`;
+    dlAllBtn.onclick = async ()=>{
+      const toDownload = allDownloadLinks.filter(l=>l.checkbox.checked && !l.a.classList.contains('downloaded'));
+      if(!toDownload.length){ dlAllBtn.textContent = 'Tidak ada berkas yang dicentang, atau seluruhnya sudah diunduh'; setTimeout(()=>{dlAllBtn.textContent = `⬇️⬇️ Unduh yang Dicentang (${allDownloadLinks.length} berkas)`;},2000); return; }
+      dlAllBtn.disabled = true;
+      for(let i=0;i<toDownload.length;i++){
+        dlAllBtn.textContent = `⬇️⬇️ Mengunduh... (${i+1}/${toDownload.length})`;
+        toDownload[i].a.click();
+        toDownload[i].a.classList.add('downloaded');
+        await new Promise(r=>setTimeout(r,400)); // jeda dikit tiap download biar browser gak nge-block
+      }
+      dlAllBtn.textContent = `✓ ${toDownload.length} berkas telah diunduh`;
+      dlAllBtn.disabled = false;
+    };
+    downloadArea.insertBefore(dlAllBtn, downloadArea.firstChild);
+    const label = document.createElement('div');
+    label.className = 'dl-progress-label';
+    label.textContent = `${allDownloadLinks.length} berkas JSON siap diunduh — centang atau hapus centang sesuai kebutuhan, lalu klik tombol di atas. Berkas yang telah diunduh akan otomatis berubah warna biru disertai tanda ✓.`;
+    downloadArea.insertBefore(label, downloadArea.firstChild);
+  }
+
+  // Fitur "Gabungkan" — kalau ada cluster yg kepecah jadi beberapa minggu, tawarkan gabung jadi 1 file lagi.
+  // Aman secara memori krn baris tiap cluster yg kepecah tetep kecil per minggu; gabungnya baru kejadian
+  // pas tombol ini diklik (bukan otomatis), dan cuma nge-fetch blob yg udah ada di memori (gak baca ulang file asli).
+  const baseClusterGroups = {};
+  allDownloadLinks.forEach(l=>{
+    if(!baseClusterGroups[l.baseCluster]) baseClusterGroups[l.baseCluster]=[];
+    baseClusterGroups[l.baseCluster].push(l);
+  });
+  const multiPartClusters = Object.entries(baseClusterGroups).filter(([_,links])=>links.length>1);
+  if(multiPartClusters.length>0){
+    const combineSection = document.createElement('div');
+    combineSection.style.cssText = 'margin-top:16px;padding-top:14px;border-top:1px solid var(--border);';
+    const combineTitle = document.createElement('div');
+    combineTitle.style.cssText = 'font-size:12px;font-weight:700;color:var(--text);margin-bottom:8px;';
+    combineTitle.textContent = '🔗 Gabungkan Cluster yang Kepecah Mingguan';
+    combineSection.appendChild(combineTitle);
+    multiPartClusters.forEach(([baseCluster, links])=>{
+      const totalRowsInGroup = links.reduce((s,l)=>s+l.rowCount,0);
+      const btn = document.createElement('button');
+      btn.className = 'combine-btn';
+      btn.textContent = `🔗 Gabungkan ${baseCluster} (${links.length} bagian mingguan, total ${totalRowsInGroup.toLocaleString()} baris) menjadi satu berkas`;
+      btn.onclick = async ()=>{
+        btn.disabled = true; btn.textContent = 'Menggabungkan...';
+        try{
+          const allRowsMerged = [];
+          for(const l of links){
+            const resp = await fetch(l.url);
+            const json = await resp.json();
+            allRowsMerged.push(...(json.clusters[0].rows||[]));
+          }
+          const combined = {
+            version:1, generatedAt:new Date().toISOString(),
+            generatedBy:"XLSMART Pre-Processor (offline tool)",
+            clusters:[{ label:baseCluster, regionCode:getRegionCode(baseCluster), fileName:baseCluster, rows:allRowsMerged }],
+          };
+          const jsonStr = JSON.stringify(combined);
+          const blob = new Blob([jsonStr], {type:'application/json'});
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url; a.download = `xlsmart-processed-${baseCluster.replace(/[^a-z0-9]/gi,'_')}-GABUNGAN.json`;
+          a.click();
+          btn.textContent = `✓ ${baseCluster} telah digabungkan dan diunduh (${allRowsMerged.length.toLocaleString()} baris, ${(blob.size/1024).toFixed(0)} KB)`;
+        }catch(err){
+          btn.textContent = `❌ Gagal menggabungkan: ${err.message}`;
+        }
+        btn.disabled = false;
+      };
+      combineSection.appendChild(btn);
+    });
+    downloadArea.appendChild(combineSection);
+  }
+
   if(splitNotices.length>0){
     const infoDiv = document.createElement('div');
     infoDiv.className = 'warn';
     infoDiv.style.background = 'var(--accent-dim)';
     infoDiv.style.borderColor = 'var(--accent)';
-    infoDiv.innerHTML = `ℹ️ <b>${splitNotices.length} cluster otomatis dipecah per minggu</b> (karena lebih dari 20.000 baris dalam 1 cluster):<br>` +
-      splitNotices.map(s=>`&nbsp;&nbsp;• <b>${s.label}</b> (dari file ${s.fileName}) — ${s.totalRows.toLocaleString()} baris → dipecah jadi ${s.weekCount} file mingguan`).join('<br>');
+    infoDiv.innerHTML = `ℹ️ <b>${splitNotices.length} cluster dipecah otomatis per minggu</b> (karena lebih dari 20.000 baris dalam satu cluster):<br>` +
+      splitNotices.map(s=>`&nbsp;&nbsp;• <b>${s.label}</b> (dari berkas ${s.fileName}) — ${s.totalRows.toLocaleString()} baris → dipecah menjadi ${s.weekCount} berkas mingguan`).join('<br>');
     document.getElementById('breakdown').before(infoDiv);
   }
 
   if(failedFiles.length>0){
     const warnDiv = document.createElement('div');
     warnDiv.className = 'warn';
-    warnDiv.innerHTML = `⚠️ <b>${failedFiles.length} file gagal diproses:</b><br><br>` +
+    warnDiv.innerHTML = `⚠️ <b>${failedFiles.length} berkas gagal diproses:</b><br><br>` +
       failedFiles.map(f=>{
-        const d = f.diagnosis || {penjelasan:'Penyebab tidak diketahui.', saran:'Coba upload ulang file ini.'};
+        const d = f.diagnosis || {penjelasan:'Penyebab tidak diketahui.', saran:'Silakan unggah ulang berkas ini.'};
         const attemptsHtml = (f.attempts||[]).length
-          ? `<div style="font-size:10px;color:var(--muted);margin:4px 0 8px;">Percobaan yg gagal: ${f.attempts.map(a=>`<i>${a.strategy}</i> → "${a.error}"`).join('; ')}</div>`
+          ? `<div style="font-size:10px;color:var(--muted);margin:4px 0 8px;">Percobaan yang gagal: ${f.attempts.map(a=>`<i>${a.strategy}</i> → "${a.error}"`).join('; ')}</div>`
           : '';
         return `<div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid #e85c5c30;">` +
           `<b>📄 ${f.name}</b><br>` +
@@ -560,7 +668,7 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
   }
 
   if(totalRows===0){
-    progressText.textContent = 'Gagal — semua file gagal diproses.';
+    progressText.textContent = 'Gagal — seluruh berkas gagal diproses.';
     processBtn.disabled = false;
     return;
   }
@@ -576,7 +684,7 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
 
   const note = document.createElement('div');
   note.style.cssText = 'font-size:11px;color:var(--muted);margin-top:10px;text-align:center;line-height:1.6;';
-  note.innerHTML = 'Setiap cluster di-download sebagai file JSON <b>terpisah</b> (biar ringan & gak numpuk di memori). Upload semua file JSON itu satu-satu ke dashboard — dashboard otomatis menggabungkannya.';
+  note.innerHTML = 'Setiap cluster diunduh sebagai berkas JSON <b>terpisah</b> agar tetap ringan dan tidak membebani memori. Unggah seluruh berkas JSON tersebut satu per satu ke dashboard — dashboard akan menggabungkannya secara otomatis.';
   downloadArea.appendChild(note);
 
   progressText.textContent = 'Selesai!';
