@@ -238,13 +238,53 @@ const KEEP_COLUMNS_DASHBOARD = new Set([
   "In Range","Latitude","Longitude",
   "Outlet","Outlet ID","Outlet Name","Outlet Type",
   "RO Latitude","RO Longitude","RO Census","From RO Census",
-  "Planned Visit Date","Visit Status",
+  "Visit Status",
+  "Sell-In","Online Sell-In","Sell-In Time","Outlet Closed",
+  // Cukup 1 kolom AVA — cuma perlu tahu CVS melakukan AVA tracking atau tidak, gak perlu detail per item
+  "AVA Tracking?",
   "_VS","_AS1","_DUR","_DIS","_LOC","_CAS1","_CVS","_clLabel",
 ]);
 function trimRowDashboard(row){
   const out={};
   for(const k in row){ if(KEEP_COLUMNS_DASHBOARD.has(k)) out[k]=row[k]; }
   return out;
+}
+
+// Ekstraksi field seperlunya doang buat komputasi Temuan (fraud detection & AVA tracking) —
+// dipakai biar gak perlu spread {...row} penuh (yg makan memori 2x lipat sesaat) pas scan jutaan baris.
+function pickFindingsFields(r, clLabel){
+  return {
+    "Actual Visit Time":r["Actual Visit Time"],
+    "Canvasser":r["Canvasser"],
+    "Check-In Latitude":r["Check-In Latitude"],
+    "Check-In Longitude":r["Check-In Longitude"],
+    "Distance Check In (Meter)":r["Distance Check In (Meter)"],
+    "In Range":r["In Range"],
+    "Outlet ID":r["Outlet ID"],
+    "Outlet":r["Outlet"],
+    "Visit Duration (Menit)":r["Visit Duration (Menit)"],
+    "AVA Tracking?":r["AVA Tracking?"],
+    "Sell-In":r["Sell-In"],
+    "Online Sell-In":r["Online Sell-In"],
+    "Outlet Closed":r["Outlet Closed"],
+    "_clLabel":clLabel,
+  };
+}
+
+// Picker ringan khusus buat "Lihat Penyebab" (computeReasonBreakdown) — sama alasannya,
+// hindari spread {...row} penuh pas scan jutaan baris.
+function pickReasonFields(r, clLabel){
+  return {
+    "_CAS1":r["_CAS1"], "Activity Status.1":r["Activity Status.1"],
+    "Canvasser":r["Canvasser"], "_clLabel":clLabel,
+    "_CVS":r["_CVS"], "Visit Status":r["Visit Status"],
+    "_DUR":r["_DUR"], "Duration Status":r["Duration Status"],
+    "_LOC":r["_LOC"], "Location Status":r["Location Status"],
+    "In Range":r["In Range"],
+    "Visit Duration (Menit)":r["Visit Duration (Menit)"],
+    "Distance Check In (Meter)":r["Distance Check In (Meter)"],
+    "Distance Check Out (Meter)":r["Distance Check Out (Meter)"],
+  };
 }
 
 function readFileRows(wbOrBuf, sheetName=null) {
@@ -336,6 +376,7 @@ function processRows(rows) {
   const inRangeC={YES:0,NO:0};
   const outMap={},canvMap={},dateMap={},visitMap={},vtMap={};
   let minDate=null,maxDate=null;
+  let sellInCount=0;
   // Reason aggregation for Investigate & Observe
   const reasonMap={investigate:{},observe:{}};
   const addReason=(bucket,label)=>{ reasonMap[bucket][label]=(reasonMap[bucket][label]||0)+1; };
@@ -445,7 +486,7 @@ function processRows(rows) {
     const cid = String(r["Canvasser ID"]||nm).trim();
     const cl  = r["Cluster"]||"Unknown";
     const rgn = getRegionCode(cl);
-    const dt  = extractDate(r["Planned Visit Date"]);
+    const dt  = extractDate(r["Actual Visit Time"]);
     const durM= parseFloat(r["Visit Duration (Menit)"]);
     const disM= parseFloat(r["Distance Check In (Meter)"]);
 
@@ -458,6 +499,16 @@ function processRows(rows) {
     const inR=String(r["In Range"]||"").trim().toUpperCase();
     const inRKey=inR==="YES"||inR==="Y"||inR==="1"||inR==="TRUE"?"YES":"NO";
     if(r["In Range"]!=null) inRangeC[inRKey]++;
+
+    // Sell-In tracking — dianggap "melakukan sell-in" kalau salah satu kolom Sell-In/Online Sell-In ada isinya
+    const hasSellInVal=(v)=>{
+      if(v==null) return false;
+      const s=String(v).trim().toLowerCase();
+      if(s===""||s==="no"||s==="tidak"||s==="0"||s==="false") return false;
+      return true;
+    };
+    const didSellIn = hasSellInVal(r["Sell-In"])||hasSellInVal(r["Online Sell-In"]);
+    if(didSellIn) sellInCount++;
 
     if(!outMap[ot]) outMap[ot]={type:ot,total:0,A1:0,A2:0,A3:0,VALID:0,OBSERVE:0,INVESTIGATE:0,INCOMPLETE:0};
     outMap[ot].total++;
@@ -476,12 +527,13 @@ function processRows(rows) {
     if(as1==="A3 - INCOMPLETE")outMap["__"+ck].A3++;
 
     if(!canvMap[cid]) canvMap[cid]={id:cid,name:nm,cluster:cl,region:rgn,total:0,A1:0,A2:0,A3:0,VALID:0,OBSERVE:0,INVESTIGATE:0,INCOMPLETE:0,durSum:0,durCnt:0,disSum:0,disCnt:0,
-      DUR_NORMAL:0,DUR_SHORT:0,DUR_LONG:0,DIS_NEAR:0,DIS_MID:0,DIS_FAR:0,DIS_INC:0,LOC_MATCH:0,LOC_NOTMATCH:0,LOC_INC:0,IR_YES:0,IR_NO:0};
+      DUR_NORMAL:0,DUR_SHORT:0,DUR_LONG:0,DIS_NEAR:0,DIS_MID:0,DIS_FAR:0,DIS_INC:0,LOC_MATCH:0,LOC_NOTMATCH:0,LOC_INC:0,IR_YES:0,IR_NO:0,sellIn:0};
     canvMap[cid].total++;
     if(as1==="A1 - NORMAL")    canvMap[cid].A1++;
     if(as1==="A2 - ANOMALY")   canvMap[cid].A2++;
     if(as1==="A3 - INCOMPLETE")canvMap[cid].A3++;
     if(visC[vs]!==undefined)   canvMap[cid][vs]=(canvMap[cid][vs]||0)+1;
+    if(didSellIn) canvMap[cid].sellIn++;
     if(!isNaN(durM)){canvMap[cid].durSum+=durM;canvMap[cid].durCnt++;}
     if(!isNaN(disM)){canvMap[cid].disSum+=disM;canvMap[cid].disCnt++;}
     // In Range per canvasser
@@ -501,11 +553,12 @@ function processRows(rows) {
     if(dt){
       if(!minDate||dt<minDate) minDate=dt;
       if(!maxDate||dt>maxDate) maxDate=dt;
-      if(!dateMap[dt]) dateMap[dt]={date:dt,total:0,A1:0,A2:0,A3:0};
+      if(!dateMap[dt]) dateMap[dt]={date:dt,total:0,A1:0,A2:0,A3:0,sellIn:0};
       dateMap[dt].total++;
       if(as1==="A1 - NORMAL")    dateMap[dt].A1++;
       if(as1==="A2 - ANOMALY")   dateMap[dt].A2++;
       if(as1==="A3 - INCOMPLETE")dateMap[dt].A3++;
+      if(didSellIn) dateMap[dt].sellIn++;
     }
 
     const outId=r["Outlet ID"]!=null?String(r["Outlet ID"]):null;
@@ -521,11 +574,13 @@ function processRows(rows) {
     avgDur:c.durCnt?+(c.durSum/c.durCnt).toFixed(1):null,
     avgDis:c.disCnt?+(c.disSum/c.disCnt).toFixed(1):null,
     a1p:pct(c.A1,c.total),a2p:pct(c.A2,c.total),a3p:pct(c.A3,c.total),invP:pct(c.INVESTIGATE,c.total),
+    sellInP:pct(c.sellIn,c.total),
   }));
 
   const censusData = Object.values(outMap).filter(d=>d._isCensus).sort((a,b)=>b.total-a.total);
   return {
     total,actC,visC,durC,disC,locC,inRangeC,
+    sellInCount,
     visitTypeData:Object.values(vtMap).sort((a,b)=>b.total-a.total),
     outletData:Object.values(outMap).filter(d=>!d._isCensus).sort((a,b)=>b.total-a.total),
     censusData,
@@ -551,10 +606,10 @@ function aggregateList(dataList) {
   };
   const tMap={};
   dataList.forEach(r=>(r.trend||[]).forEach(d=>{
-    if(!tMap[d.date])tMap[d.date]={date:d.date,total:0,A1:0,A2:0,A3:0};
-    ["total","A1","A2","A3"].forEach(f=>{tMap[d.date][f]=(tMap[d.date][f]||0)+(d[f]||0);});
+    if(!tMap[d.date])tMap[d.date]={date:d.date,total:0,A1:0,A2:0,A3:0,sellIn:0};
+    ["total","A1","A2","A3","sellIn"].forEach(f=>{tMap[d.date][f]=(tMap[d.date][f]||0)+(d[f]||0);});
   }));
-  const CANV_KEYS=["total","A1","A2","A3","VALID","OBSERVE","INVESTIGATE","INCOMPLETE","durSum","durCnt","disSum","disCnt","DUR_NORMAL","DUR_SHORT","DUR_LONG","DIS_NEAR","DIS_MID","DIS_FAR","DIS_INC","LOC_MATCH","LOC_NOTMATCH","LOC_INC","IR_YES","IR_NO"];
+  const CANV_KEYS=["total","A1","A2","A3","VALID","OBSERVE","INVESTIGATE","INCOMPLETE","durSum","durCnt","disSum","disCnt","DUR_NORMAL","DUR_SHORT","DUR_LONG","DIS_NEAR","DIS_MID","DIS_FAR","DIS_INC","LOC_MATCH","LOC_NOTMATCH","LOC_INC","IR_YES","IR_NO","sellIn"];
   const cMap={};
   dataList.forEach(r=>(r.canvassers||[]).forEach(c=>{
     const key=c.id||c.name;
@@ -565,9 +620,11 @@ function aggregateList(dataList) {
     avgDur:c.durCnt?+(c.durSum/c.durCnt).toFixed(1):null,
     avgDis:c.disCnt?+(c.disSum/c.disCnt).toFixed(1):null,
     a1p:pct(c.A1,c.total),a2p:pct(c.A2,c.total),a3p:pct(c.A3,c.total),invP:pct(c.INVESTIGATE,c.total),
+    sellInP:pct(c.sellIn,c.total),
   }));
   return {
     total:dataList.reduce((s,r)=>s+(r.total||0),0),
+    sellInCount:dataList.reduce((s,r)=>s+(r.sellInCount||0),0),
     actC:sumC("actC"),visC:sumC("visC"),durC:sumC("durC"),disC:sumC("disC"),locC:sumC("locC"),inRangeC:sumC("inRangeC"),
     visitTypeData:mergeArr("visitTypeData","type"),
     outletData:mergeArr("outletData","type"),
@@ -778,7 +835,7 @@ function OutletActivityPanel({detail,onClose,t}){
                 return(
                 <tr key={i} style={{borderBottom:`1px solid ${t.border}`,background:i%2===0?"transparent":t.rowAlt}}>
                   <td style={{padding:"7px 10px",color:t.muted,fontSize:10}}>{pg*PG+i+1}</td>
-                  <td style={{padding:"7px 10px",color:t.text,whiteSpace:"nowrap"}}>{fmtDate(r["Planned Visit Date"])}</td>
+                  <td style={{padding:"7px 10px",color:t.text,whiteSpace:"nowrap"}}>{fmtDate(r["Actual Visit Time"])}</td>
                   <td style={{padding:"7px 10px",fontWeight:600,color:t.text,whiteSpace:"nowrap"}}>{r["Canvasser"]||"–"}</td>
                   <td style={{padding:"7px 10px"}}><span style={{background:vc+"20",color:vc,padding:"2px 8px",borderRadius:999,fontSize:10,fontWeight:700}}>{vs||"–"}</span></td>
                   <td style={{padding:"7px 10px"}}>
@@ -1054,7 +1111,7 @@ function CanvasserDetailPanel({detail,onClose,t}){
   // Apply sort
   const sortFn=(a,b)=>{
     const dir=sortDir==="asc"?1:-1;
-    if(sortCol==="date") return dir*(new Date(a["Planned Visit Date"]||0)-new Date(b["Planned Visit Date"]||0));
+    if(sortCol==="date") return dir*(new Date(a["Actual Visit Time"]||0)-new Date(b["Actual Visit Time"]||0));
     if(sortCol==="outlet") return dir*(String(a["Outlet"]||"").localeCompare(String(b["Outlet"]||"")));
     if(sortCol==="status") return dir*(String(a["_CAS1"]||"").localeCompare(String(b["_CAS1"]||"")));
     if(sortCol==="dist") return dir*((parseFloat(a["Distance Check In (Meter)"])||0)-(parseFloat(b["Distance Check In (Meter)"])||0));
@@ -1159,18 +1216,10 @@ function CanvasserDetailPanel({detail,onClose,t}){
        <div style={{overflowY:"auto",flex:1,scrollbarWidth:"none",msOverflowStyle:"none"}}>
           {view==="ava"?(
             <div style={{padding:"12px 16px"}}>
-              <div style={{fontWeight:700,fontSize:13,marginBottom:8,color:t.text}}>🏷 AVA Compliance Summary</div>
-              <div style={{fontSize:11,color:t.muted,marginBottom:12}}>Berdasarkan {(allRows||rows||[]).length.toLocaleString()} total kunjungan · Klik item untuk lihat detail outlet</div>
+              <div style={{fontWeight:700,fontSize:13,marginBottom:8,color:t.text}}>🏷 AVA Tracking Summary</div>
+              <div style={{fontSize:11,color:t.muted,marginBottom:12}}>Apakah canvasser melakukan AVA tracking saat kunjungan · Berdasarkan {(allRows||rows||[]).length.toLocaleString()} total kunjungan · Klik untuk lihat detail outlet</div>
               {[
                 {label:"AVA Tracking", key:"AVA Tracking?"},
-                {label:"Poster XL/AXIS", key:"AVA Poster XL/AXIS Comply?"},
-                {label:"Poster Smartfren", key:"AVA Poster Smartfren Comply?"},
-                {label:"SP XL", key:"AVA SP XL Comply?"},
-                {label:"SP AXIS", key:"AVA SP AXIS Comply?"},
-                {label:"SP Smartfren", key:"AVA SP Smartfren Comply?"},
-                {label:"Voucher XL", key:"AVA Voucher XL Comply?"},
-                {label:"Voucher AXIS", key:"AVA Voucher AXIS Comply?"},
-                {label:"Voucher Smartfren", key:"AVA Voucher Smartfren Comply?"},
               ].map(({label,key})=>{
                 const src=allRows||rows||[];
                 const tracked=src.filter(r=>r[key]!=null&&String(r[key]||"").trim()!=="");
@@ -1311,7 +1360,7 @@ function CanvasserDetailPanel({detail,onClose,t}){
                 return(
                 <tr key={i} style={{borderBottom:`1px solid ${t.border}`,background:i%2===0?"transparent":t.rowAlt}}>
                   <td style={{padding:"7px 10px",color:t.muted,fontSize:10}}>{i+1}</td>
-                  <td style={{padding:"7px 10px",color:t.text,whiteSpace:"nowrap"}}>{fmtDate(r["Planned Visit Date"])}</td>
+                  <td style={{padding:"7px 10px",color:t.text,whiteSpace:"nowrap"}}>{fmtDate(r["Actual Visit Time"])}</td>
                   <td style={{padding:"7px 10px"}}>{(()=>{const vt=r["Activity Type"]||"";const vc=vt==="Regular Visit"?P.a1:vt==="Ad-Hoc Visit"?P.a2:"#06b6d4";return vt?<span style={{background:vc+"22",color:vc,padding:"1px 7px",borderRadius:999,fontSize:9,fontWeight:700,whiteSpace:"nowrap"}}>{vt}</span>:<span style={{color:t.muted}}>–</span>;})()}</td>
                   <td style={{padding:"7px 10px",color:t.text,maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r["Outlet"]||"–"}</td>
                   <td style={{padding:"7px 10px",color:t.muted,fontSize:10,whiteSpace:"nowrap"}}>{r["Outlet ID"]||"–"}</td>
@@ -1332,7 +1381,7 @@ function CanvasserDetailPanel({detail,onClose,t}){
                   </td>
                   <td style={{padding:"6px 8px",textAlign:"center"}}>
                     {(()=>{const n=AVA_ITEMS.filter(a=>String(r[a.key]||"").toLowerCase()==="yes").length;const bg=n===8?"#22c55e22":n>=4?"#f59e0b22":"#ef444422";const fg=n===8?"#22c55e":n>=4?"#f59e0b":"#ef4444";return(
-                      <span onClick={()=>setAvaRowDetail({outlet:r["Outlet"],date:fmtDate(r["Planned Visit Date"]),items:AVA_ITEMS.map(a=>({label:a.label,ok:String(r[a.key]||"").toLowerCase()==="yes"})),n})}
+                      <span onClick={()=>setAvaRowDetail({outlet:r["Outlet"],date:fmtDate(r["Actual Visit Time"]),items:AVA_ITEMS.map(a=>({label:a.label,ok:String(r[a.key]||"").toLowerCase()==="yes"})),n})}
                         style={{background:bg,color:fg,padding:"2px 6px",borderRadius:999,fontSize:10,fontWeight:700,cursor:"pointer"}}
                         onMouseEnter={e=>e.currentTarget.style.opacity="0.7"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>{n}/8</span>
                     );})()}
@@ -1885,7 +1934,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
     let scopedClusters=clusters;
     if(scope?.clusterLabel) scopedClusters=clusters.filter(cl=>cl.label===scope.clusterLabel);
     else if(scope?.regionCode) scopedClusters=clusters.filter(cl=>cl.regionCode===scope.regionCode);
-    const src=scopedClusters.flatMap(cl=>(cl.rawRows||[]).map(r=>({...r,_clLabel:cl.label})));
+    const src=scopedClusters.flatMap(cl=>(cl.rawRows||[]).map(r=>pickReasonFields(r,cl.label)));
     const filtered=src.filter(r=>String(r["_CAS1"]||r["Activity Status.1"]||"")===(statusKey==="A2"?"A2 - ANOMALY":statusKey==="A3"?"A3 - INCOMPLETE":"A1 - NORMAL"));
     if(!filtered.length) return {reasons:[],topCanvassers:[]};
     const tot=filtered.length;
@@ -2128,7 +2177,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
       }
     };
     const rows = drillKey ? all.filter(ff) : all;
-    const sorted=rows.sort((a,b)=>new Date(a["Planned Visit Date"]||0)-new Date(b["Planned Visit Date"]||0));sorted._all=all;return sorted;
+    const sorted=rows.sort((a,b)=>new Date(a["Actual Visit Time"]||0)-new Date(b["Actual Visit Time"]||0));sorted._all=all;return sorted;
   },[clusters]);
   const card=(x={})=>({background:t.card,border:`1px solid ${t.border}`,borderRadius:14,padding:20,...x});
   const ths=key=>({padding:"9px 10px",textAlign:"left",fontSize:10,fontWeight:700,color:sk===key?P.accent:t.muted,cursor:"pointer",letterSpacing:"0.05em",textTransform:"uppercase",whiteSpace:"nowrap",userSelect:"none",borderBottom:`2px solid ${sk===key?P.accent:t.border}`});
@@ -2173,17 +2222,19 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
   // ── AUTO FINDINGS: temuan & rekomendasi otomatis dari data ──────────────
   const findings=useMemo(()=>{
     const out=[];
+    if(tab!=="findings") return out; // baru dihitung pas tab Temuan beneran dibuka — hindari komputasi berat di background
     // ── Scope data sesuai drill-down yang aktif (cluster/region/nasional) ──
     const scopedClusters=selCluster?clusters.filter(cl=>cl.label===selCluster)
       :selRegion?clusters.filter(cl=>cl.regionCode===selRegion)
       :clusters;
     const scopeLabel=selCluster||selRegion||"Nasional";
-    const allRows=scopedClusters.flatMap(cl=>(cl.rawRows||[]).map(r=>({...r,_clLabel:cl.label})));
+    // Ekstraksi field seperlunya aja (bukan spread seluruh row) — utk data jutaan baris,
+    // spread {...r} penuh per baris bisa dobel-lipat pemakaian memori sesaat.
+    const allRows=scopedClusters.flatMap(cl=>(cl.rawRows||[]).map(r=>pickFindingsFields(r,cl.label)));
     if(!allRows.length) return out;
 
     // Kolom AVA yang tersedia (dipakai finding outlet compliance di bawah)
-    const avaCols=["AVA Poster XL/AXIS Comply?","AVA Poster Smartfren Comply?","AVA SP XL Comply?","AVA SP AXIS Comply?","AVA SP Smartfren Comply?","AVA Voucher XL Comply?","AVA Voucher AXIS Comply?","AVA Voucher Smartfren Comply?"];
-    const availAva=avaCols.filter(c=>allRows.some(r=>r[c]!=null&&String(r[c]).trim()!==""));
+    const availAva=allRows.some(r=>r["AVA Tracking?"]!=null&&String(r["AVA Tracking?"]).trim()!=="");
 
     // 0) RINGKASAN STATUS A1/A2/A3
     {
@@ -2375,26 +2426,27 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
       }
     }
 
-    // 8) Outlet dengan AVA compliance terendah
-    if(availAva.length>=1){
+    // 8) Outlet dengan rate AVA Tracking terendah (apakah canvasser melakukan AVA tracking atau tidak)
+    if(availAva){
       const outletMap={};
       allRows.forEach(r=>{
         const oid=String(r["Outlet ID"]||r["Outlet"]||"").trim();
         if(!oid) return;
         const onm=String(r["Outlet"]||oid).trim();
-        let yes=0,tot2=0;
-        availAva.forEach(c=>{const v=String(r[c]||"").toLowerCase();if(v==="yes"||v==="no"){tot2++;if(v==="yes")yes++;}});
+        const v=String(r["AVA Tracking?"]||"").toLowerCase();
+        if(v!=="yes"&&v!=="no") return;
         if(!outletMap[oid])outletMap[oid]={id:oid,name:onm,yes:0,tot:0};
-        outletMap[oid].yes+=yes;outletMap[oid].tot+=tot2;
+        outletMap[oid].tot++;
+        if(v==="yes") outletMap[oid].yes++;
       });
       const outlets=Object.values(outletMap).map(o=>({...o,rate:o.tot?o.yes/o.tot:0})).filter(o=>o.tot>=16);
       if(outlets.length>=3){
         const worst=[...outlets].sort((a,b)=>a.rate-b.rate)[0];
         if(worst.rate<=0.1){
           out.push({severity:"medium",icon:"🏪",
-            title:`Outlet ${worst.name} — AVA compliance ${Math.round(worst.rate*100)}%`,
-            desc:`Dari ${worst.tot.toLocaleString()} pengecekan item AVA, hanya ${worst.yes} yang comply.`,
-            rec:"Lakukan tindak lanjut ke outlet ini — materi promosi kemungkinan tidak terpasang sama sekali."});
+            title:`Outlet ${worst.name} — Rate AVA Tracking ${Math.round(worst.rate*100)}%`,
+            desc:`Dari ${worst.tot.toLocaleString()} kunjungan, hanya ${worst.yes} yang melakukan AVA tracking.`,
+            rec:"Lakukan tindak lanjut ke outlet ini — canvasser kemungkinan tidak melakukan AVA tracking sama sekali."});
         }
       }
     }
@@ -2415,8 +2467,69 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
       }
     }
 
+    // 10) Canvasser dengan volume visit tinggi tapi rate Sell-In sangat rendah — pakai data agregat yang sudah tersedia
+    {
+      const cvs2=(view.canvassers||[]).filter(c=>c.total>=30&&(c.sellIn||0)>=0);
+      const availSellIn=cvs2.some(c=>(c.sellIn||0)>0);
+      if(availSellIn&&cvs2.length>=3){
+        const worst=[...cvs2].sort((a,b)=>(a.sellInP||0)-(b.sellInP||0))[0];
+        if((worst.sellInP||0)<=5){
+          out.push({severity:"medium",icon:"💰",
+            title:`${worst.name} — visit tinggi tapi Sell-In sangat rendah`,
+            desc:`Dari ${worst.total.toLocaleString()} kunjungan, cuma ${(worst.sellIn||0).toLocaleString()} yang menghasilkan Sell-In (${(worst.sellInP||0).toFixed(1)}%).`,
+            rec:"Cek efektivitas kunjungan canvasser ini — kemungkinan kunjungan formalitas tanpa hasil penjualan.",
+            action:()=>{setTab("canvasser");setSearch(worst.name);}});
+        }
+      }
+    }
+
+    // 11) Kunjungan sangat singkat (<2 menit) ke outlet yang BUKA — durasi singkat ke outlet closed itu wajar & tidak dihitung
+    {
+      const isClosed=(v)=>{
+        if(v==null) return false;
+        const s=String(v).trim().toLowerCase();
+        return s==="yes"||s==="ya"||s==="true"||s==="1"||s==="tutup";
+      };
+      const availClosed=allRows.some(r=>r["Outlet Closed"]!=null);
+      if(availClosed){
+        const suspiciousRows=allRows.filter(r=>{
+          const dur=parseFloat(r["Visit Duration (Menit)"]);
+          const isShort=!isNaN(dur)&&dur<2;
+          return isShort&&!isClosed(r["Outlet Closed"]); // singkat TAPI outlet-nya buka — ini yang mencurigakan
+        });
+        if(suspiciousRows.length>0){
+          const outMap2={};
+          suspiciousRows.forEach(r=>{
+            const oid=String(r["Outlet ID"]||r["Outlet"]||"").trim();
+            if(!oid) return;
+            const onm=String(r["Outlet"]||oid).trim();
+            if(!outMap2[oid]) outMap2[oid]={id:oid,name:onm,count:0};
+            outMap2[oid].count++;
+          });
+          const outlets2=Object.values(outMap2).sort((a,b)=>b.count-a.count);
+          const totalSuspicious=suspiciousRows.length;
+          const byCanv={};
+          suspiciousRows.forEach(r=>{
+            const nm=String(r["Canvasser"]||"Unknown").trim();
+            const clbl=r["_clLabel"]||"";
+            if(!byCanv[nm]) byCanv[nm]={name:nm,cluster:clbl,count:0};
+            byCanv[nm].count++;
+          });
+          const canvRows=Object.values(byCanv).map(c=>{
+            const match=(view.canvassers||[]).find(v=>v.name===c.name);
+            return {...c,region:match?.region||"",total:match?.total||c.count};
+          }).sort((a,b)=>b.count-a.count);
+          out.push({severity:"high",icon:"⏱",
+            title:`${totalSuspicious.toLocaleString()} kunjungan sangat singkat (<2 menit) ke outlet yang BUKA`,
+            desc:outlets2.length?`Outlet paling sering: ${outlets2[0].name} (${outlets2[0].count.toLocaleString()} kunjungan). Berbeda dari kunjungan singkat ke outlet closed (itu wajar & tidak dihitung di sini) — ini terjadi saat outlet sedang buka, jadi patut dicurigai.`:`Tersebar di ${outlets2.length.toLocaleString()} outlet.`,
+            rec:"Verifikasi manual — durasi di bawah 2 menit ke outlet yang sedang buka biasanya tidak cukup untuk kunjungan yang proper.",
+            action:canvRows.length?()=>setDrill({label:"Kunjungan Singkat ke Outlet Buka",color:"#ef4444",rows:canvRows,total:totalSuspicious}):undefined});
+        }
+      }
+    }
+
     return out;
-  },[clusters,view,selCluster,selRegion]);
+  },[clusters,view,selCluster,selRegion,tab]);
 
 
   return(
@@ -2568,6 +2681,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
               {label:"A3 — Incomplete",val:pctS(ac["A3 - INCOMPLETE"],T),color:P.a3,sub:(ac["A3 - INCOMPLETE"]||0).toLocaleString(),drill:()=>openDrill("A3 - Incomplete",P.a3,"A3"),
                 sublink:()=>{const bd=computeReasonBreakdown("A3");setReasonDrill({statusKey:"A3",label:"A3 - Incomplete",color:P.a3,reasons:bd.reasons,topCanvassers:bd.topCanvassers});}},
               {label:"Investigate",val:pctS(vc["INVESTIGATE"],T),color:t.muted,sub:(vc["INVESTIGATE"]||0).toLocaleString(),drill:()=>openDrill("Investigate",P.investigate,"INVESTIGATE")},
+              {label:"Sell-In",val:pctS(view.sellInCount,T),color:"#10b981",sub:(view.sellInCount||0).toLocaleString(),drill:undefined},
             ].map((k,i,arr)=>{
               const barPct=typeof k.val==="string"&&k.val.includes("%")?parseFloat(k.val):null;
               return(
@@ -2902,7 +3016,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                   ))}
                 </div>
               </div>
-              <div style={{fontSize:11,color:t.muted,marginBottom:16}}>Planned Visit Date · {view.label}</div>
+              <div style={{fontSize:11,color:t.muted,marginBottom:16}}>Actual Visit Time · {view.label}</div>
 
               {(()=>{
                 const trendData=groupTrend(view.trend,trendPeriod);
@@ -3259,8 +3373,8 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
                 <thead><tr>
                   {[["#",""],["Region","region"],["Cluster","cluster"],["Nama","name"],["Total","total"],
-                    ["A1","A1"],["A2","A2"],["A3","A3"],["Inv","INVESTIGATE"],
-                    ["A1%","a1p"],["A2%","a2p"],["A3%","a3p"],["Inv%","invP"],["Avg Dur","avgDur"],["Avg Dist","avgDis"]
+                    ["A1","A1"],["A2","A2"],["A3","A3"],["Inv","INVESTIGATE"],["Sell-In","sellIn"],
+                    ["A1%","a1p"],["A2%","a2p"],["A3%","a3p"],["Inv%","invP"],["Sell-In%","sellInP"],["Avg Dur","avgDur"],["Avg Dist","avgDis"]
                   ].map(([label,key])=>(
                     <th key={label} onClick={()=>key&&handleSort(key)} style={{...ths(key),borderBottom:`1px solid ${t.border}`}}>
                       {label} {key&&sk===key?(sd==="desc"?"↓":"↑"):""}
@@ -3292,10 +3406,12 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                           :<span style={{color:t.muted}}>0</span>}
                       </td>
                       <td style={{padding:"9px 10px",color:c.INVESTIGATE>0?P.investigate:t.muted,fontWeight:c.INVESTIGATE>0?700:400}}>{c.INVESTIGATE}</td>
+                      <td style={{padding:"9px 10px",color:(c.sellIn||0)>0?"#10b981":t.muted,fontWeight:(c.sellIn||0)>0?700:400}}>{(c.sellIn||0).toLocaleString()}</td>
                       <td style={{padding:"9px 10px",color:c.a1p>=70?P.a1:P.a2,fontWeight:700}}>{c.a1p.toFixed(1)}%</td>
                       <td style={{padding:"9px 10px",color:c.a2p>=40?P.investigate:P.a2}}>{c.a2p.toFixed(1)}%</td>
                       <td style={{padding:"9px 10px",color:t.muted}}>{c.a3p.toFixed(1)}%</td>
                       <td style={{padding:"9px 10px",color:c.invP>=5?P.investigate:t.muted,fontWeight:c.invP>=5?700:400}}>{c.invP.toFixed(1)}%</td>
+                      <td style={{padding:"9px 10px",color:(c.sellInP||0)<=5?"#ef4444":"#10b981"}}>{(c.sellInP||0).toFixed(1)}%</td>
                       <td style={{padding:"9px 10px",color:c.avgDur!=null&&c.avgDur<2?P.short:t.muted}}>{c.avgDur!=null?c.avgDur.toFixed(1)+" m":"—"}</td>
                       <td style={{padding:"9px 0",color:(c.avgDis||0)>500?P.investigate:(c.avgDis||0)>100?P.a2:t.muted}}>{c.avgDis!=null?c.avgDis.toFixed(0)+" m":"—"}</td>
                     </tr>
@@ -3370,7 +3486,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
               <tbody>
                 {(()=>{
                   const dayRows=clusters.flatMap(cl=>(cl.rawRows||[]).filter(r=>{
-                    const dt=typeof r["Planned Visit Date"]==="object"?r["Planned Visit Date"]?.toISOString?.()?.slice(0,10):String(r["Planned Visit Date"]||"").slice(0,10);
+                    const dt=typeof r["Actual Visit Time"]==="object"?r["Actual Visit Time"]?.toISOString?.()?.slice(0,10):String(r["Actual Visit Time"]||"").slice(0,10);
                     return dt===trendDrill;
                   }));
                   const map={};
