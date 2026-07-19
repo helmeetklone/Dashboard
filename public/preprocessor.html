@@ -266,6 +266,25 @@ function renderFileList(){
   processBtn.disabled = uploadedFiles.length===0;
 }
 
+// Kolom yang beneran dipakai dashboard — kolom lain di file mentah (metadata gak kepake dll) dibuang
+// biar tiap baris lebih ringan di memori. Ini ngirit banyak kalau file asli punya puluhan kolom ekstra.
+const KEEP_COLUMNS = new Set([
+  "Activity ID","Activity Type","Activity Status","Activity Status.1",
+  "Actual Visit Time","Actual Check-Out Time","Visit Duration (Menit)",
+  "Canvasser","Canvasser ID","Cluster","Sales Cluster",
+  "Check-In Latitude","Check-In Longitude","Check-Out Latitude","Check-Out Longitude",
+  "Distance Check In (Meter)","Distance Check Out (Meter)","In Range",
+  "Outlet","Outlet ID","Outlet Name","Outlet Type",
+  "RO Latitude","RO Longitude","RO Census","From RO Census",
+  "Planned Visit Date","Visit Status",
+]);
+
+function trimRow(row){
+  const out = {};
+  for(const k in row){ if(KEEP_COLUMNS.has(k)) out[k]=row[k]; }
+  return out;
+}
+
 function parseCSVText(text){
   // Parser CSV sederhana (koma ATAU titik-koma sbg separator, deteksi otomatis)
   const firstLine = text.split(/\r?\n/)[0]||"";
@@ -300,7 +319,7 @@ function readFileAsRows(file){
     const reader = new FileReader();
     reader.onload = e=>{
       if(isCsv){
-        try{ resolve(parseCSVText(e.target.result)); }
+        try{ resolve(parseCSVText(e.target.result).map(trimRow)); }
         catch(err){ reject(err); }
         return;
       }
@@ -320,7 +339,7 @@ function readFileAsRows(file){
           wb.SheetNames.forEach(sn=>{
             const sheet = wb.Sheets[sn];
             const rows = XLSX.utils.sheet_to_json(sheet, {defval:null, raw:false});
-            for(let i=0;i<rows.length;i++) allRows.push(rows[i]);
+            for(let i=0;i<rows.length;i++) allRows.push(trimRow(rows[i])); // trim kolom gak kepake sekalian pas ekstraksi
           });
           wb = null;
           resolve(allRows);
@@ -349,15 +368,17 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
   const progressText = document.getElementById('progressText');
   progressWrap.style.display = 'block';
   document.getElementById('result').classList.remove('show');
+  const downloadArea = document.getElementById('downloadArea');
+  downloadArea.innerHTML = '';
 
   const failedFiles = [];
-  const clusterMap = {}; // label -> {label, regionCode, fileName, rows:[]}
-  let totalRows = 0;
+  const summaries = []; // cuma ringkasan (nama, jumlah baris, dll) — BUKAN data barisnya, biar ringan
+  let totalRows = 0, totalSizeBytes = 0, a1=0, a2=0, a3=0;
 
   for(let fi=0; fi<uploadedFiles.length; fi++){
     const file = uploadedFiles[fi];
     progressText.textContent = `Membaca ${file.name}... (${fi+1}/${uploadedFiles.length})`;
-    barFill.style.width = ((fi)/uploadedFiles.length*40)+'%';
+    barFill.style.width = ((fi)/uploadedFiles.length*100)+'%';
     await new Promise(r=>setTimeout(r,10));
 
     let rawRows;
@@ -369,7 +390,6 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
     }
 
     progressText.textContent = `Validasi ${file.name}... (${rawRows.length.toLocaleString()} baris)`;
-    barFill.style.width = ((fi+0.5)/uploadedFiles.length*40)+'%';
     await new Promise(r=>setTimeout(r,10));
 
     // Kelompokkan per Cluster (kalau ada kolom Cluster), fallback ke nama file
@@ -379,28 +399,52 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
       if(!byCluster[cl]) byCluster[cl]=[];
       byCluster[cl].push(row);
     });
+    rawRows = null; // udah gak kepake lagi, lepas referensinya
 
     for(const [cl, rows] of Object.entries(byCluster)){
-      if(!clusterMap[cl]){
-        clusterMap[cl] = { label:cl, regionCode:getRegionCode(cl), fileName:file.name, rows:[] };
-      }
+      // Validasi per-cluster dalam chunk kecil
+      let validatedRows = [];
       const CHUNK = 5000;
       for(let ci=0; ci<rows.length; ci+=CHUNK){
         const chunk = rows.slice(ci, ci+CHUNK);
-        for(let i=0;i<chunk.length;i++){
-          clusterMap[cl].rows.push(computeValidation(chunk[i], params));
-        }
-        totalRows += chunk.length;
-        if(ci+CHUNK<rows.length) await new Promise(r=>setTimeout(r,0)); // kasih browser jeda napas tiap 5.000 baris
+        for(let i=0;i<chunk.length;i++) validatedRows.push(computeValidation(chunk[i], params));
+        progressText.textContent = `Validasi ${cl}: ${Math.min(ci+CHUNK,rows.length).toLocaleString()}/${rows.length.toLocaleString()} baris...`;
+        if(ci+CHUNK<rows.length) await new Promise(r=>setTimeout(r,0)); // kasih browser jeda napas
       }
+
+      // Hitung breakdown status buat ringkasan (sambil lewatin barisnya sekali)
+      let cA1=0,cA2=0,cA3=0;
+      validatedRows.forEach(r=>{
+        const s = r["Activity Status"]||r["_CAS1"]||"";
+        if(s.startsWith("A1")) cA1++; else if(s.startsWith("A2")) cA2++; else if(s.startsWith("A3")) cA3++;
+      });
+      a1+=cA1; a2+=cA2; a3+=cA3; totalRows+=validatedRows.length;
+
+      // LANGSUNG bikin JSON & tombol download utk cluster ini, jangan nunggu cluster/file lain kelar
+      progressText.textContent = `Menyusun JSON: ${cl}...`;
+      await new Promise(r=>setTimeout(r,0));
+      const singleOutput = {
+        version: 1, generatedAt: new Date().toISOString(),
+        generatedBy: "XLSMART Pre-Processor (offline tool)", params,
+        clusters: [{ label:cl, regionCode:getRegionCode(cl), fileName:file.name, rows:validatedRows }],
+      };
+      const jsonStr = JSON.stringify(singleOutput);
+      const blob = new Blob([jsonStr], {type:'application/json'});
+      totalSizeBytes += blob.size;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.className = 'dl-btn'; a.href = url;
+      a.download = `xlsmart-processed-${cl.replace(/[^a-z0-9]/gi,'_')}.json`;
+      a.style.marginBottom = '8px';
+      a.textContent = `⬇️ Download ${cl} (${validatedRows.length.toLocaleString()} baris, ${(blob.size/1024).toFixed(0)} KB)`;
+      downloadArea.appendChild(a);
+
+      summaries.push({label:cl, rows:validatedRows.length, a1:cA1, a2:cA2, a3:cA3});
+      validatedRows = null; // buang dr memori — udah didownload, gak perlu disimpen lagi
     }
   }
 
-  barFill.style.width = '80%';
-  progressText.textContent = 'Menyusun JSON...';
-  await new Promise(r=>setTimeout(r,10));
-
-  const clusters = Object.values(clusterMap);
+  barFill.style.width = '100%';
 
   if(failedFiles.length>0){
     const warnDiv = document.createElement('div');
@@ -419,75 +463,20 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
     return;
   }
 
-  // Breakdown per status
-  let a1=0,a2=0,a3=0;
-  clusters.forEach(c=>c.rows.forEach(r=>{
-    const s = r["Activity Status"]||r["_CAS1"]||"";
-    if(s.startsWith("A1")) a1++; else if(s.startsWith("A2")) a2++; else if(s.startsWith("A3")) a3++;
-  }));
-
   document.getElementById('statTotal').textContent = totalRows.toLocaleString();
-  document.getElementById('statClusters').textContent = clusters.length;
+  document.getElementById('statClusters').textContent = summaries.length;
+  document.getElementById('statSize').textContent = (totalSizeBytes/1024).toFixed(0)+' KB';
   document.getElementById('breakdown').innerHTML =
     `<b>A1 Normal:</b> ${a1.toLocaleString()} (${(a1/totalRows*100).toFixed(1)}%) &nbsp;·&nbsp; ` +
     `<b>A2 Anomaly:</b> ${a2.toLocaleString()} (${(a2/totalRows*100).toFixed(1)}%) &nbsp;·&nbsp; ` +
     `<b>A3 Incomplete:</b> ${a3.toLocaleString()} (${(a3/totalRows*100).toFixed(1)}%)<br>` +
-    `Cluster: ${clusters.map(c=>c.label).join(', ')}`;
+    `Cluster: ${summaries.map(c=>c.label+' ('+c.rows.toLocaleString()+' baris)').join(', ')}`;
 
-  // Bikin JSON per-cluster TERPISAH (lebih ringan per file, aman buat data gede) —
-  // ini juga cocok kalau mau upload ke dashboard satu region per satu waktu di HP.
-  const downloadArea = document.getElementById('downloadArea');
-  downloadArea.innerHTML = '';
-  let totalSizeBytes = 0;
+  const note = document.createElement('div');
+  note.style.cssText = 'font-size:11px;color:var(--muted);margin-top:10px;text-align:center;line-height:1.6;';
+  note.innerHTML = 'Setiap cluster di-download sebagai file JSON <b>terpisah</b> (biar ringan & gak numpuk di memori). Upload semua file JSON itu satu-satu ke dashboard — dashboard otomatis menggabungkannya.';
+  downloadArea.appendChild(note);
 
-  for(let ci=0; ci<clusters.length; ci++){
-    const c = clusters[ci];
-    progressText.textContent = `Menyusun JSON: ${c.label}... (${ci+1}/${clusters.length})`;
-    await new Promise(r=>setTimeout(r,0));
-    const singleOutput = {
-      version: 1, generatedAt: new Date().toISOString(),
-      generatedBy: "XLSMART Pre-Processor (offline tool)", params,
-      clusters: [c],
-    };
-    const jsonStr = JSON.stringify(singleOutput);
-    const blob = new Blob([jsonStr], {type:'application/json'});
-    totalSizeBytes += blob.size;
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.className = 'dl-btn'; a.href = url;
-    a.download = `xlsmart-processed-${c.label.replace(/[^a-z0-9]/gi,'_')}.json`;
-    a.style.marginBottom = '8px';
-    a.textContent = `⬇️ Download ${c.label} (${c.rows.length.toLocaleString()} baris, ${(blob.size/1024).toFixed(0)} KB)`;
-    downloadArea.appendChild(a);
-  }
-
-  // Opsi gabungan (kalau clusternya sedikit / mau 1 file aja) — di-generate terakhir & ditandain
-  if(clusters.length>1){
-    const combineNote = document.createElement('div');
-    combineNote.style.cssText = 'font-size:11px;color:var(--muted);margin:10px 0 6px;text-align:center;';
-    combineNote.textContent = 'Atau gabung semua jadi 1 file (upload ke dashboard sekali jalan):';
-    downloadArea.appendChild(combineNote);
-    const combineBtn = document.createElement('button');
-    combineBtn.className = 'dl-btn';
-    combineBtn.style.cssText = 'width:100%;border:1px solid var(--border);background:var(--panel-alt);color:var(--text);';
-    combineBtn.textContent = '📦 Gabungkan Semua Jadi 1 File JSON';
-    combineBtn.onclick = async ()=>{
-      combineBtn.textContent = 'Menggabungkan...'; combineBtn.disabled = true;
-      await new Promise(r=>setTimeout(r,10));
-      const combined = { version:1, generatedAt:new Date().toISOString(), generatedBy:"XLSMART Pre-Processor (offline tool)", params, clusters };
-      const jsonStr = JSON.stringify(combined);
-      const blob = new Blob([jsonStr], {type:'application/json'});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = 'xlsmart-processed-nasional.json'; a.click();
-      combineBtn.textContent = `📦 Gabungkan Semua Jadi 1 File JSON (${(blob.size/1024).toFixed(0)} KB)`;
-      combineBtn.disabled = false;
-    };
-    downloadArea.appendChild(combineBtn);
-  }
-
-  document.getElementById('statSize').textContent = (totalSizeBytes/1024).toFixed(0)+' KB';
-  barFill.style.width = '100%';
   progressText.textContent = 'Selesai!';
   document.getElementById('result').classList.add('show');
   processBtn.disabled = false;
