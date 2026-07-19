@@ -223,6 +223,19 @@ function getRegionCode(cl) {
   const m=cl.match(/^([A-Z]{2,3})[- _]/); return m?m[1]:cl.slice(0,3).toUpperCase();
 }
 
+// Kelompokkan tanggal ke "minggu" (Senin-Minggu) — dipakai buat pecah cluster gede jadi chunk mingguan
+function getWeekKey(row){
+  const raw = row["Planned Visit Date"];
+  if(!raw) return "tanpa-tanggal";
+  const d = new Date(raw);
+  if(isNaN(d)) return "tanpa-tanggal";
+  const day = (d.getDay()+6)%7; // Senin=0 ... Minggu=6
+  const monday = new Date(d); monday.setDate(d.getDate()-day);
+  const sunday = new Date(monday); sunday.setDate(monday.getDate()+6);
+  const fmt = x=>String(x.getDate()).padStart(2,'0')+'-'+String(x.getMonth()+1).padStart(2,'0');
+  return fmt(monday)+'_s-d_'+fmt(sunday); // contoh: "01-06_s-d_07-06"
+}
+
 // ══════════════════════════════════════════════════════════════
 // UI wiring
 // ══════════════════════════════════════════════════════════════
@@ -327,9 +340,9 @@ function readFileAsRows(file){
       // Skip parsing style/VBA/HTML metadata yg gak kepake — kalau ZIP entry yg "rewel" ada di situ,
       // strategi ini otomatis menghindarinya sama sekali.
       const strategies = [
-        {label:'lenient', opts:{type:'array', cellDates:true, cellHTML:false, cellStyles:false, cellNF:false, bookVBA:false}},
-        {label:'dense',   opts:{type:'array', cellDates:true, cellHTML:false, cellStyles:false, cellNF:false, bookVBA:false, dense:true}},
-        {label:'default', opts:{type:'array', cellDates:true}},
+        {label:'dense-lenient', opts:{type:'array', cellDates:true, cellHTML:false, cellStyles:false, cellNF:false, bookVBA:false, dense:true}},
+        {label:'lenient',       opts:{type:'array', cellDates:true, cellHTML:false, cellStyles:false, cellNF:false, bookVBA:false}},
+        {label:'default',       opts:{type:'array', cellDates:true}},
       ];
       let lastErr = null;
       for(const strat of strategies){
@@ -401,18 +414,19 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
     });
     rawRows = null; // udah gak kepake lagi, lepas referensinya
 
-    for(const [cl, rows] of Object.entries(byCluster)){
-      // Validasi per-cluster dalam chunk kecil
+    const WEEKLY_SPLIT_THRESHOLD = 20000; // di atas ini per-cluster, otomatis dipecah per minggu
+
+    // Fungsi bantu: validasi + susun JSON + download utk 1 batch baris (1 cluster penuh, ATAU 1 minggu dlm cluster itu)
+    const processAndDownloadBatch = async (label, batchRows, fileNameForBatch)=>{
       let validatedRows = [];
       const CHUNK = 5000;
-      for(let ci=0; ci<rows.length; ci+=CHUNK){
-        const chunk = rows.slice(ci, ci+CHUNK);
+      for(let ci=0; ci<batchRows.length; ci+=CHUNK){
+        const chunk = batchRows.slice(ci, ci+CHUNK);
         for(let i=0;i<chunk.length;i++) validatedRows.push(computeValidation(chunk[i], params));
-        progressText.textContent = `Validasi ${cl}: ${Math.min(ci+CHUNK,rows.length).toLocaleString()}/${rows.length.toLocaleString()} baris...`;
-        if(ci+CHUNK<rows.length) await new Promise(r=>setTimeout(r,0)); // kasih browser jeda napas
+        progressText.textContent = `Validasi ${label}: ${Math.min(ci+CHUNK,batchRows.length).toLocaleString()}/${batchRows.length.toLocaleString()} baris...`;
+        if(ci+CHUNK<batchRows.length) await new Promise(r=>setTimeout(r,0));
       }
 
-      // Hitung breakdown status buat ringkasan (sambil lewatin barisnya sekali)
       let cA1=0,cA2=0,cA3=0;
       validatedRows.forEach(r=>{
         const s = r["Activity Status"]||r["_CAS1"]||"";
@@ -420,13 +434,13 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
       });
       a1+=cA1; a2+=cA2; a3+=cA3; totalRows+=validatedRows.length;
 
-      // LANGSUNG bikin JSON & tombol download utk cluster ini, jangan nunggu cluster/file lain kelar
-      progressText.textContent = `Menyusun JSON: ${cl}...`;
+      progressText.textContent = `Menyusun JSON: ${label}...`;
       await new Promise(r=>setTimeout(r,0));
+      const clLabel = fileNameForBatch.clusterLabel;
       const singleOutput = {
         version: 1, generatedAt: new Date().toISOString(),
         generatedBy: "XLSMART Pre-Processor (offline tool)", params,
-        clusters: [{ label:cl, regionCode:getRegionCode(cl), fileName:file.name, rows:validatedRows }],
+        clusters: [{ label:clLabel, regionCode:getRegionCode(clLabel), fileName:fileNameForBatch.name, rows:validatedRows }],
       };
       const jsonStr = JSON.stringify(singleOutput);
       const blob = new Blob([jsonStr], {type:'application/json'});
@@ -434,13 +448,37 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.className = 'dl-btn'; a.href = url;
-      a.download = `xlsmart-processed-${cl.replace(/[^a-z0-9]/gi,'_')}.json`;
+      a.download = `xlsmart-processed-${label.replace(/[^a-z0-9]/gi,'_')}.json`;
       a.style.marginBottom = '8px';
-      a.textContent = `⬇️ Download ${cl} (${validatedRows.length.toLocaleString()} baris, ${(blob.size/1024).toFixed(0)} KB)`;
+      a.textContent = `⬇️ Download ${label} (${validatedRows.length.toLocaleString()} baris, ${(blob.size/1024).toFixed(0)} KB)`;
       downloadArea.appendChild(a);
 
-      summaries.push({label:cl, rows:validatedRows.length, a1:cA1, a2:cA2, a3:cA3});
-      validatedRows = null; // buang dr memori — udah didownload, gak perlu disimpen lagi
+      summaries.push({label, rows:validatedRows.length, a1:cA1, a2:cA2, a3:cA3});
+      validatedRows = null;
+    };
+
+    for(const [cl, rows] of Object.entries(byCluster)){
+      if(rows.length <= WEEKLY_SPLIT_THRESHOLD){
+        // Cluster masih ukuran wajar — proses langsung sebagai 1 batch, kayak biasa
+        await processAndDownloadBatch(cl, rows, {clusterLabel:cl, name:file.name});
+      } else {
+        // Cluster kegedean (>20.000 baris) — otomatis pecah per minggu (Senin-Minggu) berdasarkan Planned Visit Date,
+        // biar tiap batch yg divalidasi & di-JSON-kan jauh lebih kecil, ngirit puncak memori.
+        const byWeek = {};
+        rows.forEach(row=>{
+          const wk = getWeekKey(row);
+          if(!byWeek[wk]) byWeek[wk]=[];
+          byWeek[wk].push(row);
+        });
+        const weekKeys = Object.keys(byWeek).sort();
+        progressText.textContent = `${cl} kegedean (${rows.length.toLocaleString()} baris) — otomatis dipecah jadi ${weekKeys.length} minggu`;
+        await new Promise(r=>setTimeout(r,300));
+        for(const wk of weekKeys){
+          const label = `${cl}_minggu_${wk}`;
+          await processAndDownloadBatch(label, byWeek[wk], {clusterLabel:cl+' ('+wk+')', name:file.name});
+          byWeek[wk] = null; // buang batch minggu ini dr memori stlh didownload
+        }
+      }
     }
   }
 
