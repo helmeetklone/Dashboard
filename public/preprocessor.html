@@ -236,7 +236,7 @@ function getRegionCode(cl) {
 
 // Kelompokkan tanggal ke "minggu" (Senin-Minggu) — dipakai buat pecah cluster gede jadi chunk mingguan
 function getWeekKey(row){
-  const raw = row["Planned Visit Date"];
+  const raw = row["Actual Visit Time"];
   if(!raw) return "tanpa-tanggal";
   const d = new Date(raw);
   if(isNaN(d)) return "tanpa-tanggal";
@@ -300,7 +300,10 @@ const KEEP_COLUMNS = new Set([
   "Distance Check In (Meter)","Distance Check Out (Meter)","In Range",
   "Outlet","Outlet ID","Outlet Name","Outlet Type",
   "RO Latitude","RO Longitude","RO Census","From RO Census",
-  "Planned Visit Date","Visit Status",
+  "Visit Status",
+  "Sell-In","Online Sell-In","Outlet Closed",
+  // Cukup 1 kolom AVA — cuma perlu tahu CVS melakukan AVA tracking atau tidak, gak perlu detail per item
+  "AVA Tracking?",
 ]);
 
 function trimRow(row){
@@ -526,7 +529,7 @@ document.getElementById('processBtn').addEventListener('click', async ()=>{
         // Cluster masih ukuran wajar — proses langsung sebagai 1 batch, kayak biasa
         await processAndDownloadBatch(cl, rows, {clusterLabel:cl, clusterBase:cl, name:file.name});
       } else {
-        // Cluster kegedean (>20.000 baris) — otomatis pecah per minggu (Senin-Minggu) berdasarkan Planned Visit Date,
+        // Cluster kegedean (>20.000 baris) — otomatis pecah per minggu (Senin-Minggu) berdasarkan Actual Visit Time,
         // biar tiap batch yg divalidasi & di-JSON-kan jauh lebih kecil, ngirit puncak memori.
         const byWeek = {};
         rows.forEach(row=>{
