@@ -376,7 +376,7 @@ function processRows(rows) {
   const inRangeC={YES:0,NO:0};
   const outMap={},canvMap={},dateMap={},visitMap={},vtMap={};
   let minDate=null,maxDate=null;
-  let sellInCount=0;
+  let sellInQtyTotal=0, sellInVisitsTotal=0;
   let avaTotalCount=0, avaYesCount=0;
   // Reason aggregation for Investigate & Observe
   const reasonMap={investigate:{},observe:{}};
@@ -501,15 +501,18 @@ function processRows(rows) {
     const inRKey=inR==="YES"||inR==="Y"||inR==="1"||inR==="TRUE"?"YES":"NO";
     if(r["In Range"]!=null) inRangeC[inRKey]++;
 
-    // Sell-In tracking — dianggap "melakukan sell-in" kalau salah satu kolom Sell-In/Online Sell-In ada isinya
-    const hasSellInVal=(v)=>{
-      if(v==null) return false;
-      const s=String(v).trim().toLowerCase();
-      if(s===""||s==="no"||s==="tidak"||s==="0"||s==="false") return false;
-      return true;
+    // Sell-In tracking — Sell-In/Online Sell-In berisi ANGKA (Qty produk), bukan Yes/No.
+    // sellInQty = total unit terjual (dijumlahkan); sellInVisits = jumlah kunjungan yg menghasilkan sell-in (qty>0),
+    // dipakai buat rate/perbandingan yg adil antar canvasser (biar gak bias krn beda jumlah kunjungan).
+    const parseQty=(v)=>{
+      if(v==null||v==="") return 0;
+      const n=parseFloat(String(v).replace(/[^0-9.\-]/g,""));
+      return isNaN(n)?0:n;
     };
-    const didSellIn = hasSellInVal(r["Sell-In"])||hasSellInVal(r["Online Sell-In"]);
-    if(didSellIn) sellInCount++;
+    const rowSellInQty = parseQty(r["Sell-In"]) + parseQty(r["Online Sell-In"]);
+    const didSellIn = rowSellInQty>0;
+    sellInQtyTotal += rowSellInQty;
+    if(didSellIn) sellInVisitsTotal++;
 
     // AVA Tracking — dianggap "melakukan AVA" kalau kolom AVA Tracking? = Yes
     const avaVal=String(r["AVA Tracking?"]||"").trim().toLowerCase();
@@ -534,13 +537,14 @@ function processRows(rows) {
     if(as1==="A3 - INCOMPLETE")outMap["__"+ck].A3++;
 
     if(!canvMap[cid]) canvMap[cid]={id:cid,name:nm,cluster:cl,region:rgn,total:0,A1:0,A2:0,A3:0,VALID:0,OBSERVE:0,INVESTIGATE:0,INCOMPLETE:0,durSum:0,durCnt:0,disSum:0,disCnt:0,
-      DUR_NORMAL:0,DUR_SHORT:0,DUR_LONG:0,DIS_NEAR:0,DIS_MID:0,DIS_FAR:0,DIS_INC:0,LOC_MATCH:0,LOC_NOTMATCH:0,LOC_INC:0,IR_YES:0,IR_NO:0,sellIn:0,avaTotal:0,avaYes:0};
+      DUR_NORMAL:0,DUR_SHORT:0,DUR_LONG:0,DIS_NEAR:0,DIS_MID:0,DIS_FAR:0,DIS_INC:0,LOC_MATCH:0,LOC_NOTMATCH:0,LOC_INC:0,IR_YES:0,IR_NO:0,sellInQty:0,sellInVisits:0,avaTotal:0,avaYes:0};
     canvMap[cid].total++;
     if(as1==="A1 - NORMAL")    canvMap[cid].A1++;
     if(as1==="A2 - ANOMALY")   canvMap[cid].A2++;
     if(as1==="A3 - INCOMPLETE")canvMap[cid].A3++;
     if(visC[vs]!==undefined)   canvMap[cid][vs]=(canvMap[cid][vs]||0)+1;
-    if(didSellIn) canvMap[cid].sellIn++;
+    canvMap[cid].sellInQty+=rowSellInQty;
+    if(didSellIn) canvMap[cid].sellInVisits++;
     if(hasAvaData){ canvMap[cid].avaTotal++; if(didAva) canvMap[cid].avaYes++; }
     if(!isNaN(durM)){canvMap[cid].durSum+=durM;canvMap[cid].durCnt++;}
     if(!isNaN(disM)){canvMap[cid].disSum+=disM;canvMap[cid].disCnt++;}
@@ -561,12 +565,12 @@ function processRows(rows) {
     if(dt){
       if(!minDate||dt<minDate) minDate=dt;
       if(!maxDate||dt>maxDate) maxDate=dt;
-      if(!dateMap[dt]) dateMap[dt]={date:dt,total:0,A1:0,A2:0,A3:0,sellIn:0};
+      if(!dateMap[dt]) dateMap[dt]={date:dt,total:0,A1:0,A2:0,A3:0,sellInQty:0};
       dateMap[dt].total++;
       if(as1==="A1 - NORMAL")    dateMap[dt].A1++;
       if(as1==="A2 - ANOMALY")   dateMap[dt].A2++;
       if(as1==="A3 - INCOMPLETE")dateMap[dt].A3++;
-      if(didSellIn) dateMap[dt].sellIn++;
+      dateMap[dt].sellInQty+=rowSellInQty;
     }
 
     const outId=r["Outlet ID"]!=null?String(r["Outlet ID"]):null;
@@ -582,13 +586,13 @@ function processRows(rows) {
     avgDur:c.durCnt?+(c.durSum/c.durCnt).toFixed(1):null,
     avgDis:c.disCnt?+(c.disSum/c.disCnt).toFixed(1):null,
     a1p:pct(c.A1,c.total),a2p:pct(c.A2,c.total),a3p:pct(c.A3,c.total),invP:pct(c.INVESTIGATE,c.total),
-    sellInP:pct(c.sellIn,c.total),avaP:pct(c.avaYes,c.avaTotal),
+    sellInP:pct(c.sellInVisits,c.total),avaP:pct(c.avaYes,c.avaTotal),
   }));
 
   const censusData = Object.values(outMap).filter(d=>d._isCensus).sort((a,b)=>b.total-a.total);
   return {
     total,actC,visC,durC,disC,locC,inRangeC,
-    sellInCount,avaTotalCount,avaYesCount,
+    sellInQtyTotal,sellInVisitsTotal,avaTotalCount,avaYesCount,
     visitTypeData:Object.values(vtMap).sort((a,b)=>b.total-a.total),
     outletData:Object.values(outMap).filter(d=>!d._isCensus).sort((a,b)=>b.total-a.total),
     censusData,
@@ -614,10 +618,10 @@ function aggregateList(dataList) {
   };
   const tMap={};
   dataList.forEach(r=>(r.trend||[]).forEach(d=>{
-    if(!tMap[d.date])tMap[d.date]={date:d.date,total:0,A1:0,A2:0,A3:0,sellIn:0};
-    ["total","A1","A2","A3","sellIn"].forEach(f=>{tMap[d.date][f]=(tMap[d.date][f]||0)+(d[f]||0);});
+    if(!tMap[d.date])tMap[d.date]={date:d.date,total:0,A1:0,A2:0,A3:0,sellInQty:0};
+    ["total","A1","A2","A3","sellInQty"].forEach(f=>{tMap[d.date][f]=(tMap[d.date][f]||0)+(d[f]||0);});
   }));
-  const CANV_KEYS=["total","A1","A2","A3","VALID","OBSERVE","INVESTIGATE","INCOMPLETE","durSum","durCnt","disSum","disCnt","DUR_NORMAL","DUR_SHORT","DUR_LONG","DIS_NEAR","DIS_MID","DIS_FAR","DIS_INC","LOC_MATCH","LOC_NOTMATCH","LOC_INC","IR_YES","IR_NO","sellIn","avaTotal","avaYes"];
+  const CANV_KEYS=["total","A1","A2","A3","VALID","OBSERVE","INVESTIGATE","INCOMPLETE","durSum","durCnt","disSum","disCnt","DUR_NORMAL","DUR_SHORT","DUR_LONG","DIS_NEAR","DIS_MID","DIS_FAR","DIS_INC","LOC_MATCH","LOC_NOTMATCH","LOC_INC","IR_YES","IR_NO","sellInQty","sellInVisits","avaTotal","avaYes"];
   const cMap={};
   dataList.forEach(r=>(r.canvassers||[]).forEach(c=>{
     const key=c.id||c.name;
@@ -628,11 +632,12 @@ function aggregateList(dataList) {
     avgDur:c.durCnt?+(c.durSum/c.durCnt).toFixed(1):null,
     avgDis:c.disCnt?+(c.disSum/c.disCnt).toFixed(1):null,
     a1p:pct(c.A1,c.total),a2p:pct(c.A2,c.total),a3p:pct(c.A3,c.total),invP:pct(c.INVESTIGATE,c.total),
-    sellInP:pct(c.sellIn,c.total),avaP:pct(c.avaYes,c.avaTotal),
+    sellInP:pct(c.sellInVisits,c.total),avaP:pct(c.avaYes,c.avaTotal),
   }));
   return {
     total:dataList.reduce((s,r)=>s+(r.total||0),0),
-    sellInCount:dataList.reduce((s,r)=>s+(r.sellInCount||0),0),
+    sellInQtyTotal:dataList.reduce((s,r)=>s+(r.sellInQtyTotal||0),0),
+    sellInVisitsTotal:dataList.reduce((s,r)=>s+(r.sellInVisitsTotal||0),0),
     avaTotalCount:dataList.reduce((s,r)=>s+(r.avaTotalCount||0),0),
     avaYesCount:dataList.reduce((s,r)=>s+(r.avaYesCount||0),0),
     actC:sumC("actC"),visC:sumC("visC"),durC:sumC("durC"),disC:sumC("disC"),locC:sumC("locC"),inRangeC:sumC("inRangeC"),
@@ -808,6 +813,7 @@ function OutletActivityPanel({detail,onClose,t}){
     else if(dOt>500)f.push("📍 Check-out jauh ("+fmtDist(dOt)+")");
     if(loc==="NOT MATCH")f.push("📌 Lokasi tidak match");
     if(inR==="no"||inR==="n")f.push("🎯 Out of range");
+    if((inR==="yes"||inR==="y")&&Math.max(dIn,dOt)>DEFAULT_PARAMS.in_range_max)f.push("⚠️ Indikasi manipulasi GPS (klaim In Range, jarak aktual "+fmtDist(Math.max(dIn,dOt))+")");
     return f.length>0?f.join(" · "):"✅ Normal";
   };
   const list=rows.slice(pg*PG,(pg+1)*PG);
@@ -829,7 +835,7 @@ function OutletActivityPanel({detail,onClose,t}){
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
             <thead style={{position:"sticky",top:0,background:t.card,zIndex:1}}>
               <tr style={{background:t.cardAlt}}>
-                {["#","Tanggal","Canvasser","Status","In Range","Jarak*","Durasi","Alasan"].map(h=>(
+                {["#","Tanggal","Canvasser","Status","In Range","Jarak In*","Jarak Out*","Durasi","Alasan"].map(h=>(
                   <th key={h} style={{padding:"9px 12px",textAlign:"left",fontSize:11,fontWeight:700,color:t.muted,whiteSpace:"nowrap",borderBottom:`1px solid ${t.border}`}}>{h}</th>
                 ))}
               </tr>
@@ -838,7 +844,8 @@ function OutletActivityPanel({detail,onClose,t}){
               {list.map((r,i)=>{
                 const vs=String(r["_VS"]||r["Visit Status"]||"").toUpperCase();
                 const vc=vsColor(vs);
-                const dist=parseFloat(r["Distance Check In (Meter)"])||0;
+                const distCI=parseFloat(r["Distance Check In (Meter)"])||0;
+                const distCO=parseFloat(r["Distance Check Out (Meter)"])||0;
                 const dur=parseFloat(r["Visit Duration (Menit)"]);
                 const inR=String(r["In Range"]||"").toLowerCase();
                 const isIn=inR==="yes"||inR==="y"||inR==="1";
@@ -853,11 +860,12 @@ function OutletActivityPanel({detail,onClose,t}){
                       ?<span style={{background:isIn?P.a1+"22":P.investigate+"22",color:isIn?P.a1:P.investigate,padding:"2px 8px",borderRadius:999,fontSize:10,fontWeight:700}}>{isIn?"✓ In":"✗ Out"}</span>
                       :<span style={{color:t.muted}}>–</span>}
                   </td>
-                  <td style={{padding:"7px 10px",color:dist>500?P.investigate:dist>100?P.observe:t.muted,fontWeight:dist>500?700:400}}>{fmtDist(r["Distance Check In (Meter)"])}</td>
+                  <td style={{padding:"7px 10px",color:distCI>500?P.investigate:distCI>100?P.observe:t.muted,fontWeight:distCI>500?700:400}}>{fmtDist(r["Distance Check In (Meter)"])}</td>
+                  <td style={{padding:"7px 10px",color:distCO>500?P.investigate:distCO>100?P.observe:t.muted,fontWeight:distCO>500?700:400}}>{fmtDist(r["Distance Check Out (Meter)"])}</td>
                   <td style={{padding:"7px 10px",color:!isNaN(dur)&&dur>0&&dur<2?P.short:t.muted}}>
                     {fmtDur(r["Visit Duration (Menit)"])}{!isNaN(dur)&&dur>0&&dur<1&&<span style={{fontSize:9,color:P.investigate,marginLeft:3}}>⚡</span>}
                   </td>
-                  <td style={{padding:"6px 8px",textAlign:"center"}}>{(()=>{const v=String(r["AVA Tracking?"]||"").trim().toLowerCase();if(v==="")return<span style={{color:t.muted}}>–</span>;const ok=v==="yes"||v==="ya"||v==="true"||v==="1";return<span style={{background:ok?"#22c55e22":"#ef444422",color:ok?"#22c55e":"#ef4444",padding:"2px 8px",borderRadius:999,fontSize:10,fontWeight:700}}>{ok?"✓ Ya":"✗ Tidak"}</span>;})()}</td>
+                  <td style={{padding:"6px 8px",textAlign:"center"}}>{(()=>{const v=String(r["AVA Tracking?"]||"").trim().toLowerCase();if(v==="")return <span style={{color:t.muted}}>–</span>;const ok=v==="yes"||v==="ya"||v==="true"||v==="1";return <span style={{background:ok?"#22c55e22":"#ef444422",color:ok?"#22c55e":"#ef4444",padding:"2px 8px",borderRadius:999,fontSize:10,fontWeight:700}}>{ok?"✓ Ya":"✗ Tidak"}</span>;})()}</td>
                   <td style={{padding:"7px 10px",fontSize:11,color:t.muted}}>{getReason(r)}</td>
                 </tr>
               );})}
@@ -987,7 +995,7 @@ function DrillDownPanel({drill,onClose,t,onCanvasserClick}){
           <div style={{width:12,height:12,borderRadius:3,background:drill.color,flexShrink:0}}/>
           <div style={{flex:1}}>
             <div style={{fontWeight:800,fontSize:15,color:t.text}}>{drill.label}</div>
-            <div style={{fontSize:14,color:t.text,fontWeight:800,marginTop:1}}>{drill.rows.length.toLocaleString()} canvasser · {drill.total.toLocaleString()} aktivitas</div>
+            <div style={{fontSize:14,color:t.text,fontWeight:800,marginTop:1}}>{drill.rows.length.toLocaleString()} canvasser · {drill.total.toLocaleString()} {drill.unitLabel||"aktivitas"}</div>
           </div>
           <button onClick={onClose} style={{background:t.cardAlt,border:`1px solid ${t.border}`,color:t.text,borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:13,fontWeight:700}}>✕</button>
         </div>
@@ -1010,7 +1018,7 @@ function DrillDownPanel({drill,onClose,t,onCanvasserClick}){
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
             <thead style={{position:"sticky",top:0,background:t.card,zIndex:1}}>
               <tr style={{background:t.cardAlt}}>
-                {["#","Canvasser","Region","Cluster","Jumlah","% Total",""].map(h=>(
+                {["#","Canvasser","Region","Cluster",drill.unitLabel?`Jumlah (${drill.unitLabel})`:"Jumlah","% Total",""].map(h=>(
                   <th key={h} style={{padding:"9px 12px",textAlign:"left",fontSize:11,fontWeight:700,color:t.muted,whiteSpace:"nowrap",borderBottom:`1px solid ${t.border}`}}>{h}</th>
                 ))}
               </tr>
@@ -1056,6 +1064,7 @@ function CanvasserDetailPanel({detail,onClose,t}){
   const [view,setView]=useState("list");
   const [oPg,setOPg]=useState(0);
   const [vtFilter,setVtFilter]=useState("ALL");
+  const [sellInFilter,setSellInFilter]=useState("ALL");
   const [outletFilter,setOutletFilter]=useState(null);
   const [outletFilterName,setOutletFilterName]=useState(null);
   const [statusFilter,setStatusFilter]=useState(null);
@@ -1075,7 +1084,7 @@ function CanvasserDetailPanel({detail,onClose,t}){
     {label:"Voucher Smartfren",key:"AVA Voucher Smartfren Comply?"},
   ];
   const PG=10;
-  useEffect(()=>{setPg(0);setOPg(0);setView("list");setVtFilter("ALL");setOutletFilter(null);setOutletFilterName(null);setStatusFilter(null);setSortCol("date");setSortDir("asc");setAvaDrill(null);setAvaRowDetail(null);},[detail?.sessionKey]);
+  useEffect(()=>{setPg(0);setOPg(0);setView("list");setVtFilter("ALL");setSellInFilter("ALL");setOutletFilter(null);setOutletFilterName(null);setStatusFilter(null);setSortCol("date");setSortDir("asc");setAvaDrill(null);setAvaRowDetail(null);},[detail?.sessionKey]);
   if(!detail) return null;
   const {canvasser,drillLabel,color,rows}=detail;
   const allRows=rows._all||rows;
@@ -1105,6 +1114,9 @@ function CanvasserDetailPanel({detail,onClose,t}){
     if(loc==="NOT MATCH") f.push("📌 Lokasi tidak match");
     // In Range
     if(inR==="no"||inR==="n") f.push("🎯 Out of range");
+    // Indikasi manipulasi GPS: klaim In Range tapi jarak aktual melebihi ambang
+    if((inR==="yes"||inR==="y")&&Math.max(distIn,distOut)>DEFAULT_PARAMS.in_range_max)
+      f.push(`⚠️ Indikasi manipulasi GPS (klaim In Range, jarak aktual ${fmtDist(Math.max(distIn,distOut))})`);
     return f.length>0 ? f.join(" · ") : (vs==="VALID"?"✅ Normal":"❓ "+vs);
   };
   // Get unique visit types for filter buttons
@@ -1116,6 +1128,11 @@ function CanvasserDetailPanel({detail,onClose,t}){
     if(vtFilter!=="ALL"&&String(r["Activity Type"]||"Unknown").trim()!==vtFilter) return false;
     if(outletFilter&&String(r["Outlet ID"]||"").trim()!==outletFilter) return false;
     if(statusFilter&&(r["_CAS1"]||"")!==statusFilter) return false;
+    if(sellInFilter!=="ALL"){
+      const qty=(parseFloat(String(r["Sell-In"]||"").replace(/[^0-9.\-]/g,""))||0)+(parseFloat(String(r["Online Sell-In"]||"").replace(/[^0-9.\-]/g,""))||0);
+      if(sellInFilter==="WITH"&&qty<=0) return false;
+      if(sellInFilter==="WITHOUT"&&qty>0) return false;
+    }
     return true;
   });
   // Apply sort
@@ -1124,8 +1141,13 @@ function CanvasserDetailPanel({detail,onClose,t}){
     if(sortCol==="date") return dir*(new Date(a["Actual Visit Time"]||0)-new Date(b["Actual Visit Time"]||0));
     if(sortCol==="outlet") return dir*(String(a["Outlet"]||"").localeCompare(String(b["Outlet"]||"")));
     if(sortCol==="status") return dir*(String(a["_CAS1"]||"").localeCompare(String(b["_CAS1"]||"")));
-    if(sortCol==="dist") return dir*((parseFloat(a["Distance Check In (Meter)"])||0)-(parseFloat(b["Distance Check In (Meter)"])||0));
+    if(sortCol==="dist") return dir*(Math.max(parseFloat(a["Distance Check In (Meter)"])||0,parseFloat(a["Distance Check Out (Meter)"])||0)-Math.max(parseFloat(b["Distance Check In (Meter)"])||0,parseFloat(b["Distance Check Out (Meter)"])||0));
     if(sortCol==="dur") return dir*((parseFloat(a["Visit Duration (Menit)"])||0)-(parseFloat(b["Visit Duration (Menit)"])||0));
+    if(sortCol==="sellIn"){
+      const qa=(parseFloat(String(a["Sell-In"]||"").replace(/[^0-9.\-]/g,""))||0)+(parseFloat(String(a["Online Sell-In"]||"").replace(/[^0-9.\-]/g,""))||0);
+      const qb=(parseFloat(String(b["Sell-In"]||"").replace(/[^0-9.\-]/g,""))||0)+(parseFloat(String(b["Online Sell-In"]||"").replace(/[^0-9.\-]/g,""))||0);
+      return dir*(qa-qb);
+    }
     return 0;
   };
   const sorted=[...filteredRows].sort(sortFn);
@@ -1180,6 +1202,15 @@ function CanvasserDetailPanel({detail,onClose,t}){
                   ?`· ${outletRows.length} outlet dikunjungi · ${allRows.length.toLocaleString()} total aktivitas`
                   :`· ${sorted.length.toLocaleString()} aktivitas sesuai filter`}
               </span>
+              {(()=>{
+                const totalSellIn=sorted.reduce((s,r)=>{
+                  const q=(parseFloat(String(r["Sell-In"]||"").replace(/[^0-9.\-]/g,""))||0)+(parseFloat(String(r["Online Sell-In"]||"").replace(/[^0-9.\-]/g,""))||0);
+                  return s+q;
+                },0);
+                return totalSellIn>0?(
+                  <span style={{background:"#10b98120",color:"#10b981",padding:"2px 10px",borderRadius:999,fontSize:11,fontWeight:800}}>💰 Total Sell-In di daftar ini: {totalSellIn.toLocaleString()}</span>
+                ):null;
+              })()}
             </div>
             <div style={{display:"flex",gap:4,marginTop:6}}>
               <button onClick={()=>setView("list")} style={{background:view==="list"?color:t.cardAlt,color:view==="list"?"#fff":t.muted,border:"1px solid "+t.border,borderRadius:6,padding:"3px 10px",fontSize:10,fontWeight:700,cursor:"pointer"}}>📋 Aktivitas ({filteredRows.length})</button>
@@ -1192,35 +1223,36 @@ function CanvasserDetailPanel({detail,onClose,t}){
            {/* Visit Type Filter */}
           {view==="list"&&(
           <div style={{padding:"8px 16px",borderBottom:`1px solid ${t.border}`,display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",flexShrink:0,background:t.cardAlt}}>
-            <span style={{fontSize:10,color:t.muted,fontWeight:600}}>Filter:</span>
             {(outletFilter||statusFilter)&&<button onClick={()=>{setOutletFilter(null);setOutletFilterName(null);setStatusFilter(null);setPg(0);}} style={{background:"#ef444422",color:"#ef4444",border:"1px solid #ef444440",borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:700,cursor:"pointer"}}>✕ Reset Filter</button>}
             {outletFilter&&<span style={{background:P.accent+"22",color:P.accent,padding:"3px 10px",borderRadius:6,fontSize:10,fontWeight:700}}>
-              📍 Outlet: {outletFilterName||outletFilter}
-              <span style={{opacity:0.7,marginLeft:4}}>({outletFilter})</span>
+              📍 {outletFilterName||outletFilter}
             </span>}
             {statusFilter&&(()=>{
               const sc=statusFilter==="A1 - NORMAL"?P.a1:statusFilter==="A2 - ANOMALY"?P.a2:P.a3;
-              const sl=statusFilter==="A1 - NORMAL"?"A1 - Normal":statusFilter==="A2 - ANOMALY"?"A2 - Anomaly":"A3 - Incomplete";
-              return <span style={{background:sc+"22",color:sc,padding:"3px 10px",borderRadius:6,fontSize:10,fontWeight:700}}>Status: {sl}</span>;
+              const sl=statusFilter==="A1 - NORMAL"?"A1":statusFilter==="A2 - ANOMALY"?"A2":"A3";
+              return <span style={{background:sc+"22",color:sc,padding:"3px 10px",borderRadius:6,fontSize:10,fontWeight:700}}>{sl}</span>;
             })()}
-            {vtTypes.map(vt=>(
-              <button key={vt} onClick={()=>{setVtFilter(vt);setPg(0);}}
-                style={{background:vtFilter===vt?(vt==="ALL"?color:vt==="Regular Visit"?P.a1:vt==="Ad-Hoc Visit"?P.a2:"#06b6d4"):t.card,color:vtFilter===vt?"#fff":t.muted,border:"1px solid "+(vtFilter===vt?"transparent":t.border),borderRadius:6,padding:"2px 9px",fontSize:10,fontWeight:700,cursor:"pointer"}}>
-                {vt==="ALL"?"Semua":vt}
-              </button>
-            ))}
-            <span style={{marginLeft:"auto",fontSize:10,color:t.muted}}>{sorted.length} aktivitas</span>
-          </div>
-          )}
-          {view==="list"&&(
-          <div style={{padding:"6px 16px",borderBottom:`1px solid ${t.border}`,display:"flex",gap:4,flexWrap:"wrap",alignItems:"center",flexShrink:0}}>
-            <span style={{fontSize:10,color:t.muted,fontWeight:600}}>Sort:</span>
-            {[["date","Tanggal"],["outlet","Outlet"],["status","Status"],["dist","Jarak"],["dur","Durasi"]].map(([sk,lbl])=>(
-              <button key={sk} onClick={()=>{if(sortCol===sk)setSortDir(d=>d==="asc"?"desc":"asc");else{setSortCol(sk);setSortDir("asc");setPg(0);}}}
-                style={{background:sortCol===sk?color:t.cardAlt,color:sortCol===sk?"#fff":t.muted,border:"1px solid "+t.border,borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:700,cursor:"pointer"}}>
-                {lbl}{sortCol===sk?(sortDir==="asc"?" ↑":" ↓"):""}
-              </button>
-            ))}
+            <select value={vtFilter} onChange={e=>{setVtFilter(e.target.value);setPg(0);}}
+              style={{background:t.card,color:t.text,border:"1px solid "+t.border,borderRadius:6,padding:"4px 8px",fontSize:11,fontWeight:600,cursor:"pointer"}}>
+              {vtTypes.map(vt=>(<option key={vt} value={vt}>{vt==="ALL"?"Semua Tipe Kunjungan":vt}</option>))}
+            </select>
+            <select value={sellInFilter} onChange={e=>{setSellInFilter(e.target.value);setPg(0);}}
+              style={{background:t.card,color:t.text,border:"1px solid "+t.border,borderRadius:6,padding:"4px 8px",fontSize:11,fontWeight:600,cursor:"pointer"}}>
+              <option value="ALL">Semua Sell-In</option>
+              <option value="WITH">💰 Ada Sell-In</option>
+              <option value="WITHOUT">Tanpa Sell-In</option>
+            </select>
+            <select value={sortCol} onChange={e=>{setSortCol(e.target.value);setPg(0);}}
+              style={{background:t.card,color:t.text,border:"1px solid "+t.border,borderRadius:6,padding:"4px 8px",fontSize:11,fontWeight:600,cursor:"pointer"}}>
+              <option value="date">Urutkan: Tanggal</option>
+              <option value="outlet">Urutkan: Outlet</option>
+              <option value="status">Urutkan: Status</option>
+              <option value="dist">Urutkan: Jarak</option>
+              <option value="dur">Urutkan: Durasi</option>
+              <option value="sellIn">Urutkan: Sell-In</option>
+            </select>
+            <button onClick={()=>setSortDir(d=>d==="asc"?"desc":"asc")} style={{background:t.card,color:t.text,border:"1px solid "+t.border,borderRadius:6,padding:"4px 8px",fontSize:11,fontWeight:700,cursor:"pointer"}}>{sortDir==="asc"?"↑":"↓"}</button>
+            <span style={{marginLeft:"auto",fontSize:10,color:t.muted,whiteSpace:"nowrap"}}>{sorted.length.toLocaleString()} aktivitas</span>
           </div>
           )}
        <div style={{overflowY:"auto",flex:1,scrollbarWidth:"none",msOverflowStyle:"none"}}>
@@ -1356,7 +1388,7 @@ function CanvasserDetailPanel({detail,onClose,t}){
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
             <thead style={{position:"sticky",top:0,background:t.card,zIndex:1}}>
               <tr style={{background:t.cardAlt}}>
-                {["#","Tanggal","Visit Type","Outlet ID","Outlet","Status","In Range","Jarak ke Outlet*","Durasi","AVA","Alasan"].map(h=>(
+                {["#","Tanggal","Visit Type","Outlet ID","Outlet","Status","In Range","Jarak Check-In*","Jarak Check-Out*","Durasi","Sell-In","AVA","Alasan"].map(h=>(
                   <th key={h} style={{padding:"9px 12px",textAlign:"left",fontSize:11,fontWeight:700,color:t.muted,whiteSpace:"nowrap",borderBottom:`1px solid ${t.border}`}}>{h}</th>
                 ))}
               </tr>
@@ -1365,7 +1397,8 @@ function CanvasserDetailPanel({detail,onClose,t}){
               {sorted.slice(pg*PG,(pg+1)*PG).map((r,i)=>{
                 const vs=String(r["Visit Status"]||"").toUpperCase();
                 const vc=vsColor(vs);
-                const dist=parseFloat(r["Distance Check In (Meter)"])||0;
+                const distCI=parseFloat(r["Distance Check In (Meter)"])||0;
+                const distCO=parseFloat(r["Distance Check Out (Meter)"])||0;
                 const dur=parseFloat(r["Visit Duration (Menit)"])||0;
                 return(
                 <tr key={i} style={{borderBottom:`1px solid ${t.border}`,background:i%2===0?"transparent":t.rowAlt}}>
@@ -1384,13 +1417,17 @@ function CanvasserDetailPanel({detail,onClose,t}){
                       </span>
                     ):<span style={{color:t.muted}}>–</span>}
                   </td>
-                  <td style={{padding:"7px 10px",color:dist>500?P.investigate:dist>100?P.observe:t.muted,fontWeight:dist>500?700:400}}>{fmtDist(r["Distance Check In (Meter)"])}</td>
+                  <td style={{padding:"7px 10px",color:distCI>500?P.investigate:distCI>100?P.observe:t.muted,fontWeight:distCI>500?700:400}}>{fmtDist(r["Distance Check In (Meter)"])}</td>
+                  <td style={{padding:"7px 10px",color:distCO>500?P.investigate:distCO>100?P.observe:t.muted,fontWeight:distCO>500?700:400}}>{fmtDist(r["Distance Check Out (Meter)"])}</td>
                   <td style={{padding:"7px 10px",color:dur>0&&dur<2?P.short:t.muted,fontWeight:dur>0&&dur<2?700:400}}>
                     <span>{fmtDur(r["Visit Duration (Menit)"])}</span>
                     {dur>0&&dur<1&&<span style={{fontSize:9,color:P.investigate,marginLeft:4,fontWeight:700}}>⚡</span>}
                   </td>
+                  <td style={{padding:"7px 10px",color:"#10b981",fontWeight:700}}>
+                    {(()=>{const qty=(parseFloat(String(r["Sell-In"]||"").replace(/[^0-9.\-]/g,""))||0)+(parseFloat(String(r["Online Sell-In"]||"").replace(/[^0-9.\-]/g,""))||0);return qty>0?qty.toLocaleString():<span style={{color:t.muted,fontWeight:400}}>–</span>;})()}
+                  </td>
                   <td style={{padding:"6px 8px",textAlign:"center"}}>
-                    {(()=>{const v=String(r["AVA Tracking?"]||"").trim().toLowerCase();if(v==="")return<span style={{color:t.muted}}>–</span>;const ok=v==="yes"||v==="ya"||v==="true"||v==="1";return(
+                    {(()=>{const v=String(r["AVA Tracking?"]||"").trim().toLowerCase();if(v==="")return <span style={{color:t.muted}}>–</span>;const ok=v==="yes"||v==="ya"||v==="true"||v==="1";return(
                       <span style={{background:ok?"#22c55e22":"#ef444422",color:ok?"#22c55e":"#ef4444",padding:"2px 8px",borderRadius:999,fontSize:10,fontWeight:700}}>{ok?"✓ Ya":"✗ Tidak"}</span>
                     );})()}
                   </td>
@@ -1403,7 +1440,7 @@ function CanvasserDetailPanel({detail,onClose,t}){
           </>)}
           {/* Footnote - always visible */}
           <div style={{padding:"10px 16px",borderTop:`1px solid ${t.border}`,fontSize:11,color:t.muted,lineHeight:1.7,background:t.cardAlt}}>
-            <b>* Jarak ke Outlet</b> = selisih koordinat GPS HP canvasser vs koordinat outlet terdaftar saat check-in/out. Bukan jarak perjalanan — jarak besar berarti canvasser kemungkinan tidak berada di lokasi outlet.
+            <b>* Jarak Check-In/Check-Out</b> = selisih koordinat GPS HP canvasser vs koordinat outlet terdaftar saat check-in dan check-out (dihitung terpisah). Bukan jarak perjalanan — jarak besar berarti canvasser kemungkinan tidak berada di lokasi outlet pada momen tersebut.
           </div>
         </div>
       </div>
@@ -2490,14 +2527,14 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
 
     // 10) Canvasser dengan volume visit tinggi tapi rate Sell-In sangat rendah — pakai data agregat yang sudah tersedia
     {
-      const cvs2=(view.canvassers||[]).filter(c=>c.total>=30&&(c.sellIn||0)>=0);
-      const availSellIn=cvs2.some(c=>(c.sellIn||0)>0);
+      const cvs2=(view.canvassers||[]).filter(c=>c.total>=30);
+      const availSellIn=cvs2.some(c=>(c.sellInVisits||0)>0);
       if(availSellIn&&cvs2.length>=3){
         const worst=[...cvs2].sort((a,b)=>(a.sellInP||0)-(b.sellInP||0))[0];
         if((worst.sellInP||0)<=5){
           out.push({severity:"medium",icon:"💰",
             title:`${worst.name} — visit tinggi tapi Sell-In sangat rendah`,
-            desc:`Dari ${worst.total.toLocaleString()} kunjungan, cuma ${(worst.sellIn||0).toLocaleString()} yang menghasilkan Sell-In (${(worst.sellInP||0).toFixed(1)}%).`,
+            desc:`Dari ${worst.total.toLocaleString()} kunjungan, cuma ${(worst.sellInVisits||0).toLocaleString()} yang menghasilkan Sell-In (${(worst.sellInP||0).toFixed(1)}%), total Qty ${(worst.sellInQty||0).toLocaleString()}.`,
             rec:"Cek efektivitas kunjungan canvasser ini — kemungkinan kunjungan formalitas tanpa hasil penjualan.",
             action:()=>{setTab("canvasser");setSearch(worst.name);}});
         }
@@ -2702,7 +2739,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
               {label:"A3 — Incomplete",val:pctS(ac["A3 - INCOMPLETE"],T),color:P.a3,sub:(ac["A3 - INCOMPLETE"]||0).toLocaleString(),drill:()=>openDrill("A3 - Incomplete",P.a3,"A3"),
                 sublink:()=>{const bd=computeReasonBreakdown("A3");setReasonDrill({statusKey:"A3",label:"A3 - Incomplete",color:P.a3,reasons:bd.reasons,topCanvassers:bd.topCanvassers});}},
               {label:"Investigate",val:pctS(vc["INVESTIGATE"],T),color:t.muted,sub:(vc["INVESTIGATE"]||0).toLocaleString(),drill:()=>openDrill("Investigate",P.investigate,"INVESTIGATE")},
-              {label:"Sell-In",val:pctS(view.sellInCount,T),color:"#10b981",sub:(view.sellInCount||0).toLocaleString(),drill:undefined},
+              {label:"Sell-In",val:(view.sellInQtyTotal||0).toLocaleString(),color:"#10b981",sub:`${(view.sellInVisitsTotal||0).toLocaleString()} kunjungan`,drill:undefined},
             ].map((k,i,arr)=>{
               const barPct=typeof k.val==="string"&&k.val.includes("%")?parseFloat(k.val):null;
               return(
@@ -2821,19 +2858,26 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                   const obsReasons=topReasonList("observe");
                   const invTotal=Object.values(rm.investigate||{}).reduce((s,v)=>s+v,0);
                   const obsTotal=Object.values(rm.observe||{}).reduce((s,v)=>s+v,0);
+                  const invCanvCount=(view.canvassers||[]).filter(c=>(c.INVESTIGATE||0)>0).length;
+                  const obsCanvCount=(view.canvassers||[]).filter(c=>(c.OBSERVE||0)>0).length;
 
                   // ── Section 5: Ringkasan AVA & Sell-In (Tinggi/Sedang/Rendah berdasar tercile canvasser) ──
-                  const bucketize=(rateKey,minTotal=10)=>{
+                  const bucketize=(rateKey,tinggiMin,sedangMin,minTotal=10)=>{
                     const eligible=(view.canvassers||[]).filter(c=>c.total>=minTotal&&c[rateKey]!=null);
-                    const sorted=[...eligible].sort((a,b)=>(b[rateKey]||0)-(a[rateKey]||0));
-                    const n=sorted.length;
-                    if(!n) return null;
-                    const t1=Math.max(1,Math.ceil(n/3)), t2=Math.max(t1+1,Math.ceil(2*n/3));
-                    return {tinggi:sorted.slice(0,t1),sedang:sorted.slice(t1,t2),rendah:sorted.slice(t2)};
+                    if(!eligible.length) return null;
+                    const tinggi=eligible.filter(c=>c[rateKey]>=tinggiMin);
+                    const sedang=eligible.filter(c=>c[rateKey]>=sedangMin&&c[rateKey]<tinggiMin);
+                    const rendah=eligible.filter(c=>c[rateKey]<sedangMin);
+                    return {tinggi,sedang,rendah};
                   };
-                  const avaBuckets=(view.avaTotalCount||0)>0?bucketize("avaP"):null;
-                  const sellInBuckets=(view.sellInCount||0)>0?bucketize("sellInP"):null;
-                  const openBucketDrill=(label,color,list,countKey,totalKey)=>setDrill({label,color,rows:list.map(c=>({...c,count:c[countKey]||0,total:c[totalKey]||c.total})),total:list.reduce((s,c)=>s+(c[countKey]||0),0)});
+                  const avaBuckets=(view.avaTotalCount||0)>0?bucketize("avaP",80,40):null;
+                  const sellInBuckets=(view.sellInVisitsTotal||0)>0?bucketize("sellInP",20,5):null;
+                  const openBucketDrill=(label,color,list,countKey,totalKey,unitLabel,useGroupShare)=>{
+                    const groupSum=useGroupShare?list.reduce((s,c)=>s+(c[countKey]||0),0):null;
+                    setDrill({label,color,countKey,unitLabel,
+                      rows:list.map(c=>({...c,count:c[countKey]||0,total:useGroupShare?(groupSum||1):(c[totalKey]||c.total)})),
+                      total:list.reduce((s,c)=>s+(c[countKey]||0),0)});
+                  };
 
                   return(
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:16}}>
@@ -2891,27 +2935,33 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                       {/* Section 5: AVA & Sell-In */}
                       {(avaBuckets||sellInBuckets)&&<div style={{marginTop:18}}>
                         <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Ringkasan AVA & Sell-In</div>
-                        <div style={{fontSize:10,color:t.muted,marginBottom:10}}>Pengelompokan canvasser berdasar rate — klik buat lihat daftarnya</div>
+                        <div style={{fontSize:10,color:t.muted,marginBottom:10}}>Nilai per kelompok pencapaian — klik buat lihat daftar canvasser-nya</div>
                         {avaBuckets&&<div style={{marginBottom:14}}>
                           <div style={{fontSize:10,fontWeight:700,color:t.text,marginBottom:6}}>🏷 AVA Tracking</div>
                           <div style={{display:"flex",gap:8}}>
-                            {[["Tinggi",avaBuckets.tinggi,"#22c55e"],["Sedang",avaBuckets.sedang,"#f59e0b"],["Rendah",avaBuckets.rendah,"#ef4444"]].map(([lbl,list,clr])=>(
-                              <div key={lbl} onClick={()=>list.length&&openBucketDrill(`AVA Tracking — ${lbl}`,clr,list,"avaYes","avaTotal")} style={{flex:1,textAlign:"center",padding:"8px 4px",borderRadius:8,background:clr+"14",cursor:list.length?"pointer":"default"}}>
-                                <div style={{fontSize:15,fontWeight:800,color:clr}}>{list.length}</div>
+                            {[["Tinggi",avaBuckets.tinggi,"#22c55e"],["Sedang",avaBuckets.sedang,"#f59e0b"],["Rendah",avaBuckets.rendah,"#ef4444"]].map(([lbl,list,clr])=>{
+                              const val=list.reduce((s,c)=>s+(c.avaYes||0),0);
+                              return(
+                              <div key={lbl} onClick={()=>list.length&&openBucketDrill(`AVA Tracking — ${lbl}`,clr,list,"avaYes","avaTotal","kunjungan AVA",false)} style={{flex:1,textAlign:"center",padding:"8px 4px",borderRadius:8,background:clr+"14",cursor:list.length?"pointer":"default"}}>
+                                <div style={{fontSize:15,fontWeight:800,color:clr}}>{val.toLocaleString()}</div>
                                 <div style={{fontSize:8,color:t.muted,textTransform:"uppercase",marginTop:2}}>{lbl}</div>
+                                <div style={{fontSize:8,color:t.muted,marginTop:1}}>{list.length} canvasser</div>
                               </div>
-                            ))}
+                              );})}
                           </div>
                         </div>}
                         {sellInBuckets&&<div>
                           <div style={{fontSize:10,fontWeight:700,color:t.text,marginBottom:6}}>💰 Sell-In</div>
                           <div style={{display:"flex",gap:8}}>
-                            {[["Tinggi",sellInBuckets.tinggi,"#22c55e"],["Sedang",sellInBuckets.sedang,"#f59e0b"],["Rendah",sellInBuckets.rendah,"#ef4444"]].map(([lbl,list,clr])=>(
-                              <div key={lbl} onClick={()=>list.length&&openBucketDrill(`Sell-In — ${lbl}`,clr,list,"sellIn","total")} style={{flex:1,textAlign:"center",padding:"8px 4px",borderRadius:8,background:clr+"14",cursor:list.length?"pointer":"default"}}>
-                                <div style={{fontSize:15,fontWeight:800,color:clr}}>{list.length}</div>
+                            {[["Tinggi",sellInBuckets.tinggi,"#22c55e"],["Sedang",sellInBuckets.sedang,"#f59e0b"],["Rendah",sellInBuckets.rendah,"#ef4444"]].map(([lbl,list,clr])=>{
+                              const val=list.reduce((s,c)=>s+(c.sellInQty||0),0);
+                              return(
+                              <div key={lbl} onClick={()=>list.length&&openBucketDrill(`Sell-In — ${lbl}`,clr,list,"sellInQty","total","Qty Sell-In",true)} style={{flex:1,textAlign:"center",padding:"8px 4px",borderRadius:8,background:clr+"14",cursor:list.length?"pointer":"default"}}>
+                                <div style={{fontSize:15,fontWeight:800,color:clr}}>{val.toLocaleString()}</div>
                                 <div style={{fontSize:8,color:t.muted,textTransform:"uppercase",marginTop:2}}>{lbl}</div>
+                                <div style={{fontSize:8,color:t.muted,marginTop:1}}>{list.length} canvasser</div>
                               </div>
-                            ))}
+                              );})}
                           </div>
                         </div>}
                       </div>}
@@ -2940,9 +2990,9 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                       {/* Section 4 */}
                       {(invReasons.length>0||obsReasons.length>0)&&<div style={{marginTop:18}}>
                         <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Alasan Utama di Balik Visit Status</div>
-                        <div style={{fontSize:10,color:t.muted,marginBottom:10}}>Catatan lapangan yang paling sering disebut canvasser</div>
+                        <div style={{fontSize:10,color:t.muted,marginBottom:10}}>Top 3 penyebab paling sering ditemukan — satu kunjungan bisa punya lebih dari 1 alasan sekaligus, jadi jumlahnya tidak selalu sama dengan total kunjungan</div>
                         {invReasons.length>0&&<>
-                          <div onClick={()=>openDrill("Investigate",P.investigate,"INVESTIGATE")} style={{fontSize:10,fontWeight:700,color:P.investigate,marginBottom:6,cursor:"pointer"}}>🔍 Investigate ({invTotal.toLocaleString()} kunjungan) ›</div>
+                          <div onClick={()=>openDrill("Investigate",P.investigate,"INVESTIGATE")} style={{fontSize:10,fontWeight:700,color:P.investigate,marginBottom:6,cursor:"pointer"}}>🔍 Investigate ({invTotal.toLocaleString()} kunjungan · {invCanvCount.toLocaleString()} canvasser) ›</div>
                           {invReasons.map(([k,v],i)=>(
                             <div key={i} onClick={()=>openDrill("Investigate",P.investigate,"INVESTIGATE")} style={{display:"flex",alignItems:"center",gap:10,padding:"5px 0",cursor:"pointer"}}>
                               <div style={{fontSize:11,color:t.text,width:120,flexShrink:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k}</div>
@@ -2952,7 +3002,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                           ))}
                         </>}
                         {obsReasons.length>0&&<>
-                          <div onClick={()=>openDrill("Observe",P.a2,"OBSERVE")} style={{fontSize:10,fontWeight:700,color:P.a2,marginTop:14,marginBottom:6,cursor:"pointer"}}>⚠️ Observe ({obsTotal.toLocaleString()} kunjungan) ›</div>
+                          <div onClick={()=>openDrill("Observe",P.a2,"OBSERVE")} style={{fontSize:10,fontWeight:700,color:P.a2,marginTop:14,marginBottom:6,cursor:"pointer"}}>⚠️ Observe ({obsTotal.toLocaleString()} kunjungan · {obsCanvCount.toLocaleString()} canvasser) ›</div>
                           {obsReasons.map(([k,v],i)=>(
                             <div key={i} onClick={()=>openDrill("Observe",P.a2,"OBSERVE")} style={{display:"flex",alignItems:"center",gap:10,padding:"5px 0",cursor:"pointer"}}>
                               <div style={{fontSize:11,color:t.text,width:120,flexShrink:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k}</div>
@@ -3435,7 +3485,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
                 <thead><tr>
                   {[["#",""],["Region","region"],["Cluster","cluster"],["Nama","name"],["Total","total"],
-                    ["A1","A1"],["A2","A2"],["A3","A3"],["Inv","INVESTIGATE"],["Sell-In","sellIn"],
+                    ["A1","A1"],["A2","A2"],["A3","A3"],["Inv","INVESTIGATE"],["Sell-In","sellInQty"],
                     ["A1%","a1p"],["A2%","a2p"],["A3%","a3p"],["Inv%","invP"],["Sell-In%","sellInP"],["Avg Dur","avgDur"],["Avg Dist","avgDis"]
                   ].map(([label,key])=>(
                     <th key={label} onClick={()=>key&&handleSort(key)} style={{...ths(key),borderBottom:`1px solid ${t.border}`}}>
@@ -3468,7 +3518,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                           :<span style={{color:t.muted}}>0</span>}
                       </td>
                       <td style={{padding:"9px 10px",color:c.INVESTIGATE>0?P.investigate:t.muted,fontWeight:c.INVESTIGATE>0?700:400}}>{c.INVESTIGATE}</td>
-                      <td style={{padding:"9px 10px",color:(c.sellIn||0)>0?"#10b981":t.muted,fontWeight:(c.sellIn||0)>0?700:400}}>{(c.sellIn||0).toLocaleString()}</td>
+                      <td style={{padding:"9px 10px",color:(c.sellInQty||0)>0?"#10b981":t.muted,fontWeight:(c.sellInQty||0)>0?700:400}}>{(c.sellInQty||0).toLocaleString()}</td>
                       <td style={{padding:"9px 10px",color:c.a1p>=70?P.a1:P.a2,fontWeight:700}}>{c.a1p.toFixed(1)}%</td>
                       <td style={{padding:"9px 10px",color:c.a2p>=40?P.investigate:P.a2}}>{c.a2p.toFixed(1)}%</td>
                       <td style={{padding:"9px 10px",color:t.muted}}>{c.a3p.toFixed(1)}%</td>
