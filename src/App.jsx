@@ -221,9 +221,30 @@ function parseCSVText(text) {
   const headers=rows[0].map(h=>h.trim());
   return rows.slice(1).filter(r=>r.length>1||r[0]!=="").map(r=>{
     const obj={};
-    headers.forEach((h,i)=>{obj[h]=r[i]!==undefined&&r[i]!==""?r[i]:null;});
+    headers.forEach((h,i)=>{if(KEEP_COLUMNS_DASHBOARD.has(h)) obj[h]=r[i]!==undefined&&r[i]!==""?r[i]:null;});
     return obj;
   });
+}
+
+// Kolom yang beneran dipakai di seluruh dashboard — kolom lain dari file mentah (metadata sistem,
+// remarks, kolom AVA/Sell-in yang gak dipakai dll) dibuang segera setelah dibaca, biar tiap baris
+// lebih hemat memori. Ini penting terutama utk skala data besar (ratusan ribu—jutaan baris).
+const KEEP_COLUMNS_DASHBOARD = new Set([
+  "Activity ID","Activity Status","Activity Status.1","Activity Type",
+  "Actual Visit Time","Actual Check-Out Time","Visit Duration (Menit)",
+  "Canvasser","Canvasser ID","Cluster","Sales Cluster",
+  "Check-In Latitude","Check-In Longitude","Check-Out Latitude","Check-Out Longitude",
+  "Distance Check In (Meter)","Distance Check Out (Meter)","Distance Status","Duration Status","Location Status",
+  "In Range","Latitude","Longitude",
+  "Outlet","Outlet ID","Outlet Name","Outlet Type",
+  "RO Latitude","RO Longitude","RO Census","From RO Census",
+  "Planned Visit Date","Visit Status",
+  "_VS","_AS1","_DUR","_DIS","_LOC","_CAS1","_CVS","_clLabel",
+]);
+function trimRowDashboard(row){
+  const out={};
+  for(const k in row){ if(KEEP_COLUMNS_DASHBOARD.has(k)) out[k]=row[k]; }
+  return out;
 }
 
 function readFileRows(wbOrBuf, sheetName=null) {
@@ -296,8 +317,9 @@ function readFileRows(wbOrBuf, sheetName=null) {
   });
 
   if(!rows.length) throw new Error("File kosong");
+  const trimmedRows = rows.map(trimRowDashboard);
   // Apply validation computation for raw data (without green columns)
-  const processedRows = rows.map(r => computeValidation(r));
+  const processedRows = trimmedRows.map(r => computeValidation(r));
   return {rows: processedRows};
 }
 
@@ -1411,7 +1433,7 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
             name:c.fileName?`${c.fileName}|${c.label}`:c.label,
             label:c.label,
             regionCode:c.regionCode||getRegionCode(c.label),
-            rows:c.rows||[],
+            rows:(c.rows||[]).map(trimRowDashboard),
           }));
           setQueue(prev=>{
             const m=[...prev];
@@ -1932,7 +1954,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
             name:c.fileName?`${c.fileName}|${c.label}`:c.label,
             label:c.label,
             regionCode:c.regionCode||getRegionCode(c.label),
-            rows:c.rows||[],
+            rows:(c.rows||[]).map(trimRowDashboard),
           });
         });
       }catch(e){ console.error("Gagal memproses berkas JSON "+f.name+":", e); }
