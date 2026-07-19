@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>XLSMART · Pre-Processor (Offline)</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#121821; --panel-alt:#1a2230; --border:#232d3d;
+    --text:#e7edf5; --muted:#7c8aa0; --accent:#f0a63d; --accent-dim:#f0a63d22;
+    --ok:#3ddc97; --ok-dim:#3ddc9722; --bad:#e85c5c; --bad-dim:#e85c5c22;
+    --mono:'JetBrains Mono','SF Mono',Consolas,monospace;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,'Segoe UI',system-ui,sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:32px 18px 60px;}
+  .wrap{width:100%;max-width:720px;}
+  .eyebrow{font-size:11px;font-weight:800;letter-spacing:0.08em;color:var(--accent);text-transform:uppercase;margin-bottom:8px;}
+  h1{font-size:22px;margin:0 0 6px;}
+  .sub{color:var(--muted);font-size:13px;line-height:1.6;margin-bottom:26px;}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:20px 22px;margin-bottom:16px;}
+  .panel h2{font-size:13px;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted);margin:0 0 14px;}
+  .drop{border:2px dashed var(--border);border-radius:10px;padding:28px 16px;text-align:center;cursor:pointer;transition:border-color .15s, background .15s;}
+  .drop:hover, .drop.drag{border-color:var(--accent);background:var(--accent-dim);}
+  .drop .big{font-size:28px;margin-bottom:8px;}
+  .drop .t1{font-size:14px;font-weight:700;margin-bottom:4px;}
+  .drop .t2{font-size:12px;color:var(--muted);}
+  input[type=file]{display:none;}
+  .filelist{margin-top:14px;}
+  .fileitem{display:flex;align-items:center;gap:10px;padding:9px 12px;background:var(--panel-alt);border-radius:8px;margin-bottom:6px;font-size:13px;}
+  .fileitem .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .fileitem .sz{color:var(--muted);font-size:11px;flex-shrink:0;}
+  .fileitem .rm{color:var(--bad);cursor:pointer;flex-shrink:0;font-weight:700;padding:0 4px;}
+  .params{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .pfield label{display:block;font-size:11px;color:var(--muted);margin-bottom:5px;}
+  .pfield input{width:100%;background:var(--panel-alt);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:8px 10px;font-size:13px;font-family:var(--mono);}
+  .pfield .hint{font-size:10px;color:var(--muted);margin-top:4px;line-height:1.4;}
+  button.primary{width:100%;background:var(--accent);color:#1a1206;border:none;border-radius:10px;padding:14px;font-size:14px;font-weight:800;cursor:pointer;margin-top:6px;transition:opacity .15s;}
+  button.primary:disabled{opacity:0.4;cursor:not-allowed;}
+  button.primary:hover:not(:disabled){opacity:0.9;}
+  .progress{margin-top:14px;}
+  .bar{height:6px;background:var(--panel-alt);border-radius:99px;overflow:hidden;margin-bottom:8px;}
+  .bar-fill{height:100%;background:var(--accent);border-radius:99px;width:0%;transition:width .2s;}
+  .progress-text{font-size:12px;color:var(--muted);font-family:var(--mono);}
+  .result{display:none;}
+  .result.show{display:block;}
+  .stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;}
+  .stat{background:var(--panel-alt);border-radius:8px;padding:12px 10px;text-align:center;}
+  .stat .n{font-size:20px;font-weight:800;color:var(--accent);}
+  .stat .l{font-size:10px;color:var(--muted);text-transform:uppercase;margin-top:3px;}
+  .breakdown{font-size:12px;color:var(--muted);line-height:1.8;margin-bottom:16px;}
+  .breakdown b{color:var(--text);}
+  .dl-btn{display:block;text-align:center;background:var(--ok);color:#06231a;border:none;border-radius:10px;padding:14px;font-size:14px;font-weight:800;text-decoration:none;cursor:pointer;}
+  .steps{font-size:12px;color:var(--muted);line-height:1.9;margin-top:18px;padding-top:16px;border-top:1px solid var(--border);}
+  .steps b{color:var(--text);}
+  .steps .num{display:inline-block;width:18px;height:18px;background:var(--accent-dim);color:var(--accent);border-radius:50%;text-align:center;line-height:18px;font-size:10px;font-weight:800;margin-right:6px;}
+  .warn{background:var(--bad-dim);border:1px solid #e85c5c40;border-radius:8px;padding:10px 12px;font-size:12px;color:var(--text);margin-bottom:14px;line-height:1.6;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">XLSMART Analytics · Tools All-in-One</div>
+  <h1>📦 Pre-Processor Data Mentah</h1>
+  <div class="sub">
+    Upload file mentah (XLSX/XLS/CSV) <b>langsung di sini</b> — semua diproses di 1 tempat: baca file, validasi GPS/durasi, tentuin status A1/A2/A3, sampai jadi 1 file JSON kecil yang tinggal di-upload ke dashboard. Gak perlu convert manual atau buka tools lain dulu.
+  </div>
+
+  <div class="panel">
+    <h2>1. Upload File Mentah (.xlsx / .xls / .csv)</h2>
+    <div class="drop" id="drop">
+      <div class="big">📁</div>
+      <div class="t1">Klik atau drag file ke sini</div>
+      <div class="t2">Bisa pilih banyak file sekaligus (XLSX, XLS, atau CSV campur juga boleh) — nanti dikelompokkan otomatis per Cluster</div>
+    </div>
+    <input type="file" id="fileInput" multiple accept=".xlsx,.xls,.csv">
+    <div class="filelist" id="fileList"></div>
+  </div>
+
+  <div class="panel">
+    <h2>2. Parameter Validasi</h2>
+    <div class="params">
+      <div class="pfield">
+        <label>Durasi Minimal (menit)</label>
+        <input type="number" id="p_dur_short" value="2" step="0.5">
+        <div class="hint">Di bawah ini = durasi singkat, salah satu pemicu A2</div>
+      </div>
+      <div class="pfield">
+        <label>Durasi Maksimal (menit)</label>
+        <input type="number" id="p_dur_long" value="30" step="1">
+        <div class="hint">Di atas ini = durasi kelamaan (LONG)</div>
+      </div>
+      <div class="pfield">
+        <label>Jarak In Range (meter)</label>
+        <input type="number" id="p_in_range_max" value="150" step="10">
+        <div class="hint">Di atas ini = Out of Range, salah satu pemicu A2</div>
+      </div>
+      <div class="pfield">
+        <label>Jarak NEAR (meter)</label>
+        <input type="number" id="p_dis_near" value="50" step="10">
+        <div class="hint">Buat breakdown Distance Status aja</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>3. Proses & Download</h2>
+    <div class="warn">⚠️ Aturan ini <b>cuma dipakai kalau file mentah gak punya kolom Visit Status</b>. Kalau kolom itu udah ada (VALID/OBSERVE/INVESTIGATE/INCOMPLETE), datanya dipakai apa adanya — sama persis kayak logic di dashboard.</div>
+    <button class="primary" id="processBtn" disabled>Proses Semua File</button>
+    <div class="progress" id="progressWrap" style="display:none;">
+      <div class="bar"><div class="bar-fill" id="barFill"></div></div>
+      <div class="progress-text" id="progressText">Memproses...</div>
+    </div>
+    <div class="result" id="result">
+      <div class="stat-grid">
+        <div class="stat"><div class="n" id="statTotal">0</div><div class="l">Total Aktivitas</div></div>
+        <div class="stat"><div class="n" id="statClusters">0</div><div class="l">Cluster</div></div>
+        <div class="stat"><div class="n" id="statSize">0 KB</div><div class="l">Ukuran JSON</div></div>
+      </div>
+      <div class="breakdown" id="breakdown"></div>
+      <div id="downloadArea"></div>
+    </div>
+  </div>
+
+  <div class="steps">
+    <div><span class="num">1</span> Upload semua file XLSX mentah km di sini, atur parameter kalau perlu, klik "Proses Semua File".</div>
+    <div><span class="num">2</span> Download file <b>xlsmart-processed.json</b> yang dihasilkan.</div>
+    <div><span class="num">3</span> Buka dashboard XLSMART, pilih opsi <b>"Load Processed JSON"</b> di halaman upload, dan pilih file JSON tadi.</div>
+    <div><span class="num">4</span> Dashboard langsung tampil — gak perlu parsing/hitung ulang GPS & durasi dari nol.</div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+// Logic ini SAMA PERSIS dengan yang ada di dashboard (computeValidation)
+// ══════════════════════════════════════════════════════════════
+function haversineM(lat1,lon1,lat2,lon2){
+  const R=6371000,toR=Math.PI/180;
+  const dLat=(lat2-lat1)*toR, dLon=(lon2-lon1)*toR;
+  const sd=Math.sin(dLat/2),sl=Math.sin(dLon/2);
+  const a=sd*sd+Math.cos(lat1*toR)*Math.cos(lat2*toR)*sl*sl;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+function computeValidation(row, p){
+  if(row["Visit Status"] && ["VALID","OBSERVE","INVESTIGATE","INCOMPLETE"].includes(String(row["Visit Status"]).toUpperCase()))
+    return row;
+
+  const r = {...row};
+
+  const tIn  = row["Actual Visit Time"];
+  const tOut = row["Actual Check-Out Time"];
+  const hasIn  = tIn  != null && tIn  !== "";
+  const hasOut = tOut != null && tOut !== "";
+  let durMin = null;
+  if(hasIn && hasOut){
+    const d1=new Date(tIn), d2=new Date(tOut);
+    if(!isNaN(d1)&&!isNaN(d2)) durMin=(d2-d1)/60000;
+  }
+  if(durMin===null && row["Visit Duration (Menit)"]!=null)
+    durMin = parseFloat(row["Visit Duration (Menit)"]);
+  r["Visit Duration (Menit)"] = durMin;
+
+  let distIn  = parseFloat(row["Distance Check In (Meter)"])||null;
+  let distOut = parseFloat(row["Distance Check Out (Meter)"])||null;
+  const roLat = parseFloat(row["RO Latitude"]);
+  const roLon = parseFloat(row["RO Longitude"]);
+  if((distIn===null||isNaN(distIn)) && !isNaN(roLat)&&!isNaN(roLon)){
+    const ciLat=parseFloat(row["Check-In Latitude"]), ciLon=parseFloat(row["Check-In Longitude"]);
+    if(!isNaN(ciLat)&&!isNaN(ciLon)) distIn=haversineM(ciLat,ciLon,roLat,roLon);
+  }
+  if((distOut===null||isNaN(distOut)) && !isNaN(roLat)&&!isNaN(roLon)){
+    const coLat=parseFloat(row["Check-Out Latitude"]), coLon=parseFloat(row["Check-Out Longitude"]);
+    if(!isNaN(coLat)&&!isNaN(coLon)) distOut=haversineM(coLat,coLon,roLat,roLon);
+  }
+  r["Distance Check In (Meter)"]  = distIn  ?? row["Distance Check In (Meter)"];
+  r["Distance Check Out (Meter)"] = distOut ?? row["Distance Check Out (Meter)"];
+
+  const durSt = !hasIn||!hasOut?"INCOMPLETE"
+    : durMin<p.dur_short?"SHORT"
+    : durMin>p.dur_long?"LONG"
+    : "NORMAL";
+  r["Duration Status"] = durSt;
+  r["_DUR"] = durSt;
+
+  const maxDist = Math.max(distIn||0, distOut||0);
+  const disSt = !hasIn||!hasOut?"INCOMPLETE"
+    : maxDist<=p.dis_near?"NEAR"
+    : maxDist<=p.dis_far?"MID"
+    : "FAR";
+  const locSt = !hasIn||!hasOut?"INCOMPLETE"
+    : disSt==="NEAR"?"MATCH":"NOT MATCH";
+  r["Distance Status"]  = disSt;
+  r["Location Status"]  = locSt;
+  r["_DIS"] = disSt;
+  r["_LOC"] = locSt;
+
+  const inRangeYes = !hasIn||!hasOut?null:maxDist<=p.in_range_max;
+  if(row["In Range"]==null||row["In Range"]===""){
+    r["In Range"] = inRangeYes===null?"":(inRangeYes?"Yes":"No");
+  }
+
+  const isShortDur = durSt==="SHORT";
+  const isOutOfRange = inRangeYes===false;
+  const vs = !hasIn||!hasOut?"INCOMPLETE"
+    : (isShortDur&&isOutOfRange)?"INVESTIGATE"
+    : (isShortDur||isOutOfRange)?"OBSERVE"
+    : "VALID";
+  r["Visit Status"] = vs;
+  r["_VS"] = vs;
+
+  const as1 = vs==="VALID"?"A1 - NORMAL"
+    : vs==="INCOMPLETE"?"A3 - INCOMPLETE"
+    : "A2 - ANOMALY";
+  r["Activity Status"] = as1;
+  r["_CAS1"] = as1;
+  r["_CVS"] = vs;
+
+  return r;
+}
+
+function getRegionCode(cl) {
+  if(!cl) return "??";
+  const m=cl.match(/^([A-Z]{2,3})[- _]/); return m?m[1]:cl.slice(0,3).toUpperCase();
+}
+
+// ══════════════════════════════════════════════════════════════
+// UI wiring
+// ══════════════════════════════════════════════════════════════
+let uploadedFiles = [];
+
+const drop = document.getElementById('drop');
+const fileInput = document.getElementById('fileInput');
+const fileList = document.getElementById('fileList');
+const processBtn = document.getElementById('processBtn');
+
+drop.addEventListener('click', ()=>fileInput.click());
+drop.addEventListener('dragover', e=>{e.preventDefault(); drop.classList.add('drag');});
+drop.addEventListener('dragleave', ()=>drop.classList.remove('drag'));
+drop.addEventListener('drop', e=>{
+  e.preventDefault(); drop.classList.remove('drag');
+  addFiles([...e.dataTransfer.files]);
+});
+fileInput.addEventListener('change', e=>addFiles([...e.target.files]));
+
+function addFiles(files){
+  files.forEach(f=>{
+    if(!uploadedFiles.some(x=>x.name===f.name && x.size===f.size)) uploadedFiles.push(f);
+  });
+  renderFileList();
+}
+
+function renderFileList(){
+  fileList.innerHTML = '';
+  uploadedFiles.forEach((f,i)=>{
+    const div = document.createElement('div');
+    div.className = 'fileitem';
+    div.innerHTML = `<span class="nm">📄 ${f.name}</span><span class="sz">${(f.size/1024).toFixed(0)} KB</span><span class="rm" data-i="${i}">✕</span>`;
+    fileList.appendChild(div);
+  });
+  fileList.querySelectorAll('.rm').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      uploadedFiles.splice(parseInt(el.dataset.i),1);
+      renderFileList();
+    });
+  });
+  processBtn.disabled = uploadedFiles.length===0;
+}
+
+function parseCSVText(text){
+  // Parser CSV sederhana (koma ATAU titik-koma sbg separator, deteksi otomatis)
+  const firstLine = text.split(/\r?\n/)[0]||"";
+  const sep = (firstLine.match(/;/g)||[]).length > (firstLine.match(/,/g)||[]).length ? ';' : ',';
+  const lines = text.split(/\r?\n/).filter(l=>l.length>0);
+  if(!lines.length) return [];
+  const splitLine = line=>{
+    const out=[]; let cur=''; let inQ=false;
+    for(let i=0;i<line.length;i++){
+      const ch=line[i];
+      if(ch==='"'){ inQ=!inQ; }
+      else if(ch===sep && !inQ){ out.push(cur); cur=''; }
+      else cur+=ch;
+    }
+    out.push(cur);
+    return out.map(s=>s.trim());
+  };
+  const headers = splitLine(lines[0]);
+  const rows = [];
+  for(let i=1;i<lines.length;i++){
+    const cells = splitLine(lines[i]);
+    const row = {};
+    headers.forEach((h,idx)=>{ row[h] = cells[idx]!==undefined ? cells[idx] : null; });
+    rows.push(row);
+  }
+  return rows;
+}
+
+function readFileAsRows(file){
+  const isCsv = /\.csv$/i.test(file.name);
+  return new Promise((resolve,reject)=>{
+    const reader = new FileReader();
+    reader.onload = e=>{
+      if(isCsv){
+        try{ resolve(parseCSVText(e.target.result)); }
+        catch(err){ reject(err); }
+        return;
+      }
+      // Coba beberapa strategi baca XLSX, dari yg paling "ringan/lenient" ke yg lebih lengkap.
+      // Skip parsing style/VBA/HTML metadata yg gak kepake — kalau ZIP entry yg "rewel" ada di situ,
+      // strategi ini otomatis menghindarinya sama sekali.
+      const strategies = [
+        {label:'lenient', opts:{type:'array', cellDates:true, cellHTML:false, cellStyles:false, cellNF:false, bookVBA:false}},
+        {label:'dense',   opts:{type:'array', cellDates:true, cellHTML:false, cellStyles:false, cellNF:false, bookVBA:false, dense:true}},
+        {label:'default', opts:{type:'array', cellDates:true}},
+      ];
+      let lastErr = null;
+      for(const strat of strategies){
+        try{
+          let wb = XLSX.read(e.target.result, strat.opts);
+          const allRows = [];
+          wb.SheetNames.forEach(sn=>{
+            const sheet = wb.Sheets[sn];
+            const rows = XLSX.utils.sheet_to_json(sheet, {defval:null, raw:false});
+            for(let i=0;i<rows.length;i++) allRows.push(rows[i]);
+          });
+          wb = null;
+          resolve(allRows);
+          return;
+        }catch(err){ lastErr = err; /* coba strategi berikutnya */ }
+      }
+      reject(lastErr||new Error('Semua strategi baca gagal'));
+    };
+    reader.onerror = ()=>reject(new Error('Gagal baca file (kemungkinan file kebesaran utk memori browser saat ini)'));
+    if(isCsv) reader.readAsText(file); else reader.readAsArrayBuffer(file);
+  });
+}
+
+document.getElementById('processBtn').addEventListener('click', async ()=>{
+  const params = {
+    dur_short: parseFloat(document.getElementById('p_dur_short').value)||2,
+    dur_long:  parseFloat(document.getElementById('p_dur_long').value)||30,
+    dis_near:  parseFloat(document.getElementById('p_dis_near').value)||50,
+    dis_far:   200,
+    in_range_max: parseFloat(document.getElementById('p_in_range_max').value)||150,
+  };
+
+  processBtn.disabled = true;
+  const progressWrap = document.getElementById('progressWrap');
+  const barFill = document.getElementById('barFill');
+  const progressText = document.getElementById('progressText');
+  progressWrap.style.display = 'block';
+  document.getElementById('result').classList.remove('show');
+
+  const failedFiles = [];
+  const clusterMap = {}; // label -> {label, regionCode, fileName, rows:[]}
+  let totalRows = 0;
+
+  for(let fi=0; fi<uploadedFiles.length; fi++){
+    const file = uploadedFiles[fi];
+    progressText.textContent = `Membaca ${file.name}... (${fi+1}/${uploadedFiles.length})`;
+    barFill.style.width = ((fi)/uploadedFiles.length*40)+'%';
+    await new Promise(r=>setTimeout(r,10));
+
+    let rawRows;
+    try{ rawRows = await readFileAsRows(file); }
+    catch(err){
+      console.error('Gagal proses '+file.name+':', err);
+      failedFiles.push({name:file.name, error:err.message});
+      continue; // lanjut ke file berikutnya, jangan hentikan semuanya
+    }
+
+    progressText.textContent = `Validasi ${file.name}... (${rawRows.length.toLocaleString()} baris)`;
+    barFill.style.width = ((fi+0.5)/uploadedFiles.length*40)+'%';
+    await new Promise(r=>setTimeout(r,10));
+
+    // Kelompokkan per Cluster (kalau ada kolom Cluster), fallback ke nama file
+    const byCluster = {};
+    rawRows.forEach(row=>{
+      const cl = String(row["Cluster"]||"").trim() || file.name.split(".")[0];
+      if(!byCluster[cl]) byCluster[cl]=[];
+      byCluster[cl].push(row);
+    });
+
+    for(const [cl, rows] of Object.entries(byCluster)){
+      if(!clusterMap[cl]){
+        clusterMap[cl] = { label:cl, regionCode:getRegionCode(cl), fileName:file.name, rows:[] };
+      }
+      const CHUNK = 5000;
+      for(let ci=0; ci<rows.length; ci+=CHUNK){
+        const chunk = rows.slice(ci, ci+CHUNK);
+        for(let i=0;i<chunk.length;i++){
+          clusterMap[cl].rows.push(computeValidation(chunk[i], params));
+        }
+        totalRows += chunk.length;
+        if(ci+CHUNK<rows.length) await new Promise(r=>setTimeout(r,0)); // kasih browser jeda napas tiap 5.000 baris
+      }
+    }
+  }
+
+  barFill.style.width = '80%';
+  progressText.textContent = 'Menyusun JSON...';
+  await new Promise(r=>setTimeout(r,10));
+
+  const clusters = Object.values(clusterMap);
+
+  if(failedFiles.length>0){
+    const warnDiv = document.createElement('div');
+    warnDiv.className = 'warn';
+    warnDiv.innerHTML = `⚠️ <b>${failedFiles.length} file gagal diproses:</b><br>` +
+      failedFiles.map(f=>`&nbsp;&nbsp;• ${f.name} — <i>${f.error}</i>`).join('<br>') +
+      `<br><br>Kemungkinan penyebab: file terlalu besar/kompleks buat memori browser saat ini, atau formatnya sedikit bermasalah. ` +
+      `<br><br>Tools ini udah nyoba 3 cara baca berbeda buat file itu, tapi semuanya gagal. ` +
+      `<b>Saran terakhir:</b> buka file itu di Excel/Numbers/Google Sheets, lalu "Save As" ulang sebagai .xlsx baru (atau export ke .csv) dari aplikasi itu — biasanya ini benerin struktur file yang bermasalah — lalu upload ulang file hasil save-nya di sini.`;
+    document.getElementById('breakdown').before(warnDiv);
+  }
+
+  if(totalRows===0){
+    progressText.textContent = 'Gagal — semua file gagal diproses.';
+    processBtn.disabled = false;
+    return;
+  }
+
+  // Breakdown per status
+  let a1=0,a2=0,a3=0;
+  clusters.forEach(c=>c.rows.forEach(r=>{
+    const s = r["Activity Status"]||r["_CAS1"]||"";
+    if(s.startsWith("A1")) a1++; else if(s.startsWith("A2")) a2++; else if(s.startsWith("A3")) a3++;
+  }));
+
+  document.getElementById('statTotal').textContent = totalRows.toLocaleString();
+  document.getElementById('statClusters').textContent = clusters.length;
+  document.getElementById('breakdown').innerHTML =
+    `<b>A1 Normal:</b> ${a1.toLocaleString()} (${(a1/totalRows*100).toFixed(1)}%) &nbsp;·&nbsp; ` +
+    `<b>A2 Anomaly:</b> ${a2.toLocaleString()} (${(a2/totalRows*100).toFixed(1)}%) &nbsp;·&nbsp; ` +
+    `<b>A3 Incomplete:</b> ${a3.toLocaleString()} (${(a3/totalRows*100).toFixed(1)}%)<br>` +
+    `Cluster: ${clusters.map(c=>c.label).join(', ')}`;
+
+  // Bikin JSON per-cluster TERPISAH (lebih ringan per file, aman buat data gede) —
+  // ini juga cocok kalau mau upload ke dashboard satu region per satu waktu di HP.
+  const downloadArea = document.getElementById('downloadArea');
+  downloadArea.innerHTML = '';
+  let totalSizeBytes = 0;
+
+  for(let ci=0; ci<clusters.length; ci++){
+    const c = clusters[ci];
+    progressText.textContent = `Menyusun JSON: ${c.label}... (${ci+1}/${clusters.length})`;
+    await new Promise(r=>setTimeout(r,0));
+    const singleOutput = {
+      version: 1, generatedAt: new Date().toISOString(),
+      generatedBy: "XLSMART Pre-Processor (offline tool)", params,
+      clusters: [c],
+    };
+    const jsonStr = JSON.stringify(singleOutput);
+    const blob = new Blob([jsonStr], {type:'application/json'});
+    totalSizeBytes += blob.size;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.className = 'dl-btn'; a.href = url;
+    a.download = `xlsmart-processed-${c.label.replace(/[^a-z0-9]/gi,'_')}.json`;
+    a.style.marginBottom = '8px';
+    a.textContent = `⬇️ Download ${c.label} (${c.rows.length.toLocaleString()} baris, ${(blob.size/1024).toFixed(0)} KB)`;
+    downloadArea.appendChild(a);
+  }
+
+  // Opsi gabungan (kalau clusternya sedikit / mau 1 file aja) — di-generate terakhir & ditandain
+  if(clusters.length>1){
+    const combineNote = document.createElement('div');
+    combineNote.style.cssText = 'font-size:11px;color:var(--muted);margin:10px 0 6px;text-align:center;';
+    combineNote.textContent = 'Atau gabung semua jadi 1 file (upload ke dashboard sekali jalan):';
+    downloadArea.appendChild(combineNote);
+    const combineBtn = document.createElement('button');
+    combineBtn.className = 'dl-btn';
+    combineBtn.style.cssText = 'width:100%;border:1px solid var(--border);background:var(--panel-alt);color:var(--text);';
+    combineBtn.textContent = '📦 Gabungkan Semua Jadi 1 File JSON';
+    combineBtn.onclick = async ()=>{
+      combineBtn.textContent = 'Menggabungkan...'; combineBtn.disabled = true;
+      await new Promise(r=>setTimeout(r,10));
+      const combined = { version:1, generatedAt:new Date().toISOString(), generatedBy:"XLSMART Pre-Processor (offline tool)", params, clusters };
+      const jsonStr = JSON.stringify(combined);
+      const blob = new Blob([jsonStr], {type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'xlsmart-processed-nasional.json'; a.click();
+      combineBtn.textContent = `📦 Gabungkan Semua Jadi 1 File JSON (${(blob.size/1024).toFixed(0)} KB)`;
+      combineBtn.disabled = false;
+    };
+    downloadArea.appendChild(combineBtn);
+  }
+
+  document.getElementById('statSize').textContent = (totalSizeBytes/1024).toFixed(0)+' KB';
+  barFill.style.width = '100%';
+  progressText.textContent = 'Selesai!';
+  document.getElementById('result').classList.add('show');
+  processBtn.disabled = false;
+});
+</script>
+</body>
+</html>
