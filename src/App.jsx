@@ -1395,27 +1395,46 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
     if(!files||!files.length) return;
     setLoading(true);setError(null);
     try{
-      const file=files[0];
-      if(!/\.json$/i.test(file.name)) throw new Error("File harus berformat .json (hasil dari tools Pre-Processor)");
-      const text=await file.text();
-      const parsed=JSON.parse(text);
-      if(!parsed||!Array.isArray(parsed.clusters)||!parsed.clusters.length)
-        throw new Error("Format JSON tidak dikenali — pastikan ini hasil dari tools Pre-Processor XLSMART");
-      const entries=parsed.clusters.map(c=>({
-        name:c.fileName?`${c.fileName}|${c.label}`:c.label,
-        label:c.label,
-        regionCode:c.regionCode||getRegionCode(c.label),
-        rows:c.rows||[],
-      }));
-      setQueue(prev=>{
-        const m=[...prev];
-        entries.forEach(r=>{
-          const byLabel=m.findIndex(x=>x.label===r.label);
-          if(byLabel>=0) m[byLabel]=r; else m.push(r);
-        });
-        return m;
-      });
-      setError(`✅ ${entries.length} cluster dimuat dari JSON (sudah tervalidasi, siap pakai — gak perlu proses ulang)`);
+      const fileList=Array.from(files);
+      const invalidFiles=fileList.filter(f=>!/\.json$/i.test(f.name));
+      if(invalidFiles.length) throw new Error(`Berkas harus berformat .json (hasil dari Pre-Processor): ${invalidFiles.map(f=>f.name).join(", ")}`);
+
+      let totalClusters=0;
+      const failedParses=[];
+      for(const file of fileList){
+        try{
+          const text=await file.text();
+          const parsed=JSON.parse(text);
+          if(!parsed||!Array.isArray(parsed.clusters)||!parsed.clusters.length)
+            throw new Error("Format JSON tidak dikenali");
+          const entries=parsed.clusters.map(c=>({
+            name:c.fileName?`${c.fileName}|${c.label}`:c.label,
+            label:c.label,
+            regionCode:c.regionCode||getRegionCode(c.label),
+            rows:c.rows||[],
+          }));
+          setQueue(prev=>{
+            const m=[...prev];
+            entries.forEach(r=>{
+              const byLabel=m.findIndex(x=>x.label===r.label);
+              if(byLabel>=0){
+                // Cluster dengan label sama (misalnya potongan mingguan dari cluster yang sama) — gabungkan barisnya
+                const existing=m[byLabel];
+                m[byLabel]={...existing, rows:[...(existing.rows||[]), ...(r.rows||[])]};
+              } else {
+                m.push(r);
+              }
+            });
+            return m;
+          });
+          totalClusters+=entries.length;
+        }catch(err){
+          failedParses.push(file.name);
+        }
+      }
+
+      if(failedParses.length) throw new Error(`Gagal memproses berkas berikut: ${failedParses.join(", ")}. Pastikan berkas tersebut merupakan hasil pemrosesan dari Pre-Processor XLSMART.`);
+      setError(`Berhasil memuat ${totalClusters} cluster dari ${fileList.length} berkas JSON (data sudah tervalidasi, siap digunakan tanpa perlu pemrosesan ulang).`);
       setTimeout(()=>setError(null),5000);
     }catch(err){setError(err.message);}
     setLoading(false);
@@ -1530,7 +1549,7 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
           <img src="/xlsmart-logo.png" alt="XLSMART" width="46" height="46" style={{objectFit:"contain",flexShrink:0}}/>
           <div>
             <div style={{fontSize:20,fontWeight:800,color:t.text}}>XL<span style={{color:"#3b82f6"}}>SMART</span> <span style={{color:"#3b82f6"}}>Analytics</span></div>
-            <div style={{fontSize:11,color:t.muted,letterSpacing:"0.1em",textTransform:"uppercase"}}>Activity Quality Dashboard</div>
+            <div style={{fontSize:11,color:t.muted,letterSpacing:"0.1em",textTransform:"uppercase"}}>Dashboard Kualitas Aktivitas</div>
           </div>
         </div>
         <p style={{color:t.muted,fontSize:13,margin:0}}>Upload file per cluster — dashboard otomatis kelompokkan per region & nasional</p>
@@ -1545,7 +1564,7 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
           ?<><div style={{fontSize:40,marginBottom:10}}>⚙️</div><div style={{color:"#60a5fa",fontWeight:700}}>{typeof loading==="string"?loading:"Membaca file..."}</div></>
           :<>
             <div style={{fontSize:46,marginBottom:10}}>{drag?"📥":"📂"}</div>
-            <div style={{color:t.text,fontSize:15,fontWeight:700,marginBottom:4}}>{drag?"Lepas di sini!":"Drag & drop file XLS/XLSX/CSV"}</div>
+            <div style={{color:t.text,fontSize:15,fontWeight:700,marginBottom:4}}>{drag?"Lepaskan Berkas di Sini!":"Seret dan Letakkan Berkas XLS/XLSX/CSV"}</div>
             <div style={{color:t.muted,fontSize:12,marginBottom:18}}>Atau pilih file / folder</div>
             <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}>
               <button onClick={()=>fileRef.current.click()} style={{background:"linear-gradient(135deg,#1d5fc0,#2d8ef5)",color:"#fff",border:"none",padding:"9px 22px",borderRadius:10,fontWeight:700,fontSize:13,cursor:"pointer"}}>📄 Pilih File</button>
@@ -1558,13 +1577,13 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
       <div style={{width:"100%",maxWidth:520,marginTop:14,padding:"12px 16px",background:t.card,borderRadius:12,border:`1px solid ${P.accent}50`}}>
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
           <span>📦</span>
-          <span style={{fontWeight:700,fontSize:12,color:t.text}}>Load Processed JSON</span>
-          <span style={{marginLeft:"auto",fontSize:10,color:t.muted}}>Lebih cepat</span>
+          <span style={{fontWeight:700,fontSize:12,color:t.text}}>Muat Berkas JSON Terproses</span>
+          <span style={{marginLeft:"auto",fontSize:10,color:t.muted}}>Lebih Cepat</span>
         </div>
-        <div style={{fontSize:10,color:t.muted,marginBottom:8}}>Udah proses file mentah pakai tools Pre-Processor? Upload hasil JSON-nya di sini — langsung dipakai tanpa hitung ulang GPS/durasi.</div>
-        <input ref={jsonRef} type="file" accept=".json" style={{display:"none"}} onClick={e=>e.target.value=""} onChange={e=>handleJsonFile(e.target.files)}/>
+        <div style={{fontSize:10,color:t.muted,marginBottom:8}}>Apabila berkas mentah sudah diproses menggunakan Pre-Processor, unggah hasil berkas JSON tersebut di sini untuk digunakan langsung tanpa perlu menghitung ulang data GPS dan durasi. Dapat memilih beberapa berkas sekaligus.</div>
+        <input ref={jsonRef} type="file" accept=".json" multiple style={{display:"none"}} onClick={e=>e.target.value=""} onChange={e=>handleJsonFile(e.target.files)}/>
         <label onClick={()=>jsonRef.current.click()} style={{display:"inline-flex",alignItems:"center",gap:6,background:P.accent+"22",color:P.accent,borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:11,fontWeight:700,border:`1px solid ${P.accent}60`}}>
-          📂 Pilih File JSON
+          📂 Pilih Berkas JSON
         </label>
       </div>
 
@@ -1894,44 +1913,83 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
   const handleAddFiles=async(fileList)=>{
     if(!fileList?.length) return;
     const fArr=Array.from(fileList);
-    setAddLoading({current:0,total:fArr.length,name:"Memulai..."});
-    try{
-      const results=await Promise.all(fArr.map((f,fi)=>new Promise((res,rej)=>{
-        setAddLoading(p=>p?{...p,current:fi,name:f.name.split(".")[0]}:null);
-        const rd=new FileReader();
-        rd.onload=ev=>{
-          try{
-            const wb2=XLSX.read(ev.target.result,{type:"array",cellDates:true,cellHTML:false});
-            const fileResults=[];
-            for(const sn of wb2.SheetNames){
-              const ws2=wb2.Sheets[sn]; if(!ws2||!ws2["!ref"]) continue;
-              const {rows}=readFileRows(wb2,sn);
-              if(!rows?.length) continue;
-              const cls=[...new Set(rows.map(r=>r["Cluster"]).filter(Boolean))];
-              if(cls.length>1){cls.forEach(cl=>{const r2=rows.filter(r=>String(r["Cluster"]||"").trim()===cl);if(r2.length)fileResults.push({name:f.name+"|"+cl,label:cl,regionCode:getRegionCode(cl),rows:r2,originFile:f,filterCluster:cl});});}
-              else{const lbl=cls[0]||(wb2.SheetNames.length>1?sn:f.name.split(".")[0]);fileResults.push({name:wb2.SheetNames.length>1?f.name+"|"+sn:f.name,label:lbl,regionCode:getRegionCode(lbl),rows,originFile:f});}
-            }
-            if(!fileResults.length) throw new Error(f.name+": kosong");
-            res(fileResults.length===1?fileResults[0]:{multi:true,results:fileResults,name:f.name});
-          }catch(e){rej(e);}
-        };
-        rd.readAsArrayBuffer(f);
-      })));
-      const flat=results.flatMap(r=>r.multi?r.results:[r]);
-      onAddFiles&&onAddFiles(prev=>{
-        const m=[...(prev||[])];
-        flat.forEach(r=>{
-          const reRows=r.rows.map(row=>{const rid=String(row["Outlet ID"]||"").trim();const ro=roMap[rid];return ro?{...row,"RO Latitude":row["RO Latitude"]??ro.lat,"RO Longitude":row["RO Longitude"]??ro.lon,"RO Census":row["RO Census"]??(ro.census?"YES":"NO"),"Outlet Type":row["Outlet Type"]||ro.type}:row;});
-          const byName=m.findIndex(x=>x.name===r.name);
-          const byLabel=m.findIndex(x=>x.label===r.label);
-          if(byName>=0){m[byName]={...r,rows:reRows};}
-          else if(byLabel>=0){const ex=m[byLabel];const exIds=new Set((ex.rows||[]).map(x=>String(x["Activity ID"]||"")));const newR=reRows.filter(x=>!exIds.has(String(x["Activity ID"]||"")));m[byLabel]={...ex,rows:[...(ex.rows||[]),...newR]};}
-          else{m.push({...r,rows:reRows});}
+    const jsonFiles=fArr.filter(f=>/\.json$/i.test(f.name));
+    const xlsxFiles=fArr.filter(f=>!/\.json$/i.test(f.name));
+
+    setAddLoading({current:0,total:fArr.length,name:"Memulai proses..."});
+    const mergedResults=[]; // {name,label,regionCode,rows,originFile?} — dari XLSX maupun JSON, digabung sebelum di-commit ke state
+
+    // ── Proses berkas JSON (hasil Pre-Processor) — dibaca langsung, tanpa parsing XLSX ──
+    for(let ji=0; ji<jsonFiles.length; ji++){
+      const f=jsonFiles[ji];
+      setAddLoading(p=>p?{...p,current:ji,name:"Membaca berkas JSON: "+f.name}:null);
+      try{
+        const text=await f.text();
+        const parsed=JSON.parse(text);
+        if(!parsed||!Array.isArray(parsed.clusters)||!parsed.clusters.length) throw new Error("Format JSON tidak dikenali");
+        parsed.clusters.forEach(c=>{
+          mergedResults.push({
+            name:c.fileName?`${c.fileName}|${c.label}`:c.label,
+            label:c.label,
+            regionCode:c.regionCode||getRegionCode(c.label),
+            rows:c.rows||[],
+          });
         });
-        return m;
+      }catch(e){ console.error("Gagal memproses berkas JSON "+f.name+":", e); }
+    }
+
+    // ── Proses berkas XLSX/XLS/CSV mentah — melalui parsing dan validasi seperti biasa ──
+    if(xlsxFiles.length){
+      try{
+        const results=await Promise.all(xlsxFiles.map((f,fi)=>new Promise((res,rej)=>{
+          setAddLoading(p=>p?{...p,current:jsonFiles.length+fi,name:"Membaca berkas: "+f.name.split(".")[0]}:null);
+          const isCsv=/\.csv$/i.test(f.name);
+          const rd=new FileReader();
+          rd.onload=ev=>{
+            try{
+              const fileResults=[];
+              const buildEntries=(rows,sn)=>{
+                if(!rows?.length) return;
+                const cls=[...new Set(rows.map(r=>r["Cluster"]).filter(Boolean))];
+                if(cls.length>1){cls.forEach(cl=>{const r2=rows.filter(r=>String(r["Cluster"]||"").trim()===cl);if(r2.length)fileResults.push({name:f.name+"|"+cl,label:cl,regionCode:getRegionCode(cl),rows:r2,originFile:f,filterCluster:cl});});}
+                else{const lbl=cls[0]||(sn?sn:f.name.split(".")[0]);fileResults.push({name:sn?f.name+"|"+sn:f.name,label:lbl,regionCode:getRegionCode(lbl),rows,originFile:f});}
+              };
+              if(isCsv){
+                const rows=parseCSVText(ev.target.result);
+                buildEntries(rows,null);
+              } else {
+                const wb2=XLSX.read(ev.target.result,{type:"array",cellDates:true,cellHTML:false});
+                for(const sn of wb2.SheetNames){
+                  const ws2=wb2.Sheets[sn]; if(!ws2||!ws2["!ref"]) continue;
+                  const {rows}=readFileRows(wb2,sn);
+                  buildEntries(rows,wb2.SheetNames.length>1?sn:null);
+                }
+              }
+              if(!fileResults.length) throw new Error(f.name+": berkas kosong");
+              res(fileResults.length===1?fileResults[0]:{multi:true,results:fileResults,name:f.name});
+            }catch(e){rej(e);}
+          };
+          rd.onerror=()=>rej(new Error(f.name+": gagal membaca berkas"));
+          if(isCsv) rd.readAsText(f); else rd.readAsArrayBuffer(f);
+        })));
+        const flat=results.flatMap(r=>r.multi?r.results:[r]);
+        mergedResults.push(...flat);
+      }catch(e){console.error("Gagal memproses berkas mentah:", e);}
+    }
+
+    onAddFiles&&onAddFiles(prev=>{
+      const m=[...(prev||[])];
+      mergedResults.forEach(r=>{
+        const reRows=(r.rows||[]).map(row=>{const rid=String(row["Outlet ID"]||"").trim();const ro=roMap[rid];return ro?{...row,"RO Latitude":row["RO Latitude"]??ro.lat,"RO Longitude":row["RO Longitude"]??ro.lon,"RO Census":row["RO Census"]??(ro.census?"YES":"NO"),"Outlet Type":row["Outlet Type"]||ro.type}:row;});
+        const byName=m.findIndex(x=>x.name===r.name);
+        const byLabel=m.findIndex(x=>x.label===r.label);
+        if(byName>=0){m[byName]={...r,rows:reRows};}
+        else if(byLabel>=0){const ex=m[byLabel];const exIds=new Set((ex.rows||[]).map(x=>String(x["Activity ID"]||"")));const newR=reRows.filter(x=>!exIds.has(String(x["Activity ID"]||"")));m[byLabel]={...ex,rows:[...(ex.rows||[]),...newR]};}
+        else{m.push({...r,rows:reRows});}
       });
-    }catch(e){console.error(e);}
-    setAddLoading({current:fArr.length,total:fArr.length,name:"Selesai!"});
+      return m;
+    });
+    setAddLoading({current:fArr.length,total:fArr.length,name:"Selesai"});
     setTimeout(()=>setAddLoading(null),1500);
   };
 
@@ -2082,10 +2140,10 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
   const compLabel=selCluster?`Outlet Type — ${selCluster}`:selRegion?`Cluster dalam ${selRegion}`:regionCodes.length>1?`Perbandingan Region`:`Cluster dalam Region ${regionCodes[0]||""}`;
 
   const tabs=[
-    {id:"overview",label:"Overview"},
-    {id:"trend",label:"Trend"},
+    {id:"overview",label:"Ringkasan"},
+    {id:"trend",label:"Tren"},
     {id:"outlet",label:"Outlet"},
-    {id:"detail",label:"Status Detail"},
+    {id:"detail",label:"Detail Status"},
     {id:"canvasser",label:"Canvasser"},
     {id:"findings",label:"Temuan"},
   ];
@@ -2147,7 +2205,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
       if(worst){
         out.push({severity:"fraud",icon:"📍",
           title:`${worst.name} — GPS sama di ${worst.n} outlet berbeda`,
-          desc:`Titik koordinat check-in PERSIS SAMA (radius ±100m) dipakai untuk ${worst.n} outlet berbeda (${worst.cluster}), termasuk "${worst.sample.join('", "')}". Kemungkinan gak pernah pindah lokasi fisik saat check-in.`,
+          desc:`Titik koordinat check-in PERSIS SAMA (radius ±100m) dipakai untuk ${worst.n} outlet berbeda (${worst.cluster}), termasuk "${worst.sample.join('", "')}". Kemungkinan tidak pernah berpindah lokasi fisik saat check-in.`,
           rec:`Cek riwayat kunjungan ${worst.name} satu-satu — kemungkinan check-in dilakukan dari 1 tempat tetap (rumah/warung), bukan dari outlet.`,
           action:()=>{const cv=(view.canvassers||[]).find(c=>c.name===worst.name&&c.cluster===worst.cluster)||{name:worst.name,cluster:worst.cluster};const rows=getCanvasserRows(worst.name,worst.cluster,"A2");setCanvDetail({canvasser:cv,drillLabel:"A2 - Anomaly",color:P.a2,rows,drillKey:"A2",sessionKey:Date.now()});}});
       }
@@ -2181,8 +2239,8 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
       if(worst){
         out.push({severity:"fraud",icon:"🚀",
           title:`${worst.name} — kecepatan perjalanan mustahil`,
-          desc:`Dari "${worst.from}" ke "${worst.to}" (${worst.cluster}) — jarak ${worst.distKm.toFixed(1)}km cuma dalam ${(worst.dtH*60).toFixed(0)} menit (≈${Math.round(worst.speed)} km/jam). Gak masuk akal untuk kunjungan lapangan.`,
-          rec:`Cek 2 kunjungan ini manual — indikasi salah satu titik GPS-nya di-input palsu / kunjungan gak beneran terjadi.`,
+          desc:`Dari "${worst.from}" ke "${worst.to}" (${worst.cluster}) — jarak ${worst.distKm.toFixed(1)} km hanya ditempuh dalam ${(worst.dtH*60).toFixed(0)} menit (≈${Math.round(worst.speed)} km/jam). Hal ini tidak masuk akal untuk kunjungan lapangan.`,
+          rec:`Periksa kedua kunjungan ini secara manual — terdapat indikasi salah satu titik GPS diinput secara tidak sah, atau kunjungan tersebut tidak benar-benar terjadi.`,
           action:()=>{const cv=(view.canvassers||[]).find(c=>c.name===worst.name&&c.cluster===worst.cluster)||{name:worst.name,cluster:worst.cluster};const rows=getCanvasserRows(worst.name,worst.cluster,"A2");setCanvDetail({canvasser:cv,drillLabel:"A2 - Anomaly",color:P.a2,rows,drillKey:"A2",sessionKey:Date.now()});}});
       }
     }
@@ -2313,8 +2371,8 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
         if(worst.rate<=0.1){
           out.push({severity:"medium",icon:"🏪",
             title:`Outlet ${worst.name} — AVA compliance ${Math.round(worst.rate*100)}%`,
-            desc:`Dari ${worst.tot.toLocaleString()} pengecekan item AVA, cuma ${worst.yes} yang comply.`,
-            rec:"Follow-up ke outlet ini — materi promosi kemungkinan gak terpasang sama sekali."});
+            desc:`Dari ${worst.tot.toLocaleString()} pengecekan item AVA, hanya ${worst.yes} yang comply.`,
+            rec:"Lakukan tindak lanjut ke outlet ini — materi promosi kemungkinan tidak terpasang sama sekali."});
         }
       }
     }
@@ -2350,7 +2408,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
             <img src="/xlsmart-logo.png" alt="XLSMART" width="36" height="36" style={{objectFit:"contain",flexShrink:0,borderRadius:9}}/>
             <div>
               <div style={{fontSize:16,fontWeight:800,color:t.text}}>XLSMART Analytics</div>
-              <div style={{fontSize:9,color:t.muted,letterSpacing:"0.08em",textTransform:"uppercase"}}>Activity Quality Dashboard</div>
+              <div style={{fontSize:9,color:t.muted,letterSpacing:"0.08em",textTransform:"uppercase"}}>Dashboard Kualitas Aktivitas</div>
             </div>
           </div>
           <div style={{fontSize:11,color:t.muted,paddingLeft:20,borderLeft:`1px solid ${t.border}`,lineHeight:1.5}}>
@@ -2361,10 +2419,10 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           <button onClick={()=>setShowParams(p=>!p)} title="Parameter" style={{width:34,height:34,background:showParams?P.accent+"22":t.cardAlt,border:"1px solid "+(showParams?P.accent:t.border),color:showParams?P.accent:t.muted,borderRadius:9,cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>⚙️</button>
           <button onClick={toggleDark} title="Theme" style={{width:34,height:34,background:t.cardAlt,border:`1px solid ${t.border}`,color:t.text,borderRadius:9,cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>{dark?"☀️":"🌙"}</button>
-          <button onClick={()=>setShowFileManager(true)} style={{background:t.cardAlt,border:`1px solid ${t.border}`,color:t.muted,borderRadius:9,padding:"0 14px",height:34,fontSize:11,cursor:"pointer",fontWeight:700}}>↩ Ganti File ({clusters.length})</button>
+          <button onClick={()=>setShowFileManager(true)} style={{background:t.cardAlt,border:`1px solid ${t.border}`,color:t.muted,borderRadius:9,padding:"0 14px",height:34,fontSize:11,cursor:"pointer",fontWeight:700}}>↩ Ganti Berkas ({clusters.length})</button>
           <label style={{background:P.accent,border:"none",color:"#1a1200",borderRadius:9,padding:"0 16px",height:34,fontSize:11,cursor:"pointer",fontWeight:800,display:"inline-flex",alignItems:"center",gap:5}}>
-            + Add Files
-            <input type="file" accept=".xlsx,.xls" multiple style={{display:"none"}} onClick={e=>e.target.value=""} onChange={e=>handleAddFiles(e.target.files)}/>
+            + Tambah Berkas
+            <input type="file" accept=".xlsx,.xls,.csv,.json" multiple style={{display:"none"}} onClick={e=>e.target.value=""} onChange={e=>handleAddFiles(e.target.files)}/>
           </label>
         </div>
       </div>
@@ -2559,7 +2617,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
           <div style={{display:"grid",gap:16}}>
 
             {/* ── Key Insights ── */}
-            <div style={{fontWeight:700,marginBottom:14,fontSize:11,letterSpacing:"0.06em",textTransform:"uppercase",color:t.muted}}>Key Insights</div>
+            <div style={{fontWeight:700,marginBottom:14,fontSize:11,letterSpacing:"0.06em",textTransform:"uppercase",color:t.muted}}>Wawasan Utama</div>
                 {(()=>{
                   const wA2=[...view.canvassers].filter(c=>c.A2>0).sort((a,b)=>b.A2-a.A2)[0];
                   const wA3=[...view.canvassers].filter(c=>c.A3>0).sort((a,b)=>b.A3-a.A3)[0];
@@ -2612,7 +2670,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                     <div style={{...card(),height:520,overflowY:"auto"}}>
                       {/* Section 1 */}
                       {topCanvasserItems.length>0&&<>
-                        <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Top Canvasser per Status</div>
+                        <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Canvasser Teratas per Status</div>
                         <div style={{fontSize:10,color:t.muted,marginBottom:8}}>Klik buat lihat detail kunjungannya</div>
                         {topCanvasserItems.map((it,i)=>(
                           <div key={i} onClick={it.onClick} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:`1px solid ${t.border}`,cursor:"pointer"}}
@@ -2630,7 +2688,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
 
                       {/* Section 2 */}
                       {(topRegions.length>0||topClusters.length>0)&&<div style={{marginTop:18}}>
-                        <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:8}}>Ranking Cluster & Region</div>
+                        <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:8}}>Peringkat Cluster & Region</div>
                         <div style={{display:"flex",gap:14,marginBottom:10}}>
                           {["A1","A2","A3"].map(k=>(
                             <span key={k} onClick={()=>setInsightRankTab(k)} style={{fontSize:11,fontWeight:700,color:insightRankTab===k?rankColorMap[k]:t.muted,paddingBottom:5,borderBottom:`2px solid ${insightRankTab===k?rankColorMap[k]:"transparent"}`,cursor:"pointer"}}>{k}</span>
@@ -2638,7 +2696,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                         </div>
                         <div style={{display:"flex",gap:20}}>
                           {topRegions.length>0&&<div style={{flex:1,minWidth:0}}>
-                            <div style={{fontSize:9,color:t.muted,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>🗺 Top Region</div>
+                            <div style={{fontSize:9,color:t.muted,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>🗺 Region Teratas</div>
                             {topRegions.map((r,ri)=>(
                               <div key={ri} onClick={()=>openRank(r)} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"5px 0",borderBottom:ri<topRegions.length-1?`1px solid ${t.border}`:"none",cursor:r.v?"pointer":"default"}}
                                 onMouseEnter={e=>{if(r.v)e.currentTarget.style.opacity="0.7";}} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
@@ -2648,7 +2706,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                             ))}
                           </div>}
                           {topClusters.length>0&&<div style={{flex:1,minWidth:0}}>
-                            <div style={{fontSize:9,color:t.muted,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>📍 Top Cluster</div>
+                            <div style={{fontSize:9,color:t.muted,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>📍 Cluster Teratas</div>
                             {topClusters.map((r,ri)=>(
                               <div key={ri} onClick={()=>openRank(r)} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"5px 0",borderBottom:ri<topClusters.length-1?`1px solid ${t.border}`:"none",cursor:r.v?"pointer":"default"}}
                                 onMouseEnter={e=>{if(r.v)e.currentTarget.style.opacity="0.7";}} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
@@ -2744,9 +2802,9 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                 // Cluster level: Top 5 canvassers per A1, A2, A3
                 <div>
                   {[
-                    {label:"Top 5 — A1 Normal",color:P.a1,key:"A1",sort:"A1"},
-                    {label:"Top 5 — A2 Anomaly",color:P.a2,key:"A2",sort:"A2"},
-                    {label:"Top 5 — A3 Incomplete",color:P.a3,key:"A3",sort:"A3"},
+                    {label:"5 Teratas — A1 Normal",color:P.a1,key:"A1",sort:"A1"},
+                    {label:"5 Teratas — A2 Anomaly",color:P.a2,key:"A2",sort:"A2"},
+                    {label:"5 Teratas — A3 Incomplete",color:P.a3,key:"A3",sort:"A3"},
                   ].map((cat,ci)=>{
                     const top5=[...view.canvassers].sort((a,b)=>b[cat.sort]-a[cat.sort]).slice(0,5);
                     const maxV=top5[0]?.[cat.sort]||1;
@@ -2964,7 +3022,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
 
                   <div style={{border:`1px solid ${t.border}`,background:t.card,borderRadius:12,padding:"14px 16px",marginBottom:18,fontSize:12,color:t.text,lineHeight:1.7,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
                     ✅ <b style={{color:P.a1}}>{healthiest.type.replace("RO ","")} paling sehat</b> — {pctS(healthiest.A1,healthiest.total)} aktivitasnya Normal, dari total {healthiest.total.toLocaleString()} aktivitas.<br/><br/>
-                    ⚠️ <b style={{color:"#ef4444"}}>{weakest.type.replace("RO ","")} paling perlu perhatian</b> — rate A1 cuma {pctS(weakest.A1,weakest.total)}, dari total {weakest.total.toLocaleString()} aktivitas.
+                    ⚠️ <b style={{color:"#ef4444"}}>{weakest.type.replace("RO ","")} paling perlu perhatian</b> — rate A1 hanya {pctS(weakest.A1,weakest.total)}, dari total {weakest.total.toLocaleString()} aktivitas.
                     {bestRegion&&worstRegion&&bestRegion.code!==worstRegion.code&&<>
                       <br/><br/>📍 Secara region, <b style={{color:P.a1}}>{regionFullName(bestRegion.code)} paling sehat</b> ({bestRegion.a1p}% A1), <b style={{color:"#ef4444"}}>{regionFullName(worstRegion.code)} paling perlu perhatian</b> ({worstRegion.a1p}% A1).
                     </>}
@@ -2972,7 +3030,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
 
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:16}}>
                     <div style={{...card(),height:420,overflowY:"auto"}}>
-                      <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Ranking Outlet Type</div>
+                      <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Peringkat Tipe Outlet</div>
                       <div style={{fontSize:11,color:t.muted,marginBottom:12}}>Urut dari volume terbesar · klik buat lihat detail</div>
                       {byVolume.map((d,i)=>{
                         const a1p=pct(d.A1,d.total);
@@ -3028,7 +3086,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
             </div>
 
             <div style={{marginBottom:28}}>
-              <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:6}}>Detail per Outlet Type</div>
+              <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:6}}>Detail per Tipe Outlet</div>
               {(()=>{const worst=[...view.outletData].sort((a,b)=>pct(a.A1,a.total)-pct(b.A1,b.total))[0];const best=[...view.outletData].sort((a,b)=>pct(b.A1,b.total)-pct(a.A1,a.total))[0];
                 return worst&&best?(
                 <div style={{fontSize:11,color:t.muted,marginBottom:12}}>
@@ -3336,12 +3394,12 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
           <div style={{fontWeight:800,fontSize:16,color:t.text,marginBottom:4}}>⚙️ Parameter Validasi</div>
           <div style={{fontSize:11,color:t.muted,marginBottom:10}}>Perubahan parameter memerlukan persetujuan management</div>
           <div style={{fontSize:11,color:t.text,background:t.card,border:"1px solid #f59e0b60",borderRadius:8,padding:"8px 10px",marginBottom:16,lineHeight:1.6,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
-            ⚠️ Kalau file asli km <b style={{color:"#f59e0b"}}>sudah punya kolom Visit Status</b> (VALID/OBSERVE/INVESTIGATE/INCOMPLETE), status A1/A2/A3 ikut kolom itu — parameter di bawah cuma pengaruhi breakdown Duration/Distance Status & tabel. Tapi kalau kolom itu <b style={{color:"#f59e0b"}}>tidak ada di file asli</b>, parameter <b>Durasi Minimal</b> & <b>Jarak In Range</b> di bawah ini yang menentukan langsung status A1/A2/A3.
+            ⚠️ Apabila berkas asli <b style={{color:"#f59e0b"}}>sudah memiliki kolom Visit Status</b> (VALID/OBSERVE/INVESTIGATE/INCOMPLETE), status A1/A2/A3 akan mengikuti kolom tersebut — parameter di bawah ini hanya memengaruhi rincian Duration/Distance Status dan tabel. Namun apabila kolom tersebut <b style={{color:"#f59e0b"}}>tidak tersedia pada berkas asli</b>, parameter <b>Durasi Minimal</b> dan <b>Jarak In Range</b> di bawah ini yang akan menentukan status A1/A2/A3 secara langsung.
           </div>
           {[
-            {key:"dur_short",label:"Durasi Minimal (menit)",desc:"Kunjungan di bawah ini = SHORT, dan jadi salah satu pemicu A2 kalau Visit Status gak ada di file asli",unit:"menit"},
+            {key:"dur_short",label:"Durasi Minimal (menit)",desc:"Kunjungan di bawah nilai ini tergolong SHORT, dan menjadi salah satu pemicu status A2 apabila kolom Visit Status tidak tersedia pada berkas asli",unit:"menit"},
             {key:"dur_long", label:"Durasi Maksimal (menit)",desc:"Kunjungan di atas ini = LONG",unit:"menit"},
-            {key:"in_range_max", label:"Jarak In Range (meter)",desc:"Kunjungan dalam radius ini = In Range; di luar itu = Out of Range, dan jadi salah satu pemicu A2 kalau Visit Status gak ada di file asli",unit:"meter"},
+            {key:"in_range_max", label:"Jarak In Range (meter)",desc:"Kunjungan dalam radius ini tergolong In Range; di luar radius tersebut tergolong Out of Range, dan menjadi salah satu pemicu status A2 apabila kolom Visit Status tidak tersedia pada berkas asli",unit:"meter"},
             {key:"dis_near", label:"Jarak NEAR (meter)",desc:"Jarak di bawah ini = NEAR (normal)",unit:"meter"},
             {key:"dis_far",  label:"Jarak FAR (meter)",desc:"Jarak di atas ini = FAR (anomali)",unit:"meter"},
           ].map(({key,label,desc,unit})=>(
@@ -3517,10 +3575,10 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
             ))}
           </div>
           <div style={{padding:"12px 20px",borderTop:`1px solid ${t.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
-            <span style={{fontSize:10,color:t.muted}}>🔄 Ganti = replace · 🗑 = hapus cluster</span>
+            <span style={{fontSize:10,color:t.muted}}>🔄 Ganti = mengganti berkas · 🗑 = menghapus cluster</span>
             <label style={{display:"inline-flex",alignItems:"center",gap:6,background:"rgba(34,197,94,0.15)",border:"1px solid rgba(34,197,94,0.4)",color:"#4ade80",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:11,fontWeight:700}}>
-              ➕ Add Files
-              <input type="file" accept=".xlsx,.xls" multiple style={{display:"none"}} onClick={e=>e.target.value=""} onChange={e=>{setShowFileManager(false);handleAddFiles(e.target.files);}}/>
+              ➕ Tambah Berkas
+              <input type="file" accept=".xlsx,.xls,.csv,.json" multiple style={{display:"none"}} onClick={e=>e.target.value=""} onChange={e=>{setShowFileManager(false);handleAddFiles(e.target.files);}}/>
             </label>
           </div>
         </div>
