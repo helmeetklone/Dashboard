@@ -374,13 +374,18 @@ function processRows(rows) {
   const disC={NEAR:0,MID:0,FAR:0,INCOMPLETE:0};
   const locC={MATCH:0,"NOT MATCH":0,INCOMPLETE:0};
   const inRangeC={YES:0,NO:0};
-  const outMap={},canvMap={},dateMap={},visitMap={},vtMap={};
+  const outMap={},canvMap={},dateMap={},visitMap={},vtMap={},outletProblemMap={};
   let minDate=null,maxDate=null;
   let sellInQtyTotal=0, sellInVisitsTotal=0;
   let avaTotalCount=0, avaYesCount=0;
-  // Reason aggregation for Investigate & Observe
+  // Reason aggregation for Investigate & Observe — simpan count kunjungan DAN set canvasser unik per alasan,
+  // biar UI bisa highlight jumlah canvasser (metrik utama) sementara jumlah kunjungan tetap ada sebagai info sekunder.
   const reasonMap={investigate:{},observe:{}};
-  const addReason=(bucket,label)=>{ reasonMap[bucket][label]=(reasonMap[bucket][label]||0)+1; };
+  const addReason=(bucket,label,canvName)=>{
+    if(!reasonMap[bucket][label]) reasonMap[bucket][label]={count:0,canvassers:new Set()};
+    reasonMap[bucket][label].count++;
+    reasonMap[bucket][label].canvassers.add(canvName);
+  };
 
   rows.forEach(r=>{
     // Use directly-read cell values (_VS, _AS1 etc.) — bypasses SheetJS duplicate key issues
@@ -423,6 +428,7 @@ function processRows(rows) {
     // Track anomaly reasons for Investigate & Observe
     if(vs==="INVESTIGATE"||vs==="OBSERVE"){
       const bucket=vs==="INVESTIGATE"?"investigate":"observe";
+      const canvName2=String(r["Canvasser"]||"Unknown");
       const durSt2=String(r["_DUR"]||r["Duration Status"]||"").toUpperCase();
       const disSt2=String(r["_DIS"]||r["Distance Status"]||"").toUpperCase();
       const locSt2=String(r["_LOC"]||r["Location Status"]||"").toUpperCase();
@@ -430,12 +436,12 @@ function processRows(rows) {
       const dur2=parseFloat(r["Visit Duration (Menit)"]);
       const dIn2=parseFloat(r["Distance Check In (Meter)"]);
       const dOt2=parseFloat(r["Distance Check Out (Meter)"]);
-      if(durSt2==="SHORT"||(dur2>0&&dur2<2)) addReason(bucket,"⏱ Durasi singkat");
-      if(durSt2==="LONG"||(dur2>30)) addReason(bucket,"⏱ Durasi panjang");
-      if(dIn2>5000||dOt2>5000) addReason(bucket,"🚨 Jarak sangat jauh");
-      else if(dIn2>200||dOt2>200) addReason(bucket,"📍 Jarak jauh");
-      if(locSt2==="NOT MATCH") addReason(bucket,"📌 Lokasi tidak match");
-      if(inR2==="no"||inR2==="n") addReason(bucket,"🎯 Out of range");
+      if(durSt2==="SHORT"||(dur2>0&&dur2<2)) addReason(bucket,"⏱ Durasi singkat",canvName2);
+      if(durSt2==="LONG"||(dur2>30)) addReason(bucket,"⏱ Durasi panjang",canvName2);
+      if(dIn2>5000||dOt2>5000) addReason(bucket,"🚨 Jarak sangat jauh",canvName2);
+      else if(dIn2>200||dOt2>200) addReason(bucket,"📍 Jarak jauh",canvName2);
+      if(locSt2==="NOT MATCH") addReason(bucket,"📌 Lokasi tidak match",canvName2);
+      if(inR2==="no"||inR2==="n") addReason(bucket,"🎯 Out of range",canvName2);
     }
     // Consignment Visit dikecualikan dari KPI utama (A1/A2/A3 overview, pie chart, key insights),
     // tapi tetap dihitung di vtMap (Visit Type breakdown) di atas.
@@ -538,6 +544,20 @@ function processRows(rows) {
 
     if(!canvMap[cid]) canvMap[cid]={id:cid,name:nm,cluster:cl,region:rgn,total:0,A1:0,A2:0,A3:0,VALID:0,OBSERVE:0,INVESTIGATE:0,INCOMPLETE:0,durSum:0,durCnt:0,disSum:0,disCnt:0,
       DUR_NORMAL:0,DUR_SHORT:0,DUR_LONG:0,DIS_NEAR:0,DIS_MID:0,DIS_FAR:0,DIS_INC:0,LOC_MATCH:0,LOC_NOTMATCH:0,LOC_INC:0,IR_YES:0,IR_NO:0,sellInQty:0,sellInVisits:0,avaTotal:0,avaYes:0};
+
+    // Ranking Outlet Bermasalah Kronis: hitung per Outlet ID berapa kunjungan Investigate/Observe
+    // dan berapa canvasser BERBEDA yang kena flag di outlet itu (banyak canvasser beda tapi tetap
+    // bermasalah di outlet yang sama = indikasi masalah di data/lokasi outlet, bukan personal canvasser)
+    const opId=r["Outlet ID"]!=null?String(r["Outlet ID"]).trim():"";
+    if(opId){
+      if(!outletProblemMap[opId]) outletProblemMap[opId]={id:opId,name:String(r["Outlet"]||r["Outlet Name"]||opId).trim(),cluster:String(cl),total:0,investigate:0,observe:0,canvasserSet:new Set(),flaggedSellInVisits:0};
+      const op=outletProblemMap[opId];
+      op.total++;
+      const isFlagged=vs==="INVESTIGATE"||vs==="OBSERVE";
+      if(vs==="INVESTIGATE") op.investigate++;
+      else if(vs==="OBSERVE") op.observe++;
+      if(isFlagged){ op.canvasserSet.add(nm); if(didSellIn) op.flaggedSellInVisits++; }
+    }
     canvMap[cid].total++;
     if(as1==="A1 - NORMAL")    canvMap[cid].A1++;
     if(as1==="A2 - ANOMALY")   canvMap[cid].A2++;
@@ -590,12 +610,18 @@ function processRows(rows) {
   }));
 
   const censusData = Object.values(outMap).filter(d=>d._isCensus).sort((a,b)=>b.total-a.total);
+  const chronicOutlets = Object.values(outletProblemMap)
+    .map(o=>({id:o.id,name:o.name,cluster:o.cluster,total:o.total,investigate:o.investigate,observe:o.observe,
+      flagged:o.investigate+o.observe,canvasserCount:o.canvasserSet.size,flaggedSellInVisits:o.flaggedSellInVisits}))
+    .filter(o=>o.flagged>0)
+    .sort((a,b)=>b.flagged-a.flagged);
   return {
     total,actC,visC,durC,disC,locC,inRangeC,
     sellInQtyTotal,sellInVisitsTotal,avaTotalCount,avaYesCount,
     visitTypeData:Object.values(vtMap).sort((a,b)=>b.total-a.total),
     outletData:Object.values(outMap).filter(d=>!d._isCensus).sort((a,b)=>b.total-a.total),
     censusData,
+    chronicOutlets,
     canvassers,
     dateRange:{min:minDate,max:maxDate},
     reasonMap,
@@ -644,12 +670,24 @@ function aggregateList(dataList) {
     visitTypeData:mergeArr("visitTypeData","type"),
     outletData:mergeArr("outletData","type"),
     censusData:mergeArr("censusData","type"),
+    chronicOutlets:(()=>{
+      const m={};
+      dataList.forEach(d=>(d.chronicOutlets||[]).forEach(o=>{
+        if(!m[o.id]) m[o.id]={...o};
+        else { m[o.id].total+=o.total; m[o.id].investigate+=o.investigate; m[o.id].observe+=o.observe; m[o.id].flagged+=o.flagged; m[o.id].canvasserCount+=o.canvasserCount; m[o.id].flaggedSellInVisits=(m[o.id].flaggedSellInVisits||0)+(o.flaggedSellInVisits||0); }
+      }));
+      return Object.values(m).sort((a,b)=>b.flagged-a.flagged);
+    })(),
     canvassers,
     reasonMap:(()=>{
       const merged={investigate:{},observe:{}};
       dataList.forEach(d=>{
         ["investigate","observe"].forEach(b=>{
-          Object.entries(d.reasonMap?.[b]||{}).forEach(([k,v])=>{ merged[b][k]=(merged[b][k]||0)+v; });
+          Object.entries(d.reasonMap?.[b]||{}).forEach(([k,v])=>{
+            if(!merged[b][k]) merged[b][k]={count:0,canvassers:new Set()};
+            merged[b][k].count+=v.count||0;
+            (v.canvassers||[]).forEach(c=>merged[b][k].canvassers.add(c));
+          });
         });
       });
       return merged;
@@ -1058,6 +1096,84 @@ function DrillDownPanel({drill,onClose,t,onCanvasserClick}){
   );
 }
 
+// ── OUTLET LIST MODAL (Investigate/Observe) ──────────────────────────────────
+function OutletListModal({detail,onClose,t,onOutletClick}){
+  const [search,setSearch]=useState("");
+  const [pg,setPg]=useState(0);
+  const [sDir,setSDir]=useState("desc");
+  const PG=10;
+  useEffect(()=>{setSearch("");setPg(0);setSDir("desc");},[detail?.statusKey,detail?.label]);
+  if(!detail) return null;
+  const {label,color,statusKey,outlets}=detail;
+  const filt=[...(outlets||[])]
+    .filter(o=>search?o.name.toLowerCase().includes(search.toLowerCase())||(o.cluster||"").toLowerCase().includes(search.toLowerCase()):true)
+    .sort((a,b)=>sDir==="desc"?(b[statusKey]||0)-(a[statusKey]||0):(a[statusKey]||0)-(b[statusKey]||0));
+  const list=filt.slice(pg*PG,(pg+1)*PG);
+  const maxV=filt[0]?.[statusKey]||1;
+  return(
+    <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:1000,display:"flex",alignItems:"flex-end",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)"}}
+      onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxHeight:"82vh",background:t.card,borderRadius:"20px 20px 0 0",border:`1px solid ${t.border}`,overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 -8px 40px rgba(0,0,0,0.5)",fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
+        <div style={{padding:"14px 18px 10px",borderBottom:`1px solid ${t.border}`,display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
+          <div style={{width:12,height:12,borderRadius:3,background:color,flexShrink:0}}/>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:800,fontSize:15,color:t.text}}>{label}</div>
+            <div style={{fontSize:14,color:t.text,fontWeight:800,marginTop:1}}>{(outlets||[]).length.toLocaleString()} outlet</div>
+          </div>
+          <button onClick={onClose} style={{background:t.cardAlt,border:`1px solid ${t.border}`,color:t.text,borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:13,fontWeight:700}}>✕</button>
+        </div>
+        <div style={{padding:"8px 18px",borderBottom:`1px solid ${t.border}`,flexShrink:0}}>
+          <input placeholder="🔍 Cari nama outlet / cluster..." value={search} onChange={e=>{setSearch(e.target.value);setPg(0);}}
+            style={{width:"100%",background:t.cardAlt,border:`1px solid ${t.border}`,color:t.text,borderRadius:8,padding:"7px 12px",fontSize:12,outline:"none",boxSizing:"border-box"}}/>
+          <div style={{fontSize:11,color:t.muted,marginTop:4}}>💡 Diurutkan dari jumlah kunjungan tertinggi ke terendah. Klik nama outlet untuk melihat detail kunjungannya.</div>
+          <div style={{display:"flex",alignItems:"center",gap:6,marginTop:5,flexWrap:"wrap"}}>
+            <button onClick={()=>setSDir(d=>d==="desc"?"asc":"desc")}
+              style={{background:color,color:"#fff",border:"1px solid "+t.border,borderRadius:6,padding:"3px 10px",fontSize:10,fontWeight:700,cursor:"pointer"}}>
+              Jumlah{sDir==="desc"?" ↓":" ↑"}
+            </button>
+            <span style={{marginLeft:"auto",fontSize:10,color:t.muted}}>{filt.length} outlet</span>
+          </div>
+        </div>
+        <div style={{overflowY:"auto",flex:1,scrollbarWidth:"none",msOverflowStyle:"none"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
+            <thead style={{position:"sticky",top:0,background:t.card,zIndex:1}}>
+              <tr style={{background:t.cardAlt}}>
+                {["#","Nama Outlet","Cluster","Jumlah Kunjungan",""].map(h=>(
+                  <th key={h} style={{padding:"9px 12px",textAlign:"left",fontSize:11,fontWeight:700,color:t.muted,whiteSpace:"nowrap",borderBottom:`1px solid ${t.border}`}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {list.map((o,i)=>(
+                <tr key={o.id||i} style={{borderBottom:`1px solid ${t.border}`,background:i%2===0?"transparent":t.rowAlt,cursor:"pointer",transition:"background 0.1s"}}
+                  onMouseEnter={e=>e.currentTarget.style.background=color+"18"}
+                  onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"transparent":t.rowAlt}
+                  onClick={()=>onOutletClick&&onOutletClick(o)}>
+                  <td style={{padding:"8px 10px",color:t.muted,fontSize:11}}>{pg*PG+i+1}</td>
+                  <td style={{padding:"8px 10px",fontWeight:600,color:color,whiteSpace:"nowrap",fontSize:12}}>{o.name}</td>
+                  <td style={{padding:"8px 10px",color:t.muted,fontSize:11,whiteSpace:"nowrap",maxWidth:140,overflow:"hidden",textOverflow:"ellipsis"}}>{o.cluster||"–"}</td>
+                  <td style={{padding:"8px 10px"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:6}}>
+                      <div style={{width:36,height:5,borderRadius:3,background:t.border,flexShrink:0}}>
+                        <div style={{width:Math.min(100,pct(o[statusKey]||0,maxV))+"%",height:"100%",borderRadius:3,background:color}}/>
+                      </div>
+                      <span style={{fontWeight:700,color:color}}>{(o[statusKey]||0).toLocaleString()}</span>
+                    </div>
+                  </td>
+                  <td style={{padding:"8px 10px"}}>
+                    <button style={{background:color+"20",border:"none",color:color,borderRadius:6,padding:"3px 8px",fontSize:10,fontWeight:700,cursor:"pointer"}}>Detail ›</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <Pagination page={pg} setPage={setPg} total={filt.length} pageSize={PG} t={t}/>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── CANVASSER DETAIL PANEL ────────────────────────────────────────────────────
 function CanvasserDetailPanel({detail,onClose,t}){
   const [pg,setPg]=useState(0);
@@ -1191,7 +1307,7 @@ function CanvasserDetailPanel({detail,onClose,t}){
       <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxHeight:"88vh",background:t.card,borderRadius:"20px 20px 0 0",border:`1px solid ${t.border}`,overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 -8px 40px rgba(0,0,0,0.6)",fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
         <div style={{padding:"14px 18px 10px",borderBottom:`1px solid ${t.border}`,display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
           <div style={{flex:1}}>
-            <div style={{fontWeight:800,fontSize:15,color:t.text}}>👤 {canvasser?.name}</div>
+            <div style={{fontWeight:800,fontSize:15,color:t.text}}>{canvasser?.icon||"👤"} {canvasser?.name}</div>
             {canvasser?.id&&<div style={{fontSize:10,color:t.muted,marginTop:1}}>ID: <span style={{color:t.text,fontWeight:600}}>{canvasser.id}</span></div>}
             <div style={{fontSize:11,color:t.muted,marginTop:3,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
               <span style={{background:P.accent+"20",color:P.accent,padding:"1px 7px",borderRadius:6,fontSize:10,fontWeight:700}}>{canvasser?.region}</span>
@@ -2224,6 +2340,21 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
     const rows = drillKey ? all.filter(ff) : all;
     const sorted=rows.sort((a,b)=>new Date(a["Actual Visit Time"]||0)-new Date(b["Actual Visit Time"]||0));sorted._all=all;return sorted;
   },[clusters]);
+  // Ambil semua kunjungan Investigate/Observe di outlet tertentu (lintas cluster kalau perlu)
+  const getOutletRows = useCallback((outletId, clusterLabel) => {
+    const pools = clusterLabel ? clusters.filter(c=>c.label===clusterLabel) : clusters;
+    let all = [];
+    (pools.length?pools:clusters).forEach(c=>{
+      all = all.concat((c.rawRows||[]).filter(r=>String(r["Outlet ID"]||"").trim()===outletId));
+    });
+    const flagged = all.filter(r=>{
+      const vs=r["_CVS"]||String(r["_VS"]||r["Visit Status"]||"").toUpperCase();
+      return vs==="INVESTIGATE"||vs==="OBSERVE";
+    });
+    const sorted=flagged.sort((a,b)=>new Date(a["Actual Visit Time"]||0)-new Date(b["Actual Visit Time"]||0));
+    sorted._all=all;
+    return sorted;
+  },[clusters]);
   const card=(x={})=>({background:t.card,border:`1px solid ${t.border}`,borderRadius:14,padding:20,...x});
   const ths=key=>({padding:"9px 10px",textAlign:"left",fontSize:10,fontWeight:700,color:sk===key?P.accent:t.muted,cursor:"pointer",letterSpacing:"0.05em",textTransform:"uppercase",whiteSpace:"nowrap",userSelect:"none",borderBottom:`2px solid ${sk===key?P.accent:t.border}`});
 
@@ -2250,6 +2381,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
     return {counts, lists, total:cvs.length};
   },[view.canvassers]);
   const [canvCategoryDrill,setCanvCategoryDrill]=useState(null); // {label,color,statusKey,list}
+  const [outletListDrill,setOutletListDrill]=useState(null); // {label,color,statusKey,outlets}
 
   // Current level label
   const levelLabel=selCluster?"Cluster":selRegion?"Region":regionCodes.length===1?`${regionCodes[0]} — ${regionFullName(regionCodes[0])}`:"Nasional";
@@ -2790,10 +2922,10 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
 
         {(a2p>=80||a3p>=80)&&<div style={{fontSize:11,color:t.text,marginBottom:20,lineHeight:1.7,background:t.card,border:`1px solid ${P.accent}60`,borderRadius:8,padding:"12px 16px",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
           <div style={{fontWeight:700,marginBottom:4,color:P.accent}}>💡 Catatan</div>
-          <ul style={{margin:0,paddingLeft:16}}>
-            {a2p>=80&&<li>Sebanyak {a2p}% canvasser tercatat memiliki minimal satu aktivitas berstatus A2.</li>}
-            {a3p>=80&&<li>Sebanyak {a3p}% canvasser tercatat memiliki minimal satu aktivitas berstatus A3.</li>}
-            <li>Hal ini wajar karena rata-rata volume aktivitas per canvasser cukup tinggi ({Math.round(T/(cvs.length||1)).toLocaleString()} aktivitas per orang), sehingga satu aktivitas bermasalah saja sudah tercatat dalam perhitungan ini.</li>
+          <ul style={{margin:0,paddingLeft:16,listStyle:"disc"}}>
+            {a2p>=80&&<li style={{display:"list-item"}}>Sebanyak {a2p}% canvasser tercatat memiliki minimal satu aktivitas berstatus A2.</li>}
+            {a3p>=80&&<li style={{display:"list-item"}}>Sebanyak {a3p}% canvasser tercatat memiliki minimal satu aktivitas berstatus A3.</li>}
+            <li style={{display:"list-item"}}>Hal ini wajar karena rata-rata volume aktivitas per canvasser cukup tinggi ({Math.round(T/(cvs.length||1)).toLocaleString()} aktivitas per orang), sehingga satu aktivitas bermasalah saja sudah tercatat dalam perhitungan ini.</li>
           </ul>
         </div>}
           </>);
@@ -2812,6 +2944,77 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
 
             {/* ── Key Insights ── */}
             <div style={{fontWeight:700,marginBottom:14,fontSize:11,letterSpacing:"0.06em",textTransform:"uppercase",color:t.muted}}>Wawasan Utama</div>
+
+            {/* ── Temuan Utama: Outlet Perlu Ditinjau ── */}
+            {(()=>{
+              const chronic=(view.chronicOutlets||[]).slice(0,10);
+              if(!chronic.length) return null;
+              const maxFlag=chronic[0]?.flagged||1;
+              const allFlaggedOutlets=view.chronicOutlets||[];
+              const invOutletCountAll=allFlaggedOutlets.filter(o=>o.investigate>0).length;
+              const obsOutletCountAll=allFlaggedOutlets.filter(o=>o.observe>0).length;
+              return(
+                <div style={{...card(),marginBottom:24}}>
+                  <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase"}}>🔎 Temuan Utama — Outlet Perlu Ditinjau</div>
+                  <div style={{fontSize:11,color:t.muted,marginTop:2,marginBottom:14,lineHeight:1.7}}>
+                    Diurutkan dari total kunjungan Investigate + Observe terbanyak.
+                    <div style={{marginTop:8,fontSize:10,color:t.muted,opacity:0.85}}>
+                      <div style={{fontWeight:700,marginBottom:3}}>Catatan:</div>
+                      <ul style={{margin:0,paddingLeft:16,listStyle:"disc"}}>
+                        <li style={{display:"list-item"}}>Multiple flag pada outlet yang sama dapat mengindikasikan koordinat outlet belum akurat.</li>
+                        <li style={{display:"list-item"}}>Rasio Sell-In dapat menjadi indikator validitas kunjungan.</li>
+                      </ul>
+                    </div>
+                    <div style={{marginTop:8}}>Klik baris untuk detail</div>
+                  </div>
+
+                  <div style={{display:"flex",gap:12,marginBottom:18}}>
+                    <div onClick={()=>setOutletListDrill({label:"Daftar Outlet — Investigate",color:P.investigate,statusKey:"investigate",outlets:[...allFlaggedOutlets].filter(o=>o.investigate>0).sort((a,b)=>b.investigate-a.investigate)})}
+                      style={{flex:1,textAlign:"center",padding:"14px 8px",borderRadius:10,background:P.investigate+"14",cursor:"pointer"}}
+                      onMouseEnter={e=>e.currentTarget.style.opacity="0.8"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+                      <div style={{fontSize:24,fontWeight:800,color:P.investigate}}>{invOutletCountAll.toLocaleString()}</div>
+                      <div style={{fontSize:10,color:t.text,fontWeight:700,marginTop:2}}>🔍 Outlet Berstatus Investigate</div>
+                      <div style={{fontSize:9,color:P.investigate,fontWeight:700,marginTop:4}}>Lihat daftar ›</div>
+                    </div>
+                    <div onClick={()=>setOutletListDrill({label:"Daftar Outlet — Observe",color:P.a2,statusKey:"observe",outlets:[...allFlaggedOutlets].filter(o=>o.observe>0).sort((a,b)=>b.observe-a.observe)})}
+                      style={{flex:1,textAlign:"center",padding:"14px 8px",borderRadius:10,background:P.a2+"14",cursor:"pointer"}}
+                      onMouseEnter={e=>e.currentTarget.style.opacity="0.8"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+                      <div style={{fontSize:24,fontWeight:800,color:P.a2}}>{obsOutletCountAll.toLocaleString()}</div>
+                      <div style={{fontSize:10,color:t.text,fontWeight:700,marginTop:2}}>⚠️ Outlet Berstatus Observe</div>
+                      <div style={{fontSize:9,color:P.a2,fontWeight:700,marginTop:4}}>Lihat daftar ›</div>
+                    </div>
+                  </div>
+
+                  {chronic.map((o,i)=>{
+                    const sellInRate=o.flagged?pct(o.flaggedSellInVisits,o.flagged):0;
+                    return(
+                    <div key={o.id} onClick={()=>{const rows=getOutletRows(o.id,o.cluster);setCanvDetail({canvasser:{name:o.name,cluster:o.cluster,icon:"🏪"},drillLabel:"Kunjungan Investigate + Observe",color:P.investigate,rows,drillKey:null,sessionKey:Date.now()});}}
+                      style={{padding:"11px 0",borderBottom:i<chronic.length-1?`1px solid ${t.border}`:"none",cursor:"pointer"}}
+                      onMouseEnter={e=>e.currentTarget.style.opacity="0.75"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+                      <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:8,marginBottom:6}}>
+                        <div style={{minWidth:0}}>
+                          <div style={{fontSize:13,fontWeight:700,color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.name}</div>
+                          <div style={{fontSize:10,color:t.muted}}>{o.cluster}</div>
+                        </div>
+                        <div style={{fontSize:16,fontWeight:800,color:P.investigate,flexShrink:0}}>{o.flagged.toLocaleString()}</div>
+                      </div>
+                      <div style={{height:4,borderRadius:99,background:t.border,marginBottom:8}}>
+                        <div style={{width:pct(o.flagged,maxFlag)+"%",height:"100%",borderRadius:99,background:P.investigate}}/>
+                      </div>
+                      <div style={{display:"flex",gap:12,fontSize:10,flexWrap:"wrap",alignItems:"center"}}>
+                        {o.investigate>0&&<span style={{color:P.investigate,fontWeight:700}}>🔍 Investigate: {o.investigate}</span>}
+                        {o.observe>0&&<span style={{color:P.a2,fontWeight:700}}>⚠️ Observe: {o.observe}</span>}
+                        <span style={{color:o.canvasserCount>1?P.investigate:t.muted,fontWeight:o.canvasserCount>1?700:400,background:o.canvasserCount>1?P.investigate+"1a":"transparent",padding:o.canvasserCount>1?"1px 7px":0,borderRadius:99}}>
+                          {o.canvasserCount>1?`👥 ${o.canvasserCount} canvasser berbeda`:`👤 1 canvasser`}
+                        </span>
+                        <span style={{color:sellInRate>=50?"#10b981":t.muted,fontWeight:sellInRate>=50?700:400}}>💰 {sellInRate}% kunjungan flagged tetap ada Sell-In</span>
+                      </div>
+                    </div>
+                  );})}
+                </div>
+              );
+            })()}
+
                 {(()=>{
                   const wA2=[...view.canvassers].filter(c=>c.A2>0).sort((a,b)=>b.A2-a.A2)[0];
                   const wA3=[...view.canvassers].filter(c=>c.A3>0).sort((a,b)=>b.A3-a.A3)[0];
@@ -2852,12 +3055,16 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                   const shortCnt=dc["SHORT"]||0;
 
                   // ── Section 4: Penyebab Utama (dipisah per bucket biar jelas asalnya) ──
+                  // Metrik utama yang di-highlight = jumlah CANVASSER unik (bukan jumlah kunjungan/aktivitas),
+                  // biar gak kesan "extreme" — 1 canvasser bisa nyumbang banyak kunjungan krn journey cycle (RMP) rutin.
                   const rm=view.reasonMap||{};
-                  const topReasonList=(bucket)=>Object.entries(rm[bucket]||{}).sort((a,b)=>b[1]-a[1]).slice(0,3);
+                  const topReasonList=(bucket)=>Object.entries(rm[bucket]||{})
+                    .map(([k,v])=>[k,v.canvassers?v.canvassers.size:0,v.count||0])
+                    .sort((a,b)=>b[1]-a[1]).slice(0,3);
                   const invReasons=topReasonList("investigate");
                   const obsReasons=topReasonList("observe");
-                  const invTotal=Object.values(rm.investigate||{}).reduce((s,v)=>s+v,0);
-                  const obsTotal=Object.values(rm.observe||{}).reduce((s,v)=>s+v,0);
+                  const invTotal=vc["INVESTIGATE"]||0;
+                  const obsTotal=vc["OBSERVE"]||0;
                   const invCanvCount=(view.canvassers||[]).filter(c=>(c.INVESTIGATE||0)>0).length;
                   const obsCanvCount=(view.canvassers||[]).filter(c=>(c.OBSERVE||0)>0).length;
 
@@ -2935,7 +3142,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                       {/* Section 5: AVA & Sell-In */}
                       {(avaBuckets||sellInBuckets)&&<div style={{marginTop:18}}>
                         <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Ringkasan AVA & Sell-In</div>
-                        <div style={{fontSize:10,color:t.muted,marginBottom:10}}>Nilai per kelompok pencapaian — klik buat lihat daftar canvasser-nya</div>
+                        <div style={{fontSize:10,color:t.muted,marginBottom:10}}>Nilai per kelompok pencapaian — klik untuk lihat daftar canvasser-nya</div>
                         {avaBuckets&&<div style={{marginBottom:14}}>
                           <div style={{fontSize:10,fontWeight:700,color:t.text,marginBottom:6}}>🏷 AVA Tracking</div>
                           <div style={{display:"flex",gap:8}}>
@@ -2989,25 +3196,31 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
 
                       {/* Section 4 */}
                       {(invReasons.length>0||obsReasons.length>0)&&<div style={{marginTop:18}}>
-                        <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Alasan Utama di Balik Visit Status</div>
-                        <div style={{fontSize:10,color:t.muted,marginBottom:10}}>Top 3 penyebab paling sering ditemukan — satu kunjungan bisa punya lebih dari 1 alasan sekaligus, jadi jumlahnya tidak selalu sama dengan total kunjungan</div>
+                        <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Alasan Utama Visit Status</div>
+                        <div style={{fontSize:10,color:t.muted,marginBottom:10,lineHeight:1.6}}>Diurutkan berdasarkan jumlah canvasser terdampak; satu canvasser dapat memiliki lebih dari satu kunjungan dengan penyebab yang sama.</div>
                         {invReasons.length>0&&<>
                           <div onClick={()=>openDrill("Investigate",P.investigate,"INVESTIGATE")} style={{fontSize:10,fontWeight:700,color:P.investigate,marginBottom:6,cursor:"pointer"}}>🔍 Investigate ({invTotal.toLocaleString()} kunjungan · {invCanvCount.toLocaleString()} canvasser) ›</div>
-                          {invReasons.map(([k,v],i)=>(
+                          {invReasons.map(([k,canvN,cnt],i)=>(
                             <div key={i} onClick={()=>openDrill("Investigate",P.investigate,"INVESTIGATE")} style={{display:"flex",alignItems:"center",gap:10,padding:"5px 0",cursor:"pointer"}}>
                               <div style={{fontSize:11,color:t.text,width:120,flexShrink:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k}</div>
-                              <div style={{flex:1,height:5,background:t.border,borderRadius:99,overflow:"hidden"}}><div style={{width:(v/invReasons[0][1]*100)+"%",height:"100%",background:P.investigate,borderRadius:99}}/></div>
-                              <div style={{fontSize:11,fontWeight:700,color:P.investigate,width:70,textAlign:"right",flexShrink:0}}>{v.toLocaleString()} kunjungan</div>
+                              <div style={{flex:1,height:5,background:t.border,borderRadius:99,overflow:"hidden"}}><div style={{width:(canvN/(invReasons[0][1]||1)*100)+"%",height:"100%",background:P.investigate,borderRadius:99}}/></div>
+                              <div style={{width:90,textAlign:"right",flexShrink:0}}>
+                                <div style={{fontSize:11,fontWeight:700,color:P.investigate}}>{canvN.toLocaleString()} canvasser</div>
+                                <div style={{fontSize:9,color:t.muted}}>{cnt.toLocaleString()} kunjungan</div>
+                              </div>
                             </div>
                           ))}
                         </>}
                         {obsReasons.length>0&&<>
                           <div onClick={()=>openDrill("Observe",P.a2,"OBSERVE")} style={{fontSize:10,fontWeight:700,color:P.a2,marginTop:14,marginBottom:6,cursor:"pointer"}}>⚠️ Observe ({obsTotal.toLocaleString()} kunjungan · {obsCanvCount.toLocaleString()} canvasser) ›</div>
-                          {obsReasons.map(([k,v],i)=>(
+                          {obsReasons.map(([k,canvN,cnt],i)=>(
                             <div key={i} onClick={()=>openDrill("Observe",P.a2,"OBSERVE")} style={{display:"flex",alignItems:"center",gap:10,padding:"5px 0",cursor:"pointer"}}>
                               <div style={{fontSize:11,color:t.text,width:120,flexShrink:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k}</div>
-                              <div style={{flex:1,height:5,background:t.border,borderRadius:99,overflow:"hidden"}}><div style={{width:(v/obsReasons[0][1]*100)+"%",height:"100%",background:P.a2,borderRadius:99}}/></div>
-                              <div style={{fontSize:11,fontWeight:700,color:P.a2,width:70,textAlign:"right",flexShrink:0}}>{v.toLocaleString()} kunjungan</div>
+                              <div style={{flex:1,height:5,background:t.border,borderRadius:99,overflow:"hidden"}}><div style={{width:(canvN/(obsReasons[0][1]||1)*100)+"%",height:"100%",background:P.a2,borderRadius:99}}/></div>
+                              <div style={{width:90,textAlign:"right",flexShrink:0}}>
+                                <div style={{fontSize:11,fontWeight:700,color:P.a2}}>{canvN.toLocaleString()} canvasser</div>
+                                <div style={{fontSize:9,color:t.muted}}>{cnt.toLocaleString()} kunjungan</div>
+                              </div>
                             </div>
                           ))}
                         </>}
@@ -3068,7 +3281,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                           <div style={{height:3,borderRadius:99,background:t.border}}>
                             <div style={{width:pct(cv[cat.sort]||0,maxV)+"%",height:"100%",borderRadius:99,background:cat.color}}/>
                           </div>
-                          <div style={{fontSize:10,color:t.muted,marginTop:2}}>{cv.cluster} · {pctS(cv[cat.sort]||0,cv.total)} dari total aktivitas dia</div>
+                          <div style={{fontSize:10,color:t.muted,marginTop:2}}>{cv.cluster} · {pctS(cv[cat.sort]||0,cv.total)} dari total aktivitas Canvasser</div>
                         </div>
                       ))}
                       <div onClick={()=>openDrill(cat.label,cat.color,cat.key)} style={{fontSize:11,fontWeight:700,color:cat.color,cursor:"pointer",marginTop:6}}>
@@ -3187,7 +3400,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:16}}>
                     <div style={{...card(),height:400,overflowY:"auto"}}>
                       <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Hari Menonjol</div>
-                      <div style={{fontSize:11,color:t.muted,marginBottom:12}}>Klik buat lihat breakdown canvasser di tanggal itu</div>
+                      <div style={{fontSize:11,color:t.muted,marginBottom:12}}>Klik untuk lihat breakdown canvasser di tanggal itu</div>
                       {[
                         bestA1&&{icon:"🏆",color:P.a1,title:"Rate A1 Normal tertinggi (hari ini)",date:bestA1.date,val:pctS(bestA1.A1,bestA1.total)},
                         worstA1&&{icon:"📉",color:"#ef4444",title:"Rate A1 Normal terendah (hari ini)",date:worstA1.date,val:pctS(worstA1.A1,worstA1.total)},
@@ -4020,6 +4233,8 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
         setCanvDetail({canvasser:r,drillLabel:drill.label,color:drill.color,rows,drillKey:drill.countKey,sessionKey:Date.now()});
       }}/>
     <CanvasserDetailPanel detail={canvDetail} onClose={()=>setCanvDetail(null)} t={t}/>
+    <OutletListModal detail={outletListDrill} onClose={()=>setOutletListDrill(null)} t={t}
+      onOutletClick={(o)=>{const rows=getOutletRows(o.id,o.cluster);setCanvDetail({canvasser:{name:o.name,cluster:o.cluster,icon:"🏪"},drillLabel:"Kunjungan Investigate + Observe",color:P.investigate,rows,drillKey:null,sessionKey:Date.now()});setOutletListDrill(null);}}/>
     </>
   );
 }
