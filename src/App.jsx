@@ -1138,7 +1138,7 @@ function OutletListModal({detail,onClose,t,onOutletClick}){
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
             <thead style={{position:"sticky",top:0,background:t.card,zIndex:1}}>
               <tr style={{background:t.cardAlt}}>
-                {["#","Nama Outlet","Cluster","Jumlah Kunjungan",""].map(h=>(
+                {["#","Nama Outlet","Cluster","Jumlah Kunjungan","Canvasser","Sell-In",""].map(h=>(
                   <th key={h} style={{padding:"9px 12px",textAlign:"left",fontSize:11,fontWeight:700,color:t.muted,whiteSpace:"nowrap",borderBottom:`1px solid ${t.border}`}}>{h}</th>
                 ))}
               </tr>
@@ -1159,6 +1159,12 @@ function OutletListModal({detail,onClose,t,onOutletClick}){
                       </div>
                       <span style={{fontWeight:700,color:color}}>{(o[statusKey]||0).toLocaleString()}</span>
                     </div>
+                  </td>
+                  <td style={{padding:"8px 10px",fontSize:11,whiteSpace:"nowrap"}}>
+                    <span style={{color:o.canvasserCount>1?color:t.muted,fontWeight:o.canvasserCount>1?700:400}}>{o.canvasserCount>1?`👥 ${o.canvasserCount}`:`👤 1`}</span>
+                  </td>
+                  <td style={{padding:"8px 10px",fontSize:11,whiteSpace:"nowrap"}}>
+                    {(()=>{const rate=o.flagged?pct(o.flaggedSellInVisits,o.flagged):0;return <span style={{color:rate>=50?"#10b981":t.muted,fontWeight:rate>=50?700:400}}>{rate}%</span>;})()}
                   </td>
                   <td style={{padding:"8px 10px"}}>
                     <button style={{background:color+"20",border:"none",color:color,borderRadius:6,padding:"3px 8px",fontSize:10,fontWeight:700,cursor:"pointer"}}>Detail ›</button>
@@ -2947,12 +2953,12 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
 
             {/* ── Temuan Utama: Outlet Perlu Ditinjau ── */}
             {(()=>{
-              const chronic=(view.chronicOutlets||[]).slice(0,10);
-              if(!chronic.length) return null;
-              const maxFlag=chronic[0]?.flagged||1;
               const allFlaggedOutlets=view.chronicOutlets||[];
+              if(!allFlaggedOutlets.length) return null;
               const invOutletCountAll=allFlaggedOutlets.filter(o=>o.investigate>0).length;
               const obsOutletCountAll=allFlaggedOutlets.filter(o=>o.observe>0).length;
+              const invCanvCountAll=(view.canvassers||[]).filter(c=>(c.INVESTIGATE||0)>0).length;
+              const obsCanvCountAll=(view.canvassers||[]).filter(c=>(c.OBSERVE||0)>0).length;
               return(
                 <div style={{...card(),marginBottom:24}}>
                   <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase"}}>🔎 Temuan Utama — Outlet Perlu Ditinjau</div>
@@ -2965,15 +2971,16 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                         <li style={{display:"list-item"}}>Rasio Sell-In dapat menjadi indikator validitas kunjungan.</li>
                       </ul>
                     </div>
-                    <div style={{marginTop:8}}>Klik baris untuk detail</div>
+                    <div style={{marginTop:8}}>Klik untuk lihat detail</div>
                   </div>
 
-                  <div style={{display:"flex",gap:12,marginBottom:18}}>
+                  <div style={{display:"flex",gap:12}}>
                     <div onClick={()=>setOutletListDrill({label:"Daftar Outlet — Investigate",color:P.investigate,statusKey:"investigate",outlets:[...allFlaggedOutlets].filter(o=>o.investigate>0).sort((a,b)=>b.investigate-a.investigate)})}
                       style={{flex:1,textAlign:"center",padding:"14px 8px",borderRadius:10,background:P.investigate+"14",cursor:"pointer"}}
                       onMouseEnter={e=>e.currentTarget.style.opacity="0.8"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
                       <div style={{fontSize:24,fontWeight:800,color:P.investigate}}>{invOutletCountAll.toLocaleString()}</div>
                       <div style={{fontSize:10,color:t.text,fontWeight:700,marginTop:2}}>🔍 Outlet Berstatus Investigate</div>
+                      <div style={{fontSize:10,color:t.muted,marginTop:3}}>👤 {invCanvCountAll.toLocaleString()} canvasser tercatat</div>
                       <div style={{fontSize:9,color:P.investigate,fontWeight:700,marginTop:4}}>Lihat daftar ›</div>
                     </div>
                     <div onClick={()=>setOutletListDrill({label:"Daftar Outlet — Observe",color:P.a2,statusKey:"observe",outlets:[...allFlaggedOutlets].filter(o=>o.observe>0).sort((a,b)=>b.observe-a.observe)})}
@@ -2981,36 +2988,10 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                       onMouseEnter={e=>e.currentTarget.style.opacity="0.8"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
                       <div style={{fontSize:24,fontWeight:800,color:P.a2}}>{obsOutletCountAll.toLocaleString()}</div>
                       <div style={{fontSize:10,color:t.text,fontWeight:700,marginTop:2}}>⚠️ Outlet Berstatus Observe</div>
+                      <div style={{fontSize:10,color:t.muted,marginTop:3}}>👤 {obsCanvCountAll.toLocaleString()} canvasser tercatat</div>
                       <div style={{fontSize:9,color:P.a2,fontWeight:700,marginTop:4}}>Lihat daftar ›</div>
                     </div>
                   </div>
-
-                  {chronic.map((o,i)=>{
-                    const sellInRate=o.flagged?pct(o.flaggedSellInVisits,o.flagged):0;
-                    return(
-                    <div key={o.id} onClick={()=>{const rows=getOutletRows(o.id,o.cluster);setCanvDetail({canvasser:{name:o.name,cluster:o.cluster,icon:"🏪"},drillLabel:"Kunjungan Investigate + Observe",color:P.investigate,rows,drillKey:null,sessionKey:Date.now()});}}
-                      style={{padding:"11px 0",borderBottom:i<chronic.length-1?`1px solid ${t.border}`:"none",cursor:"pointer"}}
-                      onMouseEnter={e=>e.currentTarget.style.opacity="0.75"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                      <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:8,marginBottom:6}}>
-                        <div style={{minWidth:0}}>
-                          <div style={{fontSize:13,fontWeight:700,color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.name}</div>
-                          <div style={{fontSize:10,color:t.muted}}>{o.cluster}</div>
-                        </div>
-                        <div style={{fontSize:16,fontWeight:800,color:P.investigate,flexShrink:0}}>{o.flagged.toLocaleString()}</div>
-                      </div>
-                      <div style={{height:4,borderRadius:99,background:t.border,marginBottom:8}}>
-                        <div style={{width:pct(o.flagged,maxFlag)+"%",height:"100%",borderRadius:99,background:P.investigate}}/>
-                      </div>
-                      <div style={{display:"flex",gap:12,fontSize:10,flexWrap:"wrap",alignItems:"center"}}>
-                        {o.investigate>0&&<span style={{color:P.investigate,fontWeight:700}}>🔍 Investigate: {o.investigate}</span>}
-                        {o.observe>0&&<span style={{color:P.a2,fontWeight:700}}>⚠️ Observe: {o.observe}</span>}
-                        <span style={{color:o.canvasserCount>1?P.investigate:t.muted,fontWeight:o.canvasserCount>1?700:400,background:o.canvasserCount>1?P.investigate+"1a":"transparent",padding:o.canvasserCount>1?"1px 7px":0,borderRadius:99}}>
-                          {o.canvasserCount>1?`👥 ${o.canvasserCount} canvasser berbeda`:`👤 1 canvasser`}
-                        </span>
-                        <span style={{color:sellInRate>=50?"#10b981":t.muted,fontWeight:sellInRate>=50?700:400}}>💰 {sellInRate}% kunjungan flagged tetap ada Sell-In</span>
-                      </div>
-                    </div>
-                  );})}
                 </div>
               );
             })()}
