@@ -3290,8 +3290,11 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                 </div>
               );
             };
+            const typeBreakdown={};
+            allFlaggedOutlets.forEach(o=>{const ty=o.outletType||"Unknown";typeBreakdown[ty]=(typeBreakdown[ty]||0)+1;});
+            const typeBreakdownSorted=Object.entries(typeBreakdown).sort((a,b)=>b[1]-a[1]);
             return(
-              <div style={{...card(),height:"100%",boxSizing:"border-box"}}>
+              <div style={{...card(),height:"100%",boxSizing:"border-box",display:"flex",flexDirection:"column"}}>
                 <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>🔎 Outlet Terdampak Fake Visit</div>
                 <div style={{fontSize:10,color:t.muted,marginBottom:8}}>dari total <b style={{color:t.text}}>{totalOutletCount.toLocaleString()} outlet</b></div>
                 {rows.map((r,i)=>(
@@ -3305,6 +3308,19 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                     </div>
                   </div>
                 ))}
+                {typeBreakdownSorted.length>0&&(
+                  <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${t.border}`}}>
+                    <div style={{fontSize:9,color:t.muted,fontWeight:700,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.04em"}}>Kategori RO Terdampak</div>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                      {typeBreakdownSorted.map(([ty,cnt])=>(
+                        <span key={ty} style={{fontSize:9.5,color:t.muted,background:t.cardAlt,border:`1px solid ${t.border}`,borderRadius:999,padding:"2px 8px"}}>
+                          {ty} <b style={{color:t.text}}>{cnt.toLocaleString()}</b>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div style={{flex:1}}/>
                 {renderCategory("Investigate","🔍",P.investigate,invTop,"investigate")}
                 {renderCategory("Observe","⚠️",P.a2,obsTop,"observe")}
               </div>
