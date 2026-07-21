@@ -1023,7 +1023,7 @@ function OutletActivityPanel({detail,onClose,t}){
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
             <thead style={{position:"sticky",top:0,background:t.card,zIndex:1}}>
               <tr style={{background:t.cardAlt}}>
-                {["#","Tanggal","Visit Ke-","Canvasser","Status","In Range","Jarak In*","Jarak Out*","Durasi","Alasan"].map(h=>(
+                {["#","Tanggal","Visit Ke-","Canvasser","Status","In Range","Jarak In*","Jarak Out*","Durasi","Sell-In","AVA","Alasan"].map(h=>(
                   <th key={h} style={{padding:"9px 12px",textAlign:"left",fontSize:11,fontWeight:700,color:t.muted,whiteSpace:"nowrap",borderBottom:`1px solid ${t.border}`}}>{h}</th>
                 ))}
               </tr>
@@ -1059,6 +1059,9 @@ function OutletActivityPanel({detail,onClose,t}){
                   <td style={{padding:"7px 10px",color:distCO>500?P.investigate:distCO>100?P.observe:t.muted,fontWeight:distCO>500?700:400}}>{fmtDist(r["Distance Check Out (Meter)"])}</td>
                   <td style={{padding:"7px 10px",color:!isNaN(dur)&&dur>0&&dur<2?P.short:t.muted}}>
                     {fmtDur(r["Visit Duration (Menit)"])}{!isNaN(dur)&&dur>0&&dur<1&&<span style={{fontSize:9,color:P.investigate,marginLeft:3}}>⚡</span>}
+                  </td>
+                  <td style={{padding:"7px 10px",color:"#10b981",fontWeight:700}}>
+                    {(()=>{const qty=(parseFloat(String(r["Sell-In"]||"").replace(/[^0-9.\-]/g,""))||0)+(parseFloat(String(r["Online Sell-In"]||"").replace(/[^0-9.\-]/g,""))||0);return qty>0?qty.toLocaleString():<span style={{color:t.muted,fontWeight:400}}>–</span>;})()}
                   </td>
                   <td style={{padding:"6px 8px",textAlign:"center"}}>{(()=>{const v=String(r["AVA Tracking?"]||"").trim().toLowerCase();if(v==="")return <span style={{color:t.muted}}>–</span>;const ok=v==="yes"||v==="ya"||v==="true"||v==="1";return <span style={{background:ok?"#22c55e22":"#ef444422",color:ok?"#22c55e":"#ef4444",padding:"2px 8px",borderRadius:999,fontSize:10,fontWeight:700}}>{ok?"✓ Ya":"✗ Tidak"}</span>;})()}</td>
                   <td style={{padding:"7px 10px",fontSize:11,color:t.muted}}>{getReason(r)}</td>
@@ -1477,9 +1480,11 @@ function CanvasserDetailPanel({detail,onClose,t}){
   };
   const sorted=[...filteredRows].sort(sortFn);
   // Precompute drill count per outlet from rows (drill-filtered activities)
-  // Untuk drillKey "sellInQty" atau "avaYes", nilainya harus DIJUMLAH (quantity/count aktual),
-  // bukan sekadar dihitung jumlah barisnya — supaya gak salah kaprah kayak Total aktivitas.
+  // Untuk drillKey "sellInQty", nilainya harus DIJUMLAH (quantity aktual), bukan dihitung jumlah barisnya.
+  // Untuk "avaYes", getCanvasserRows belum bisa filter per-drillKey ini, jadi baris yang masuk `rows`
+  // bisa berisi aktivitas yang AVA-nya bukan Ya — makanya harus dicek manual di sini, bukan asal ++.
   const isQtyDrill = drillKey==="sellInQty";
+  const isAvaDrill = drillKey==="avaYes";
   const drillCountMap={};
   (rows||[]).forEach(r=>{
     const oid=String(r["Outlet ID"]||"").trim();
@@ -1488,6 +1493,10 @@ function CanvasserDetailPanel({detail,onClose,t}){
     if(isQtyDrill){
       const qty=(parseFloat(String(r["Sell-In"]||"").replace(/[^0-9.\-]/g,""))||0)+(parseFloat(String(r["Online Sell-In"]||"").replace(/[^0-9.\-]/g,""))||0);
       drillCountMap[oid].total+=qty;
+    } else if(isAvaDrill){
+      const avaVal=String(r["AVA Tracking?"]||"").trim().toLowerCase();
+      const isYes=avaVal==="yes"||avaVal==="ya"||avaVal==="true"||avaVal==="1";
+      if(isYes) drillCountMap[oid].total++;
     } else {
       drillCountMap[oid].total++;
     }
@@ -2525,6 +2534,14 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
         case "LOC_INC": return vs==="INCOMPLETE";
         case "IR_YES": return inR==="yes"||inR==="y"||inR==="1";
         case "IR_NO": return inR==="no"||inR==="n"||inR==="0"||inR==="false";
+        case "sellInQty": {
+          const qty=(parseFloat(String(r["Sell-In"]||"").replace(/[^0-9.\-]/g,""))||0)+(parseFloat(String(r["Online Sell-In"]||"").replace(/[^0-9.\-]/g,""))||0);
+          return qty>0;
+        }
+        case "avaYes": {
+          const avaVal=String(r["AVA Tracking?"]||"").trim().toLowerCase();
+          return avaVal==="yes"||avaVal==="ya"||avaVal==="true"||avaVal==="1";
+        }
         default: return true;
       }
     };
