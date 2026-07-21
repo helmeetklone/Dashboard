@@ -1342,16 +1342,19 @@ function CanvCategoryDrillModal({detail,onClose,t,onCanvasserClick}){
 function OutletListModal({detail,onClose,t,onOutletClick}){
   const [search,setSearch]=useState("");
   const [pg,setPg]=useState(0);
+  const [sBy,setSBy]=useState("count");
   const [sDir,setSDir]=useState("desc");
   const PG=10;
-  useEffect(()=>{setSearch("");setPg(0);setSDir("desc");},[detail?.statusKey,detail?.label]);
+  useEffect(()=>{setSearch("");setPg(0);setSBy("count");setSDir("desc");},[detail?.statusKey,detail?.label]);
   if(!detail) return null;
   const {label,color,statusKey,outlets}=detail;
+  const sortKey=sBy==="sellin"?"flaggedSellInQty":statusKey;
   const filt=[...(outlets||[])]
     .filter(o=>search?o.name.toLowerCase().includes(search.toLowerCase())||(o.cluster||"").toLowerCase().includes(search.toLowerCase()):true)
-    .sort((a,b)=>sDir==="desc"?(b[statusKey]||0)-(a[statusKey]||0):(a[statusKey]||0)-(b[statusKey]||0));
+    .sort((a,b)=>sDir==="desc"?(b[sortKey]||0)-(a[sortKey]||0):(a[sortKey]||0)-(b[sortKey]||0));
   const list=filt.slice(pg*PG,(pg+1)*PG);
   const maxV=filt[0]?.[statusKey]||1;
+  const toggleSort=(k)=>{if(sBy===k)setSDir(d=>d==="desc"?"asc":"desc");else{setSBy(k);setSDir("desc");}};
   return(
     <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:1000,display:"flex",alignItems:"flex-end",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)"}}
       onClick={onClose}>
@@ -1367,11 +1370,16 @@ function OutletListModal({detail,onClose,t,onOutletClick}){
         <div style={{padding:"8px 18px",borderBottom:`1px solid ${t.border}`,flexShrink:0}}>
           <input placeholder="🔍 Cari nama outlet / cluster..." value={search} onChange={e=>{setSearch(e.target.value);setPg(0);}}
             style={{width:"100%",background:t.cardAlt,border:`1px solid ${t.border}`,color:t.text,borderRadius:8,padding:"7px 12px",fontSize:12,outline:"none",boxSizing:"border-box"}}/>
-          <div style={{fontSize:11,color:t.muted,marginTop:4}}>💡 Diurutkan dari jumlah kunjungan tertinggi ke terendah. Klik nama outlet untuk melihat detail kunjungannya.</div>
+          <div style={{fontSize:11,color:t.muted,marginTop:4}}>💡 Klik nama outlet untuk melihat detail kunjungannya.</div>
           <div style={{display:"flex",alignItems:"center",gap:6,marginTop:5,flexWrap:"wrap"}}>
-            <button onClick={()=>setSDir(d=>d==="desc"?"asc":"desc")}
-              style={{background:color,color:"#fff",border:"1px solid "+t.border,borderRadius:6,padding:"3px 10px",fontSize:10,fontWeight:700,cursor:"pointer"}}>
-              Jumlah{sDir==="desc"?" ↓":" ↑"}
+            <span style={{fontSize:10,color:t.muted,fontWeight:600}}>Sort:</span>
+            <button onClick={()=>toggleSort("count")}
+              style={{background:sBy==="count"?color:t.cardAlt,color:sBy==="count"?"#fff":t.muted,border:"1px solid "+t.border,borderRadius:6,padding:"3px 10px",fontSize:10,fontWeight:700,cursor:"pointer"}}>
+              Jumlah{sBy==="count"?(sDir==="desc"?" ↓":" ↑"):""}
+            </button>
+            <button onClick={()=>toggleSort("sellin")}
+              style={{background:sBy==="sellin"?color:t.cardAlt,color:sBy==="sellin"?"#fff":t.muted,border:"1px solid "+t.border,borderRadius:6,padding:"3px 10px",fontSize:10,fontWeight:700,cursor:"pointer"}}>
+              Sell-In{sBy==="sellin"?(sDir==="desc"?" ↓":" ↑"):""}
             </button>
             <span style={{marginLeft:"auto",fontSize:10,color:t.muted}}>{filt.length} outlet</span>
           </div>
