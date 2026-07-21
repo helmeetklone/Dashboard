@@ -1180,6 +1180,50 @@ function OutletListModal({detail,onClose,t,onOutletClick}){
   );
 }
 
+// ── PRIORITY OUTLET MODAL (Top 10 Prioritas Kunjungan, dengan alasan) ────────
+function PriorityOutletModal({detail,onClose,t,onOutletClick}){
+  if(!detail) return null;
+  const {label,color,catKey,list}=detail;
+  const maxV=list[0]?.[catKey]||1;
+  return(
+    <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:1000,display:"flex",alignItems:"flex-end",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)"}}
+      onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxHeight:"82vh",background:t.card,borderRadius:"20px 20px 0 0",border:`1px solid ${t.border}`,overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 -8px 40px rgba(0,0,0,0.5)",fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
+        <div style={{padding:"14px 18px 10px",borderBottom:`1px solid ${t.border}`,display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
+          <div style={{width:12,height:12,borderRadius:3,background:color,flexShrink:0}}/>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:800,fontSize:15,color:t.text}}>Top 10 Prioritas Kunjungan — {label}</div>
+            <div style={{fontSize:11,color:t.muted,marginTop:1}}>Klik nama outlet untuk melihat detail kunjungannya</div>
+          </div>
+          <button onClick={onClose} style={{background:t.cardAlt,border:`1px solid ${t.border}`,color:t.text,borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:13,fontWeight:700}}>✕</button>
+        </div>
+        <div style={{overflowY:"auto",flex:1,padding:"8px 16px 16px"}}>
+          {list.map((o,i)=>(
+            <div key={o.id} onClick={()=>onOutletClick&&onOutletClick(o,label,color)}
+              style={{padding:"11px 0",borderBottom:i<list.length-1?`1px solid ${t.border}`:"none",cursor:"pointer"}}
+              onMouseEnter={e=>e.currentTarget.style.opacity="0.75"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+              <div style={{display:"flex",alignItems:"baseline",gap:8,marginBottom:4}}>
+                <div style={{fontSize:11,fontWeight:800,color,flexShrink:0,width:18}}>#{i+1}</div>
+                <div style={{minWidth:0,flex:1}}>
+                  <div style={{fontSize:13,fontWeight:700,color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.name}</div>
+                  <div style={{fontSize:10,color:t.muted}}>{o.cluster}</div>
+                </div>
+                <div style={{fontSize:15,fontWeight:800,color,flexShrink:0}}>{o[catKey]}</div>
+              </div>
+              <div style={{height:4,borderRadius:99,background:t.border,marginBottom:6,marginLeft:26}}>
+                <div style={{width:pct(o[catKey],maxV)+"%",height:"100%",borderRadius:99,background:color}}/>
+              </div>
+              <div style={{fontSize:10,color,fontWeight:600,marginLeft:26,lineHeight:1.6}}>
+                {o.reasons.join(" · ")}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── CANVASSER DETAIL PANEL ────────────────────────────────────────────────────
 function CanvasserDetailPanel({detail,onClose,t}){
   const [pg,setPg]=useState(0);
@@ -2388,6 +2432,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
   },[view.canvassers]);
   const [canvCategoryDrill,setCanvCategoryDrill]=useState(null); // {label,color,statusKey,list}
   const [outletListDrill,setOutletListDrill]=useState(null); // {label,color,statusKey,outlets}
+  const [priorityDrill,setPriorityDrill]=useState(null); // {label,color,catKey,list} — Top 10 prioritas dengan alasan
 
   // Current level label
   const levelLabel=selCluster?"Cluster":selRegion?"Region":regionCodes.length===1?`${regionCodes[0]} — ${regionFullName(regionCodes[0])}`:"Nasional";
@@ -2993,6 +3038,55 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                     </div>
                   </div>
                 </div>
+              );
+            })()}
+
+            {/* ── Prioritas Kunjungan RO — dipisah per kategori, list disembunyikan sampai diklik ── */}
+            {(()=>{
+              const pool=(view.chronicOutlets||[]);
+              if(!pool.length) return null;
+
+              const buildReasons=(o,catKey)=>{
+                const sellInRate=o.flagged?pct(o.flaggedSellInVisits,o.flagged):0;
+                const r=[];
+                if(catKey==="investigate") r.push(`${o.investigate} kunjungan Investigate`);
+                else r.push(`${o.observe} kunjungan Observe`);
+                if(o.canvasserCount>1) r.push(`${o.canvasserCount} canvasser berbeda tercatat pada outlet yang sama`);
+                if(sellInRate<20) r.push(`hanya ${sellInRate}% kunjungan flagged tetap ada Sell-In — indikasi kunjungan tidak wajar`);
+                else if(sellInRate<50) r.push(`${sellInRate}% kunjungan flagged tetap ada Sell-In — perlu verifikasi lapangan`);
+                else r.push(`${sellInRate}% kunjungan flagged tetap ada Sell-In — kemungkinan hanya masalah GPS`);
+                return r;
+              };
+
+              const invTop=[...pool].filter(o=>o.investigate>0).sort((a,b)=>b.investigate-a.investigate).slice(0,10)
+                .map(o=>({...o,reasons:buildReasons(o,"investigate")}));
+              const obsTop=[...pool].filter(o=>o.observe>0).sort((a,b)=>b.observe-a.observe).slice(0,10)
+                .map(o=>({...o,reasons:buildReasons(o,"observe")}));
+
+              const renderCategory=(label,icon,color,list,catKey)=>{
+                if(!list.length) return null;
+                const totalActivityTop10=list.reduce((s,o)=>s+(o[catKey]||0),0);
+                return(
+                  <div style={{...card(),marginBottom:24,border:`1px solid ${color}44`}}>
+                    <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase"}}>{icon} Prioritas Kunjungan RO — Top 10 {label}</div>
+                    <div style={{fontSize:11,color:t.muted,marginTop:2,marginBottom:12,lineHeight:1.6}}>Outlet yang paling disarankan untuk dikunjungi/diverifikasi lebih dulu, diurutkan dari jumlah kunjungan {label} terbanyak.</div>
+                    <div onClick={()=>setPriorityDrill({label,color,catKey,list})}
+                      style={{padding:"12px 14px",borderRadius:10,background:color+"14",cursor:"pointer"}}
+                      onMouseEnter={e=>e.currentTarget.style.opacity="0.85"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+                      <div style={{fontSize:20,fontWeight:800,color}}>{totalActivityTop10.toLocaleString()} kunjungan {label}</div>
+                      <div style={{fontSize:10,color:t.muted,marginTop:1}}>dari {list.length} outlet prioritas teratas</div>
+                      <div style={{fontSize:11,color,fontWeight:700,marginTop:8}}>🎯 Lihat Top 10 Prioritas Kunjungan ›</div>
+                    </div>
+                  </div>
+                );
+              };
+
+              return(
+                <>
+                  {renderCategory("Investigate","🔍",P.investigate,invTop,"investigate")}
+                  {renderCategory("Observe","⚠️",P.a2,obsTop,"observe")}
+
+                </>
               );
             })()}
 
@@ -4216,6 +4310,8 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
     <CanvasserDetailPanel detail={canvDetail} onClose={()=>setCanvDetail(null)} t={t}/>
     <OutletListModal detail={outletListDrill} onClose={()=>setOutletListDrill(null)} t={t}
       onOutletClick={(o)=>{const rows=getOutletRows(o.id,o.cluster);setCanvDetail({canvasser:{name:o.name,cluster:o.cluster,icon:"🏪"},drillLabel:"Kunjungan Investigate + Observe",color:P.investigate,rows,drillKey:null,sessionKey:Date.now()});setOutletListDrill(null);}}/>
+    <PriorityOutletModal detail={priorityDrill} onClose={()=>setPriorityDrill(null)} t={t}
+      onOutletClick={(o,label,color)=>{const rows=getOutletRows(o.id,o.cluster);setCanvDetail({canvasser:{name:o.name,cluster:o.cluster,icon:"🏪"},drillLabel:`Kunjungan ${label}`,color,rows,drillKey:null,sessionKey:Date.now()});setPriorityDrill(null);}}/>
     </>
   );
 }
