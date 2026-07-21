@@ -552,13 +552,13 @@ function processRows(rows) {
     // bermasalah di outlet yang sama = indikasi masalah di data/lokasi outlet, bukan personal canvasser)
     const opId=r["Outlet ID"]!=null?String(r["Outlet ID"]).trim():"";
     if(opId){
-      if(!outletProblemMap[opId]) outletProblemMap[opId]={id:opId,name:String(r["Outlet"]||r["Outlet Name"]||opId).trim(),cluster:String(cl),total:0,investigate:0,observe:0,canvasserSet:new Set(),flaggedSellInVisits:0};
+      if(!outletProblemMap[opId]) outletProblemMap[opId]={id:opId,name:String(r["Outlet"]||r["Outlet Name"]||opId).trim(),cluster:String(cl),outletType:ot,total:0,investigate:0,observe:0,canvasserSet:new Set(),flaggedSellInVisits:0,flaggedSellInQty:0};
       const op=outletProblemMap[opId];
       op.total++;
       const isFlagged=vs==="INVESTIGATE"||vs==="OBSERVE";
       if(vs==="INVESTIGATE") op.investigate++;
       else if(vs==="OBSERVE") op.observe++;
-      if(isFlagged){ op.canvasserSet.add(nm); if(didSellIn) op.flaggedSellInVisits++; }
+      if(isFlagged){ op.canvasserSet.add(nm); if(didSellIn){ op.flaggedSellInVisits++; op.flaggedSellInQty+=rowSellInQty; } }
     }
     canvMap[cid].total++;
     if(as1==="A1 - NORMAL")    {canvMap[cid].A1++; canvMap[cid].sellInByStatus.A1+=rowSellInQty; if(didAva) canvMap[cid].avaYesByStatus.A1++;}
@@ -718,8 +718,8 @@ function processRows(rows) {
   });
   const censusData = Object.values(outMap).filter(d=>d._isCensus).sort((a,b)=>b.total-a.total);
   const chronicOutlets = Object.values(outletProblemMap)
-    .map(o=>({id:o.id,name:o.name,cluster:o.cluster,total:o.total,investigate:o.investigate,observe:o.observe,
-      flagged:o.investigate+o.observe,canvasserCount:o.canvasserSet.size,flaggedSellInVisits:o.flaggedSellInVisits}))
+    .map(o=>({id:o.id,name:o.name,cluster:o.cluster,outletType:o.outletType,total:o.total,investigate:o.investigate,observe:o.observe,
+      flagged:o.investigate+o.observe,canvasserCount:o.canvasserSet.size,flaggedSellInVisits:o.flaggedSellInVisits,flaggedSellInQty:o.flaggedSellInQty}))
     .filter(o=>o.flagged>0)
     .sort((a,b)=>b.flagged-a.flagged);
   return {
@@ -818,7 +818,7 @@ function aggregateList(dataList) {
       const m={};
       dataList.forEach(d=>(d.chronicOutlets||[]).forEach(o=>{
         if(!m[o.id]) m[o.id]={...o};
-        else { m[o.id].total+=o.total; m[o.id].investigate+=o.investigate; m[o.id].observe+=o.observe; m[o.id].flagged+=o.flagged; m[o.id].canvasserCount+=o.canvasserCount; m[o.id].flaggedSellInVisits=(m[o.id].flaggedSellInVisits||0)+(o.flaggedSellInVisits||0); }
+        else { m[o.id].total+=o.total; m[o.id].investigate+=o.investigate; m[o.id].observe+=o.observe; m[o.id].flagged+=o.flagged; m[o.id].canvasserCount+=o.canvasserCount; m[o.id].flaggedSellInVisits=(m[o.id].flaggedSellInVisits||0)+(o.flaggedSellInVisits||0); m[o.id].flaggedSellInQty=(m[o.id].flaggedSellInQty||0)+(o.flaggedSellInQty||0); }
       }));
       return Object.values(m).sort((a,b)=>b.flagged-a.flagged);
     })(),
@@ -1380,7 +1380,7 @@ function OutletListModal({detail,onClose,t,onOutletClick}){
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
             <thead style={{position:"sticky",top:0,background:t.card,zIndex:1}}>
               <tr style={{background:t.cardAlt}}>
-                {["#","Nama Outlet","Cluster","Jumlah Kunjungan","Canvasser","Sell-In",""].map(h=>(
+                {["#","Nama Outlet","Kategori RO","Cluster","Jumlah Kunjungan","Canvasser","Sell-In",""].map(h=>(
                   <th key={h} style={{padding:"9px 12px",textAlign:"left",fontSize:11,fontWeight:700,color:t.muted,whiteSpace:"nowrap",borderBottom:`1px solid ${t.border}`}}>{h}</th>
                 ))}
               </tr>
@@ -1393,6 +1393,7 @@ function OutletListModal({detail,onClose,t,onOutletClick}){
                   onClick={()=>onOutletClick&&onOutletClick(o)}>
                   <td style={{padding:"8px 10px",color:t.muted,fontSize:11}}>{pg*PG+i+1}</td>
                   <td style={{padding:"8px 10px",fontWeight:600,color:color,whiteSpace:"nowrap",fontSize:12}}>{o.name}</td>
+                  <td style={{padding:"8px 10px",color:t.muted,fontSize:11,whiteSpace:"nowrap"}}>{o.outletType||"–"}</td>
                   <td style={{padding:"8px 10px",color:t.muted,fontSize:11,whiteSpace:"nowrap",maxWidth:140,overflow:"hidden",textOverflow:"ellipsis"}}>{o.cluster||"–"}</td>
                   <td style={{padding:"8px 10px"}}>
                     <div style={{display:"flex",alignItems:"center",gap:6}}>
@@ -1406,7 +1407,7 @@ function OutletListModal({detail,onClose,t,onOutletClick}){
                     <span style={{color:o.canvasserCount>1?color:t.muted,fontWeight:o.canvasserCount>1?700:400}}>{o.canvasserCount>1?`👥 ${o.canvasserCount}`:`👤 1`}</span>
                   </td>
                   <td style={{padding:"8px 10px",fontSize:11,whiteSpace:"nowrap"}}>
-                    {(()=>{const rate=o.flagged?pct(o.flaggedSellInVisits,o.flagged):0;return <span style={{color:rate>=50?"#10b981":t.muted,fontWeight:rate>=50?700:400}}>{rate}%</span>;})()}
+                    <span style={{color:(o.flaggedSellInQty||0)>0?"#10b981":t.muted,fontWeight:(o.flaggedSellInQty||0)>0?700:400}}>{(o.flaggedSellInQty||0).toLocaleString()}</span>
                   </td>
                   <td style={{padding:"8px 10px"}}>
                     <button style={{background:color+"20",border:"none",color:color,borderRadius:6,padding:"3px 8px",fontSize:10,fontWeight:700,cursor:"pointer"}}>Detail ›</button>
