@@ -1409,7 +1409,7 @@ function CanvasserDetailPanel({detail,onClose,t}){
   const PG=10;
   useEffect(()=>{setPg(0);setOPg(0);setView("list");setVtFilter("ALL");setSellInFilter("ALL");setOutletFilter(null);setOutletFilterName(null);setStatusFilter(null);setSortCol("date");setSortDir("asc");setAvaDrill(null);setAvaRowDetail(null);},[detail?.sessionKey]);
   if(!detail) return null;
-  const {canvasser,drillLabel,color,rows}=detail;
+  const {canvasser,drillLabel,color,rows,drillKey}=detail;
   const allRows=rows._all||rows;
   const fmtDate=v=>{if(!v)return"–";const d=new Date(v);return isNaN(d)?"–":d.toLocaleDateString("id-ID",{day:"2-digit",month:"short",year:"2-digit"});};
   const fmtDist=v=>{const n=parseFloat(v);return isNaN(n)?"–":n>=1000?(n/1000).toFixed(1)+"km":n.toFixed(0)+"m";};
@@ -1477,12 +1477,20 @@ function CanvasserDetailPanel({detail,onClose,t}){
   };
   const sorted=[...filteredRows].sort(sortFn);
   // Precompute drill count per outlet from rows (drill-filtered activities)
+  // Untuk drillKey "sellInQty" atau "avaYes", nilainya harus DIJUMLAH (quantity/count aktual),
+  // bukan sekadar dihitung jumlah barisnya — supaya gak salah kaprah kayak Total aktivitas.
+  const isQtyDrill = drillKey==="sellInQty";
   const drillCountMap={};
   (rows||[]).forEach(r=>{
     const oid=String(r["Outlet ID"]||"").trim();
     if(!oid) return;
     if(!drillCountMap[oid]) drillCountMap[oid]={total:0,obs:0,inv:0};
-    drillCountMap[oid].total++;
+    if(isQtyDrill){
+      const qty=(parseFloat(String(r["Sell-In"]||"").replace(/[^0-9.\-]/g,""))||0)+(parseFloat(String(r["Online Sell-In"]||"").replace(/[^0-9.\-]/g,""))||0);
+      drillCountMap[oid].total+=qty;
+    } else {
+      drillCountMap[oid].total++;
+    }
     const vs=String(r["_CVS"]||r["Visit Status"]||"").toUpperCase();
     if(vs==="OBSERVE") drillCountMap[oid].obs++;
     else if(vs==="INVESTIGATE") drillCountMap[oid].inv++;
@@ -1696,7 +1704,7 @@ function CanvasserDetailPanel({detail,onClose,t}){
                     <td style={{padding:"7px 10px"}}>
                       {r.drill>0?(
                         <div onClick={()=>{setOutletFilter(r.id);setOutletFilterName(r.name);setStatusFilter(null);setVtFilter("ALL");setPg(0);setView("list");}} style={{cursor:"pointer",display:"flex",flexDirection:"column",gap:2}}>
-                          <span style={{background:color+"22",color,fontWeight:800,padding:"1px 7px",borderRadius:5,fontSize:11,textAlign:"center"}}>{r.drill}</span>
+                          <span style={{background:color+"22",color,fontWeight:800,padding:"1px 7px",borderRadius:5,fontSize:11,textAlign:"center"}}>{r.drill.toLocaleString()}</span>
                           {(r.drillObs>0||r.drillInv>0)&&<div style={{display:"flex",gap:3,justifyContent:"center"}}>
                             {r.drillObs>0&&<span style={{background:"#f59e0b22",color:"#f59e0b",fontSize:9,padding:"0px 5px",borderRadius:4,fontWeight:700}}>{r.drillObs}obs</span>}
                             {r.drillInv>0&&<span style={{background:"#ef444422",color:"#ef4444",fontSize:9,padding:"0px 5px",borderRadius:4,fontWeight:700}}>{r.drillInv}inv</span>}
