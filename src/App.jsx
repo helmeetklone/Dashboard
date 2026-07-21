@@ -3250,6 +3250,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
             const allFlaggedOutlets=view.chronicOutlets||[];
             const invOutletCountAll=allFlaggedOutlets.filter(o=>o.investigate>0).length;
             const obsOutletCountAll=allFlaggedOutlets.filter(o=>o.observe>0).length;
+            const totalOutletCount=(view.outletData||[]).reduce((s,d)=>s+(d.outletCount||0),0);
             const rows=[
               {label:"Outlet Berstatus Investigate",icon:"🔍",val:invOutletCountAll,color:P.investigate,onClick:()=>setOutletListDrill({label:"Daftar Outlet — Investigate",color:P.investigate,statusKey:"investigate",outlets:[...allFlaggedOutlets].filter(o=>o.investigate>0).sort((a,b)=>b.investigate-a.investigate)})},
               {label:"Outlet Berstatus Observe",icon:"⚠️",val:obsOutletCountAll,color:P.a2,onClick:()=>setOutletListDrill({label:"Daftar Outlet — Observe",color:P.a2,statusKey:"observe",outlets:[...allFlaggedOutlets].filter(o=>o.observe>0).sort((a,b)=>b.observe-a.observe)})},
@@ -3282,7 +3283,8 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
             };
             return(
               <div style={{...card(),height:"100%",boxSizing:"border-box"}}>
-                <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:8}}>🔎 Outlet Terdampak Fake Visit</div>
+                <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>🔎 Outlet Terdampak Fake Visit</div>
+                <div style={{fontSize:10,color:t.muted,marginBottom:8}}>dari total <b style={{color:t.text}}>{totalOutletCount.toLocaleString()} outlet</b></div>
                 {rows.map((r,i)=>(
                   <div key={i} onClick={r.onClick} style={{display:"flex",alignItems:"center",padding:"9px 0",borderBottom:`1px solid ${t.border}`,cursor:"pointer"}}>
                     <div style={{flex:1,fontSize:12,fontWeight:600,color:t.text,display:"flex",alignItems:"center",gap:6,minWidth:0}}>
@@ -3290,7 +3292,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                     </div>
                     <div style={{textAlign:"right",flexShrink:0}}>
                       <div style={{fontSize:20,fontWeight:800,color:r.color,lineHeight:1.1}}>{r.val.toLocaleString()}</div>
-                      <div style={{fontSize:9,color:t.muted}}>outlet</div>
+                      <div style={{fontSize:9,color:t.muted}}>outlet · {pctS(r.val,totalOutletCount)}</div>
                     </div>
                   </div>
                 ))}
