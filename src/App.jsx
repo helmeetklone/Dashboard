@@ -1713,7 +1713,7 @@ function CanvasserDetailPanel({detail,onClose,t}){
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
             <thead style={{position:"sticky",top:0,background:t.card,zIndex:1}}>
               <tr style={{background:t.cardAlt}}>
-                {["#","Tanggal","Visit Ke-","Visit Type","Outlet ID","Outlet","Status","In Range","Jarak Check-In*","Jarak Check-Out*","Durasi","Sell-In","AVA","Alasan"].map(h=>(
+                {["#","Tanggal","Visit Ke-","Canvasser","Visit Type","Outlet ID","Outlet","Status","In Range","Jarak Check-In*","Jarak Check-Out*","Durasi","Sell-In","AVA","Alasan"].map(h=>(
                   <th key={h} style={{padding:"9px 12px",textAlign:"left",fontSize:11,fontWeight:700,color:t.muted,whiteSpace:"nowrap",borderBottom:`1px solid ${t.border}`}}>{h}</th>
                 ))}
               </tr>
@@ -1736,6 +1736,7 @@ function CanvasserDetailPanel({detail,onClose,t}){
                       </span>
                     ):<span style={{color:t.muted}}>–</span>}
                   </td>
+                  <td style={{padding:"7px 10px",fontWeight:600,color:t.text,whiteSpace:"nowrap",maxWidth:140,overflow:"hidden",textOverflow:"ellipsis"}}>{r["Canvasser"]||"–"}</td>
                   <td style={{padding:"7px 10px"}}>{(()=>{const vt=r["Activity Type"]||"";const vc=vt==="Regular Visit"?P.a1:vt==="Ad-Hoc Visit"?P.a2:"#06b6d4";return vt?<span style={{background:vc+"22",color:vc,padding:"1px 7px",borderRadius:999,fontSize:9,fontWeight:700,whiteSpace:"nowrap"}}>{vt}</span>:<span style={{color:t.muted}}>–</span>;})()}</td>
                   <td style={{padding:"7px 10px",color:t.text,maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r["Outlet"]||"–"}</td>
                   <td style={{padding:"7px 10px",color:t.muted,fontSize:10,whiteSpace:"nowrap"}}>{r["Outlet ID"]||"–"}</td>
