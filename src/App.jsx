@@ -1257,6 +1257,51 @@ function DrillDownPanel({drill,onClose,t,onCanvasserClick}){
 }
 
 // ── OUTLET LIST MODAL (Investigate/Observe) ──────────────────────────────────
+// ── CANVASSER CATEGORY DRILL MODAL (A1/A2/A3 status dominan) — dengan sort ──
+function CanvCategoryDrillModal({detail,onClose,t,onCanvasserClick}){
+  const [sDir,setSDir]=useState("desc");
+  useEffect(()=>{setSDir("desc");},[detail?.label]);
+  if(!detail) return null;
+  const {label,color,statusKey,list}=detail;
+  const sorted=[...list].sort((a,b)=>sDir==="desc"?(b[statusKey]||0)-(a[statusKey]||0):(a[statusKey]||0)-(b[statusKey]||0));
+  return(
+    <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:1200,display:"flex",alignItems:"flex-end",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)"}} onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxHeight:"78vh",background:t.card,borderRadius:"18px 18px 0 0",border:"1px solid "+t.border,overflow:"hidden",display:"flex",flexDirection:"column",fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
+        <div style={{padding:"16px 18px 12px",borderBottom:"1px solid "+t.border,display:"flex",alignItems:"center",gap:10}}>
+          <div style={{width:12,height:12,borderRadius:3,background:color,flexShrink:0}}/>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:800,fontSize:14,color:t.text}}>{label}</div>
+            <div style={{fontSize:11,color:t.muted,marginTop:2}}>{list.length.toLocaleString()} canvasser (status dominan)</div>
+          </div>
+          <button onClick={onClose} style={{background:t.cardAlt,border:"1px solid "+t.border,color:t.text,borderRadius:8,padding:"4px 10px",cursor:"pointer",fontSize:12,fontWeight:700}}>✕</button>
+        </div>
+        <div style={{padding:"8px 18px",borderBottom:"1px solid "+t.border,flexShrink:0,display:"flex",alignItems:"center",gap:6}}>
+          <span style={{fontSize:10,color:t.muted,fontWeight:600}}>Sort:</span>
+          <button onClick={()=>setSDir(d=>d==="desc"?"asc":"desc")}
+            style={{background:color,color:"#fff",border:"1px solid "+t.border,borderRadius:6,padding:"3px 10px",fontSize:10,fontWeight:700,cursor:"pointer"}}>
+            Jumlah{sDir==="desc"?" ↓":" ↑"}
+          </button>
+        </div>
+        <div style={{overflowY:"auto",flex:1,padding:"8px 18px 18px",scrollbarWidth:"none"}}>
+          {sorted.map((c,i)=>(
+            <div key={i} onClick={()=>onCanvasserClick&&onCanvasserClick(c)}
+              style={{display:"flex",alignItems:"center",gap:10,padding:"10px 6px",cursor:"pointer",borderBottom:i<sorted.length-1?"1px solid "+t.border:"none"}}
+              onMouseEnter={e=>e.currentTarget.style.opacity="0.7"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+              <div style={{width:22,height:22,borderRadius:6,background:color+"22",color,fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{i+1}</div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:13,fontWeight:700,color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</div>
+                <div style={{fontSize:10,color:t.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.cluster}</div>
+              </div>
+              <div style={{fontSize:13,fontWeight:800,color,flexShrink:0}}>{(c[statusKey]||0).toLocaleString()}</div>
+              <span style={{fontSize:12,color:t.muted,flexShrink:0}}>›</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OutletListModal({detail,onClose,t,onOutletClick}){
   const [search,setSearch]=useState("");
   const [pg,setPg]=useState(0);
@@ -4283,35 +4328,8 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
         </div>
       </div>
     )}
-    {canvCategoryDrill&&(
-      <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:1200,display:"flex",alignItems:"flex-end",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)"}} onClick={()=>setCanvCategoryDrill(null)}>
-        <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxHeight:"78vh",background:t.card,borderRadius:"18px 18px 0 0",border:"1px solid "+t.border,overflow:"hidden",display:"flex",flexDirection:"column",fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
-          <div style={{padding:"16px 18px 12px",borderBottom:"1px solid "+t.border,display:"flex",alignItems:"center",gap:10}}>
-            <div style={{width:12,height:12,borderRadius:3,background:canvCategoryDrill.color,flexShrink:0}}/>
-            <div style={{flex:1}}>
-              <div style={{fontWeight:800,fontSize:14,color:t.text}}>{canvCategoryDrill.label}</div>
-              <div style={{fontSize:11,color:t.muted,marginTop:2}}>{canvCategoryDrill.list.length.toLocaleString()} canvasser (status dominan)</div>
-            </div>
-            <button onClick={()=>setCanvCategoryDrill(null)} style={{background:t.cardAlt,border:"1px solid "+t.border,color:t.text,borderRadius:8,padding:"4px 10px",cursor:"pointer",fontSize:12,fontWeight:700}}>✕</button>
-          </div>
-          <div style={{overflowY:"auto",flex:1,padding:"8px 18px 18px",scrollbarWidth:"none"}}>
-            {canvCategoryDrill.list.map((c,i)=>(
-              <div key={i} onClick={()=>{const rows=getCanvasserRows(c.name,c.cluster,canvCategoryDrill.statusKey);setCanvDetail({canvasser:c,drillLabel:canvCategoryDrill.label,color:canvCategoryDrill.color,rows,drillKey:canvCategoryDrill.statusKey,sessionKey:Date.now()});setCanvCategoryDrill(null);}}
-                style={{display:"flex",alignItems:"center",gap:10,padding:"10px 6px",cursor:"pointer",borderBottom:i<canvCategoryDrill.list.length-1?"1px solid "+t.border:"none"}}
-                onMouseEnter={e=>e.currentTarget.style.opacity="0.7"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                <div style={{width:22,height:22,borderRadius:6,background:canvCategoryDrill.color+"22",color:canvCategoryDrill.color,fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{i+1}</div>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:13,fontWeight:700,color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</div>
-                  <div style={{fontSize:10,color:t.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.cluster}</div>
-                </div>
-                <div style={{fontSize:13,fontWeight:800,color:canvCategoryDrill.color,flexShrink:0}}>{(c[canvCategoryDrill.statusKey]||0).toLocaleString()}</div>
-                <span style={{fontSize:12,color:t.muted,flexShrink:0}}>›</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    )}
+    <CanvCategoryDrillModal detail={canvCategoryDrill} onClose={()=>setCanvCategoryDrill(null)} t={t}
+      onCanvasserClick={(c)=>{const rows=getCanvasserRows(c.name,c.cluster,canvCategoryDrill.statusKey);setCanvDetail({canvasser:c,drillLabel:canvCategoryDrill.label,color:canvCategoryDrill.color,rows,drillKey:canvCategoryDrill.statusKey,sessionKey:Date.now()});setCanvCategoryDrill(null);}}/>
     {reasonDrill&&(
       <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:1200,display:"flex",alignItems:"flex-end",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)"}} onClick={()=>setReasonDrill(null)}>
         <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxHeight:"75vh",background:t.card,borderRadius:"18px 18px 0 0",border:"1px solid "+t.border,overflow:"hidden",display:"flex",flexDirection:"column",fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
