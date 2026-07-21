@@ -1291,6 +1291,10 @@ function CanvCategoryDrillModal({detail,onClose,t,onCanvasserClick}){
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontSize:13,fontWeight:700,color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</div>
                 <div style={{fontSize:10,color:t.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.cluster}</div>
+                <div style={{fontSize:9.5,color:t.muted,marginTop:2,display:"flex",gap:8}}>
+                  <span>💰 Sell-In: <b style={{color:(c.sellInQty||0)>0?"#10b981":t.muted}}>{(c.sellInQty||0).toLocaleString()}</b></span>
+                  <span>🏷 AVA: <b style={{color:(c.avaYes||0)>0?"#10b981":t.muted}}>{(c.avaYes||0).toLocaleString()}</b></span>
+                </div>
               </div>
               <div style={{fontSize:13,fontWeight:800,color,flexShrink:0}}>{(c[statusKey]||0).toLocaleString()}</div>
               <span style={{fontSize:12,color:t.muted,flexShrink:0}}>›</span>
