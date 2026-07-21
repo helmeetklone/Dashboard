@@ -543,7 +543,8 @@ function processRows(rows) {
     if(as1==="A3 - INCOMPLETE")outMap["__"+ck].A3++;
 
     if(!canvMap[cid]) canvMap[cid]={id:cid,name:nm,cluster:cl,region:rgn,total:0,A1:0,A2:0,A3:0,VALID:0,OBSERVE:0,INVESTIGATE:0,INCOMPLETE:0,durSum:0,durCnt:0,disSum:0,disCnt:0,
-      DUR_NORMAL:0,DUR_SHORT:0,DUR_LONG:0,DIS_NEAR:0,DIS_MID:0,DIS_FAR:0,DIS_INC:0,LOC_MATCH:0,LOC_NOTMATCH:0,LOC_INC:0,IR_YES:0,IR_NO:0,sellInQty:0,sellInVisits:0,avaTotal:0,avaYes:0};
+      DUR_NORMAL:0,DUR_SHORT:0,DUR_LONG:0,DIS_NEAR:0,DIS_MID:0,DIS_FAR:0,DIS_INC:0,LOC_MATCH:0,LOC_NOTMATCH:0,LOC_INC:0,IR_YES:0,IR_NO:0,sellInQty:0,sellInVisits:0,avaTotal:0,avaYes:0,
+      sellInByStatus:{A1:0,A2:0,A3:0},avaYesByStatus:{A1:0,A2:0,A3:0}};
 
     // Ranking Outlet Bermasalah Kronis: hitung per Outlet ID berapa kunjungan Investigate/Observe
     // dan berapa canvasser BERBEDA yang kena flag di outlet itu (banyak canvasser beda tapi tetap
@@ -559,9 +560,9 @@ function processRows(rows) {
       if(isFlagged){ op.canvasserSet.add(nm); if(didSellIn) op.flaggedSellInVisits++; }
     }
     canvMap[cid].total++;
-    if(as1==="A1 - NORMAL")    canvMap[cid].A1++;
-    if(as1==="A2 - ANOMALY")   canvMap[cid].A2++;
-    if(as1==="A3 - INCOMPLETE")canvMap[cid].A3++;
+    if(as1==="A1 - NORMAL")    {canvMap[cid].A1++; canvMap[cid].sellInByStatus.A1+=rowSellInQty; if(didAva) canvMap[cid].avaYesByStatus.A1++;}
+    if(as1==="A2 - ANOMALY")   {canvMap[cid].A2++; canvMap[cid].sellInByStatus.A2+=rowSellInQty; if(didAva) canvMap[cid].avaYesByStatus.A2++;}
+    if(as1==="A3 - INCOMPLETE"){canvMap[cid].A3++; canvMap[cid].sellInByStatus.A3+=rowSellInQty; if(didAva) canvMap[cid].avaYesByStatus.A3++;}
     if(visC[vs]!==undefined)   canvMap[cid][vs]=(canvMap[cid][vs]||0)+1;
     canvMap[cid].sellInQty+=rowSellInQty;
     if(didSellIn) canvMap[cid].sellInVisits++;
@@ -773,8 +774,14 @@ function aggregateList(dataList) {
   const cMap={};
   dataList.forEach(r=>(r.canvassers||[]).forEach(c=>{
     const key=c.id||c.name;
-    if(!cMap[key])cMap[key]={...c};
-    else CANV_KEYS.forEach(k=>{cMap[key][k]=(cMap[key][k]||0)+(c[k]||0);});
+    if(!cMap[key])cMap[key]={...c,sellInByStatus:{...(c.sellInByStatus||{A1:0,A2:0,A3:0})},avaYesByStatus:{...(c.avaYesByStatus||{A1:0,A2:0,A3:0})}};
+    else {
+      CANV_KEYS.forEach(k=>{cMap[key][k]=(cMap[key][k]||0)+(c[k]||0);});
+      ["A1","A2","A3"].forEach(sk=>{
+        cMap[key].sellInByStatus[sk]=(cMap[key].sellInByStatus[sk]||0)+((c.sellInByStatus||{})[sk]||0);
+        cMap[key].avaYesByStatus[sk]=(cMap[key].avaYesByStatus[sk]||0)+((c.avaYesByStatus||{})[sk]||0);
+      });
+    }
   }));
   const canvassers=Object.values(cMap).map(c=>({...c,
     avgDur:c.durCnt?+(c.durSum/c.durCnt).toFixed(1):null,
@@ -1259,11 +1266,19 @@ function DrillDownPanel({drill,onClose,t,onCanvasserClick}){
 // ── OUTLET LIST MODAL (Investigate/Observe) ──────────────────────────────────
 // ── CANVASSER CATEGORY DRILL MODAL (A1/A2/A3 status dominan) — dengan sort ──
 function CanvCategoryDrillModal({detail,onClose,t,onCanvasserClick}){
+  const [sBy,setSBy]=useState("count");
   const [sDir,setSDir]=useState("desc");
-  useEffect(()=>{setSDir("desc");},[detail?.label]);
+  useEffect(()=>{setSBy("count");setSDir("desc");},[detail?.label]);
   if(!detail) return null;
   const {label,color,statusKey,list}=detail;
-  const sorted=[...list].sort((a,b)=>sDir==="desc"?(b[statusKey]||0)-(a[statusKey]||0):(a[statusKey]||0)-(b[statusKey]||0));
+  const withVals=list.map(c=>({
+    ...c,
+    _sellInStatus:(c.sellInByStatus||{})[statusKey]||0,
+    _avaStatus:(c.avaYesByStatus||{})[statusKey]||0,
+  }));
+  const valKey=sBy==="sellin"?"_sellInStatus":sBy==="ava"?"_avaStatus":statusKey;
+  const sorted=[...withVals].sort((a,b)=>sDir==="desc"?(b[valKey]||0)-(a[valKey]||0):(a[valKey]||0)-(b[valKey]||0));
+  const toggleSort=(k)=>{if(sBy===k)setSDir(d=>d==="desc"?"asc":"desc");else{setSBy(k);setSDir("desc");}};
   return(
     <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:1200,display:"flex",alignItems:"flex-end",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)"}} onClick={onClose}>
       <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxHeight:"78vh",background:t.card,borderRadius:"18px 18px 0 0",border:"1px solid "+t.border,overflow:"hidden",display:"flex",flexDirection:"column",fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
@@ -1275,13 +1290,16 @@ function CanvCategoryDrillModal({detail,onClose,t,onCanvasserClick}){
           </div>
           <button onClick={onClose} style={{background:t.cardAlt,border:"1px solid "+t.border,color:t.text,borderRadius:8,padding:"4px 10px",cursor:"pointer",fontSize:12,fontWeight:700}}>✕</button>
         </div>
-        <div style={{padding:"8px 18px",borderBottom:"1px solid "+t.border,flexShrink:0,display:"flex",alignItems:"center",gap:6}}>
+        <div style={{padding:"8px 18px",borderBottom:"1px solid "+t.border,flexShrink:0,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
           <span style={{fontSize:10,color:t.muted,fontWeight:600}}>Sort:</span>
-          <button onClick={()=>setSDir(d=>d==="desc"?"asc":"desc")}
-            style={{background:color,color:"#fff",border:"1px solid "+t.border,borderRadius:6,padding:"3px 10px",fontSize:10,fontWeight:700,cursor:"pointer"}}>
-            Jumlah{sDir==="desc"?" ↓":" ↑"}
-          </button>
+          {[["count","Jumlah"],["sellin","Sell-In"],["ava","AVA"]].map(([k,lbl])=>(
+            <button key={k} onClick={()=>toggleSort(k)}
+              style={{background:sBy===k?color:t.cardAlt,color:sBy===k?"#fff":t.muted,border:"1px solid "+t.border,borderRadius:6,padding:"3px 10px",fontSize:10,fontWeight:700,cursor:"pointer"}}>
+              {lbl}{sBy===k?(sDir==="desc"?" ↓":" ↑"):""}
+            </button>
+          ))}
         </div>
+        <div style={{fontSize:9.5,color:t.muted,padding:"6px 18px 0"}}>💡 Sell-In & AVA di bawah ini khusus dari aktivitas berstatus <b style={{color:t.text}}>{label}</b>, bukan total keseluruhan canvasser</div>
         <div style={{overflowY:"auto",flex:1,padding:"8px 18px 18px",scrollbarWidth:"none"}}>
           {sorted.map((c,i)=>(
             <div key={i} onClick={()=>onCanvasserClick&&onCanvasserClick(c)}
@@ -1292,8 +1310,8 @@ function CanvCategoryDrillModal({detail,onClose,t,onCanvasserClick}){
                 <div style={{fontSize:13,fontWeight:700,color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</div>
                 <div style={{fontSize:10,color:t.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.cluster}</div>
                 <div style={{fontSize:9.5,color:t.muted,marginTop:2,display:"flex",gap:8}}>
-                  <span>💰 Sell-In: <b style={{color:(c.sellInQty||0)>0?"#10b981":t.muted}}>{(c.sellInQty||0).toLocaleString()}</b></span>
-                  <span>🏷 AVA: <b style={{color:(c.avaYes||0)>0?"#10b981":t.muted}}>{(c.avaYes||0).toLocaleString()}</b></span>
+                  <span>💰 Sell-In ({label}): <b style={{color:c._sellInStatus>0?"#10b981":t.muted}}>{c._sellInStatus.toLocaleString()}</b></span>
+                  <span>🏷 AVA ({label}): <b style={{color:c._avaStatus>0?"#10b981":t.muted}}>{c._avaStatus.toLocaleString()}</b></span>
                 </div>
               </div>
               <div style={{fontSize:13,fontWeight:800,color,flexShrink:0}}>{(c[statusKey]||0).toLocaleString()}</div>
