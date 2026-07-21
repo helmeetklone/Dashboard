@@ -526,8 +526,9 @@ function processRows(rows) {
     const didAva = avaVal==="yes"||avaVal==="ya"||avaVal==="true"||avaVal==="1";
     if(hasAvaData){ avaTotalCount++; if(didAva) avaYesCount++; }
 
-    if(!outMap[ot]) outMap[ot]={type:ot,total:0,A1:0,A2:0,A3:0,VALID:0,OBSERVE:0,INVESTIGATE:0,INCOMPLETE:0};
+    if(!outMap[ot]) outMap[ot]={type:ot,total:0,A1:0,A2:0,A3:0,VALID:0,OBSERVE:0,INVESTIGATE:0,INCOMPLETE:0,outletIdSet:new Set()};
     outMap[ot].total++;
+    { const oidForType=String(r["Outlet ID"]||"").trim(); if(oidForType) outMap[ot].outletIdSet.add(oidForType); }
     if(as1==="A1 - NORMAL")    outMap[ot].A1++;
     if(as1==="A2 - ANOMALY")   outMap[ot].A2++;
     if(as1==="A3 - INCOMPLETE")outMap[ot].A3++;
@@ -710,6 +711,11 @@ function processRows(rows) {
     sellInP:pct(c.sellInVisits,c.total),avaP:pct(c.avaYes,c.avaTotal),
   }));
 
+  Object.values(outMap).forEach(d=>{
+    d.outletIds=d.outletIdSet?[...d.outletIdSet]:[];
+    d.outletCount=d.outletIds.length;
+    delete d.outletIdSet;
+  });
   const censusData = Object.values(outMap).filter(d=>d._isCensus).sort((a,b)=>b.total-a.total);
   const chronicOutlets = Object.values(outletProblemMap)
     .map(o=>({id:o.id,name:o.name,cluster:o.cluster,total:o.total,investigate:o.investigate,observe:o.observe,
@@ -797,7 +803,16 @@ function aggregateList(dataList) {
     avaYesCount:dataList.reduce((s,r)=>s+(r.avaYesCount||0),0),
     actC:sumC("actC"),visC:sumC("visC"),durC:sumC("durC"),disC:sumC("disC"),locC:sumC("locC"),inRangeC:sumC("inRangeC"),
     visitTypeData:mergeArr("visitTypeData","type"),
-    outletData:mergeArr("outletData","type"),
+    outletData:(()=>{
+      const m={};
+      dataList.forEach(d=>(d.outletData||[]).forEach(item=>{
+        const k=item.type;
+        if(!m[k]) m[k]={...item,total:0,A1:0,A2:0,A3:0,VALID:0,OBSERVE:0,INVESTIGATE:0,INCOMPLETE:0,outletIdUnion:new Set()};
+        ["total","A1","A2","A3","VALID","OBSERVE","INVESTIGATE","INCOMPLETE"].forEach(f=>{m[k][f]=(m[k][f]||0)+(item[f]||0);});
+        (item.outletIds||[]).forEach(oid=>m[k].outletIdUnion.add(oid));
+      }));
+      return Object.values(m).map(d=>{const outletCount=d.outletIdUnion.size;const{outletIdUnion,...rest}=d;return{...rest,outletCount};}).sort((a,b)=>b.total-a.total);
+    })(),
     censusData:mergeArr("censusData","type"),
     chronicOutlets:(()=>{
       const m={};
@@ -3043,7 +3058,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
             </div>
           </div>
           <div style={{fontSize:11,color:t.muted,paddingLeft:20,borderLeft:`1px solid ${t.border}`,lineHeight:1.5}}>
-            <b style={{color:t.text,fontWeight:700}}>{clusters.length}</b> cluster · <b style={{color:t.text,fontWeight:700}}>{regionCodes.length}</b> region · <b style={{color:t.text,fontWeight:700}}>{(national.total||0).toLocaleString()}</b> aktivitas
+            <b style={{color:t.text,fontWeight:700}}>{clusters.length}</b> cluster · <b style={{color:t.text,fontWeight:700}}>{regionCodes.length}</b> region · <b style={{color:t.text,fontWeight:700}}>{((national.outletData||[]).reduce((s,d)=>s+(d.outletCount||0),0)).toLocaleString()}</b> outlet · <b style={{color:t.text,fontWeight:700}}>{(national.total||0).toLocaleString()}</b> aktivitas
             {national.dateRange?.min&&<> &nbsp;·&nbsp; {fmtPeriod(national.dateRange)}</>}
           </div>
         </div>
@@ -3804,7 +3819,8 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                             <div style={{width:22,textAlign:"center",fontSize:13,flexShrink:0}}>{i<3?["🥇","🥈","🥉"][i]:i+1}</div>
                             <div style={{flex:1,minWidth:0}}>
                               <div style={{fontSize:12,fontWeight:700,color:t.text}}>{d.type}</div>
-                              <div style={{fontSize:10,color:t.muted}}>{d.total.toLocaleString()} aktivitas</div>
+                              <div style={{fontSize:10,color:t.text,fontWeight:600}}>🏪 {(d.outletCount||0).toLocaleString()} outlet</div>
+                              <div style={{fontSize:9,color:t.muted}}>{d.total.toLocaleString()} aktivitas</div>
                             </div>
                             <div style={{fontSize:13,fontWeight:800,color:a1p>=70?P.a1:a1p>=40?P.a2:"#ef4444",flexShrink:0}}>{pctS(d.A1,d.total)} A1</div>
                           </div>
@@ -3859,12 +3875,13 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
               <div style={{overflowX:"auto",scrollbarWidth:"none",msOverflowStyle:"none"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
                   <thead><tr>
-                    {["Outlet Type","Total","A1","A2","A3","Inv","Dist","A1%","A2%"].map(h=><th key={h} style={{padding:isMobile?"0 8px 8px 0":"0 12px 8px 0",textAlign:"left",fontSize:10,fontWeight:700,color:t.muted,textTransform:"uppercase",letterSpacing:"0.04em",whiteSpace:"nowrap",borderBottom:`1px solid ${t.border}`}}>{h}</th>)}
+                    {["Outlet Type","Outlet","Aktivitas","A1","A2","A3","Inv","Dist","A1%","A2%"].map(h=><th key={h} style={{padding:isMobile?"0 8px 8px 0":"0 12px 8px 0",textAlign:"left",fontSize:10,fontWeight:700,color:t.muted,textTransform:"uppercase",letterSpacing:"0.04em",whiteSpace:"nowrap",borderBottom:`1px solid ${t.border}`}}>{h}</th>)}
                   </tr></thead>
                   <tbody>
                     {view.outletData.map((d,i)=>(
                       <tr key={i} style={{borderBottom:`1px solid ${t.border}`}}>
                         <td style={{padding:isMobile?"8px 8px 8px 0":"9px 12px 9px 0",fontWeight:700,color:t.text,cursor:"pointer",whiteSpace:"nowrap"}} onClick={()=>openOutletDrill(d.type)}>{d.type}</td>
+                        <td style={{padding:"9px 12px 9px 0",fontWeight:800,color:P.accent}}>🏪 {(d.outletCount||0).toLocaleString()}</td>
                         <td style={{padding:"9px 12px 9px 0",fontWeight:700,color:t.muted}}>{d.total.toLocaleString()}</td>
                         <td style={{padding:"9px 12px 9px 0"}}>
                           {(d.A1||0)>0?<span onClick={()=>setOutletTypeDrill({type:d.type,status:"A1 - NORMAL",label:"A1 Normal"})} style={{color:P.a1,fontWeight:700,cursor:"pointer"}}>{(d.A1||0).toLocaleString()}</span>:<span style={{color:t.muted}}>0</span>}
