@@ -3291,8 +3291,13 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
               );
             };
             const typeBreakdown={};
-            allFlaggedOutlets.forEach(o=>{const ty=o.outletType||"Unknown";typeBreakdown[ty]=(typeBreakdown[ty]||0)+1;});
-            const typeBreakdownSorted=Object.entries(typeBreakdown).sort((a,b)=>b[1]-a[1]);
+            allFlaggedOutlets.forEach(o=>{
+              const ty=o.outletType||"Unknown";
+              if(!typeBreakdown[ty]) typeBreakdown[ty]={investigate:0,observe:0};
+              if(o.investigate>0) typeBreakdown[ty].investigate++;
+              if(o.observe>0) typeBreakdown[ty].observe++;
+            });
+            const typeBreakdownSorted=Object.entries(typeBreakdown).sort((a,b)=>(b[1].investigate+b[1].observe)-(a[1].investigate+a[1].observe));
             return(
               <div style={{...card(),height:"100%",boxSizing:"border-box",display:"flex",flexDirection:"column"}}>
                 <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>🔎 Outlet Terdampak Fake Visit</div>
@@ -3310,14 +3315,19 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                 ))}
                 {typeBreakdownSorted.length>0&&(
                   <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${t.border}`}}>
-                    <div style={{fontSize:9,color:t.muted,fontWeight:700,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.04em"}}>Kategori RO Terdampak</div>
-                    <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-                      {typeBreakdownSorted.map(([ty,cnt])=>(
-                        <span key={ty} style={{fontSize:9.5,color:t.muted,background:t.cardAlt,border:`1px solid ${t.border}`,borderRadius:999,padding:"2px 8px"}}>
-                          {ty} <b style={{color:t.text}}>{cnt.toLocaleString()}</b>
-                        </span>
-                      ))}
+                    <div style={{fontSize:9,color:t.muted,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.04em"}}>Kategori RO Terdampak</div>
+                    <div style={{display:"flex",fontSize:8.5,color:t.muted,marginBottom:3,paddingRight:2}}>
+                      <div style={{flex:1}}/>
+                      <div style={{width:34,textAlign:"right"}}>🔍 Inv</div>
+                      <div style={{width:34,textAlign:"right"}}>⚠️ Obs</div>
                     </div>
+                    {typeBreakdownSorted.map(([ty,v])=>(
+                      <div key={ty} style={{display:"flex",alignItems:"center",padding:"3px 0"}}>
+                        <div style={{flex:1,fontSize:9.5,color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ty}</div>
+                        <div style={{width:34,textAlign:"right",fontSize:9.5,fontWeight:700,color:v.investigate>0?P.investigate:t.muted}}>{v.investigate||"–"}</div>
+                        <div style={{width:34,textAlign:"right",fontSize:9.5,fontWeight:700,color:v.observe>0?P.a2:t.muted}}>{v.observe||"–"}</div>
+                      </div>
+                    ))}
                   </div>
                 )}
                 <div style={{flex:1}}/>
