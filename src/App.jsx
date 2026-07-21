@@ -1682,7 +1682,7 @@ function CanvasserDetailPanel({detail,onClose,t}){
                   <tr key={r.id||i} style={{borderBottom:`1px solid ${t.border}`,background:r.drill>0?(color+"12"):i%2===0?"transparent":t.rowAlt}}>
                     <td style={{padding:"7px 10px",color:t.muted,fontSize:10}}>{oPg*PG+i+1}</td>
                     <td style={{padding:"7px 10px",color:t.muted,fontSize:10,whiteSpace:"nowrap"}}>{r.id||"–"}</td>
-                    <td style={{padding:"7px 10px",fontWeight:600,color:t.text,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name}</td>
+                    <td onClick={()=>{setOutletFilter(r.id);setOutletFilterName(r.name);setStatusFilter(null);setVtFilter("ALL");setPg(0);setView("list");}} style={{padding:"7px 10px",fontWeight:600,color:t.text,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:"pointer"}} title="Klik untuk lihat detail kunjungan di outlet ini">{r.name}</td>
                     <td style={{padding:"7px 10px",fontWeight:800,color:t.text}}>{r.total}</td>
                     <td style={{padding:"7px 10px"}}>
                       {r.A1>0?<span onClick={()=>{setOutletFilter(r.id);setOutletFilterName(r.name);setStatusFilter("A1 - NORMAL");setVtFilter("ALL");setPg(0);setView("list");}} style={{color:P.a1,fontWeight:700,cursor:"pointer",borderBottom:"1px dotted "+P.a1}}>{r.A1}</span>:<span style={{color:t.muted}}>0</span>}
@@ -1986,6 +1986,13 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
     setLoading(false);
   },[]);
 
+  const handleFilesOrJson=useCallback(async fileList=>{
+    const fArr=Array.from(fileList||[]);
+    const jsonFiles=fArr.filter(f=>/\.json$/i.test(f.name));
+    const otherFiles=fArr.filter(f=>!/\.json$/i.test(f.name));
+    if(jsonFiles.length) await handleJsonFile(jsonFiles);
+    if(otherFiles.length) await handleFiles(otherFiles);
+  },[handleFiles,handleJsonFile]);
 
   const regionGroups={};
   queue.forEach(f=>{if(!regionGroups[f.regionCode])regionGroups[f.regionCode]=[];regionGroups[f.regionCode].push(f);});
@@ -2004,16 +2011,16 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
       </div>
 
       <div onDragOver={e=>{e.preventDefault();setDrag(true);}} onDragLeave={()=>setDrag(false)}
-        onDrop={e=>{e.preventDefault();setDrag(false);handleFiles(e.dataTransfer.files);}}
+        onDrop={e=>{e.preventDefault();setDrag(false);handleFilesOrJson(e.dataTransfer.files);}}
         style={{width:"100%",maxWidth:520,border:`2px dashed ${drag?P.accent:t.border}`,borderRadius:20,padding:"36px 28px",textAlign:"center",background:drag?"rgba(37,99,235,0.06)":t.card,transition:"all 0.2s"}}>
-        <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" multiple style={{display:"none"}} onChange={e=>handleFiles(e.target.files)}/>
-        <input ref={folderRef} type="file" accept=".xlsx,.xls,.csv" multiple webkitdirectory="" style={{display:"none"}} onChange={e=>handleFiles(e.target.files)}/>
+        <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,.json" multiple style={{display:"none"}} onChange={e=>handleFilesOrJson(e.target.files)}/>
+        <input ref={folderRef} type="file" accept=".xlsx,.xls,.csv,.json" multiple webkitdirectory="" style={{display:"none"}} onChange={e=>handleFilesOrJson(e.target.files)}/>
         {loading
           ?<><div style={{fontSize:40,marginBottom:10}}>⚙️</div><div style={{color:"#60a5fa",fontWeight:700}}>{typeof loading==="string"?loading:"Membaca file..."}</div></>
           :<>
             <div style={{fontSize:46,marginBottom:10}}>{drag?"📥":"📂"}</div>
-            <div style={{color:t.text,fontSize:15,fontWeight:700,marginBottom:4}}>{drag?"Lepaskan Berkas di Sini!":"Seret dan Letakkan Berkas XLS/XLSX/CSV"}</div>
-            <div style={{color:t.muted,fontSize:12,marginBottom:18}}>Atau pilih file / folder</div>
+            <div style={{color:t.text,fontSize:15,fontWeight:700,marginBottom:4}}>{drag?"Lepaskan Berkas di Sini!":"Seret dan Letakkan Berkas XLS/XLSX/CSV/JSON"}</div>
+            <div style={{color:t.muted,fontSize:12,marginBottom:18}}>Atau pilih file / folder — termasuk berkas JSON hasil Pre-Processor</div>
             <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}>
               <button onClick={()=>fileRef.current.click()} style={{background:"linear-gradient(135deg,#1d5fc0,#2d8ef5)",color:"#fff",border:"none",padding:"9px 22px",borderRadius:10,fontWeight:700,fontSize:13,cursor:"pointer"}}>📄 Pilih File</button>
               <button onClick={()=>folderRef.current.click()} style={{background:"linear-gradient(135deg,#065f46,#059669)",color:"#fff",border:"none",padding:"9px 22px",borderRadius:10,fontWeight:700,fontSize:13,cursor:"pointer"}}>📁 Upload Folder</button>
@@ -2021,51 +2028,16 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
           </>}
       </div>
 
-      {/* Load Processed JSON — dari tools Pre-Processor terpisah */}
-      <div style={{width:"100%",maxWidth:520,marginTop:14,padding:"12px 16px",background:t.card,borderRadius:12,border:`1px solid ${P.accent}50`}}>
-        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-          <span>📦</span>
-          <span style={{fontWeight:700,fontSize:12,color:t.text}}>Muat Berkas JSON Terproses</span>
-          <span style={{marginLeft:"auto",fontSize:10,color:t.muted}}>Lebih Cepat</span>
-        </div>
-        <div style={{fontSize:10,color:t.muted,marginBottom:8}}>Apabila berkas mentah sudah diproses menggunakan Pre-Processor, unggah hasil berkas JSON tersebut di sini untuk digunakan langsung tanpa perlu menghitung ulang data GPS dan durasi. Dapat memilih beberapa berkas sekaligus.</div>
-        <input ref={jsonRef} type="file" accept=".json" multiple style={{display:"none"}} onClick={e=>e.target.value=""} onChange={e=>handleJsonFile(e.target.files)}/>
-        <label onClick={()=>jsonRef.current.click()} style={{display:"inline-flex",alignItems:"center",gap:6,background:P.accent+"22",color:P.accent,borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:11,fontWeight:700,border:`1px solid ${P.accent}60`}}>
-          📂 Pilih Berkas JSON
-        </label>
-      </div>
-
-      {/* RO Master Data Upload */}
-      <div style={{width:"100%",maxWidth:520,marginTop:14,padding:"12px 16px",background:t.card,borderRadius:12,border:`1px solid ${Object.keys(roMap).length>0?"#22c55e":t.border}`}}>
-        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-          <span>🏪</span>
-          <span style={{fontWeight:700,fontSize:12,color:t.text}}>Master Data Outlet (RO)</span>
-          {Object.keys(roMap).length>0&&<span style={{background:"#22c55e20",color:"#22c55e",padding:"1px 8px",borderRadius:999,fontSize:10,fontWeight:700}}>✓ {Object.keys(roMap).length} outlet loaded</span>}
-          <span style={{marginLeft:"auto",fontSize:10,color:t.muted}}>Opsional</span>
-        </div>
-        <div style={{fontSize:10,color:t.muted,marginBottom:8}}>Upload RO.xlsx → hitung jarak GPS & status Census otomatis</div>
-        <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-          <label style={{display:"inline-flex",alignItems:"center",gap:6,background:Object.keys(roMap).length>0?"#22c55e22":t.cardAlt,color:Object.keys(roMap).length>0?"#22c55e":t.muted,borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:11,fontWeight:700,border:`1px solid ${Object.keys(roMap).length>0?"#22c55e":t.border}`}}>
-            📂 {Object.keys(roMap).length>0?"✓ Tambah / Ganti RO":"Upload File RO"}
-            <input type="file" accept=".xlsx,.xls" multiple style={{display:"none"}} onClick={e=>e.target.value=""} onChange={e=>handleRoFile(e.target.files)}/>
-          </label>
-          {Object.keys(roMap).length>0&&(
-            <button onClick={()=>onRoLoad({})} style={{background:"#ef444422",color:"#ef4444",border:"1px solid #ef444440",borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:11,fontWeight:700}}>
-              🗑 Clear RO
-            </button>
-          )}
-        </div>
-        {Object.keys(roMap).length>0&&(
-          <div style={{fontSize:10,color:t.muted,marginTop:6}}>
-            Upload file RO tambahan akan <b style={{color:t.text}}>merge</b> — Outlet ID sama akan di-overwrite dengan data terbaru
-          </div>
-        )}
-      </div>
-
       {error&&<div style={{marginTop:12,background:error.startsWith("⚠️")?"rgba(245,158,11,0.1)":"rgba(239,68,68,0.1)",border:`1px solid ${error.startsWith("⚠️")?"#f59e0b":"#ef4444"}`,borderRadius:10,padding:"10px 18px",color:error.startsWith("⚠️")?"#fbbf24":"#f87171",fontSize:12,maxWidth:520}}>{error}</div>}
 
       {queue.length>0&&(
         <div style={{width:"100%",maxWidth:520,marginTop:18}}>
+          <div style={{display:"flex",gap:8,marginBottom:14,alignItems:"center"}}>
+            <div style={{fontSize:11,color:t.muted,flex:1}}>{queue.length} cluster · {Object.keys(regionGroups).length} region · {queue.reduce((s,f)=>s+f.rows.length,0).toLocaleString()} aktivitas</div>
+            <button onClick={()=>onLoad(queue)} style={{background:"linear-gradient(135deg,#1d5fc0,#2d8ef5)",color:"#fff",border:"none",borderRadius:10,padding:"9px 22px",fontWeight:700,fontSize:13,cursor:"pointer"}}>
+              🚀 Buka Dashboard →
+            </button>
+          </div>
           {/* Group by region */}
           {Object.entries(regionGroups).map(([rgn,files],ri)=>(
             <div key={rgn} style={{marginBottom:14}}>
@@ -2085,12 +2057,6 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
               ))}
             </div>
           ))}
-          <div style={{display:"flex",gap:8,marginTop:4,alignItems:"center"}}>
-            <div style={{fontSize:11,color:t.muted,flex:1}}>{queue.length} cluster · {Object.keys(regionGroups).length} region · {queue.reduce((s,f)=>s+f.rows.length,0).toLocaleString()} aktivitas</div>
-            <button onClick={()=>onLoad(queue)} style={{background:"linear-gradient(135deg,#1d5fc0,#2d8ef5)",color:"#fff",border:"none",borderRadius:10,padding:"9px 22px",fontWeight:700,fontSize:13,cursor:"pointer"}}>
-              🚀 Buka Dashboard →
-            </button>
-          </div>
         </div>
       )}
     </div>
@@ -3107,46 +3073,16 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
           const impactedA3=cvs.filter(c=>(c.A3||0)>0).length;
           const a2p=pct(impactedA2,cvs.length||1), a3p=pct(impactedA3,cvs.length||1);
           return(<>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:32,marginBottom:14}}>
-          <div>
-            <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:10}}>Activity ID</div>
-            {[
-              {label:"Total Aktivitas",val:T.toLocaleString(),color:t.text},
-              {label:"A1 — Normal",val:pctS(ac["A1 - NORMAL"],T),color:P.a1,sub:(ac["A1 - NORMAL"]||0).toLocaleString(),drill:()=>openDrill("A1 - Normal",P.a1,"A1")},
-              {label:"A2 — Anomaly",val:pctS(ac["A2 - ANOMALY"],T),color:P.a2,sub:(ac["A2 - ANOMALY"]||0).toLocaleString(),drill:()=>openDrill("A2 - Anomaly",P.a2,"A2"),
-                sublink:()=>{const bd=computeReasonBreakdown("A2");setReasonDrill({statusKey:"A2",label:"A2 - Anomaly",color:P.a2,reasons:bd.reasons,topCanvassers:bd.topCanvassers});}},
-              {label:"A3 — Incomplete",val:pctS(ac["A3 - INCOMPLETE"],T),color:P.a3,sub:(ac["A3 - INCOMPLETE"]||0).toLocaleString(),drill:()=>openDrill("A3 - Incomplete",P.a3,"A3"),
-                sublink:()=>{const bd=computeReasonBreakdown("A3");setReasonDrill({statusKey:"A3",label:"A3 - Incomplete",color:P.a3,reasons:bd.reasons,topCanvassers:bd.topCanvassers});}},
-              {label:"Investigate",val:pctS(vc["INVESTIGATE"],T),color:t.muted,sub:(vc["INVESTIGATE"]||0).toLocaleString(),drill:()=>openDrill("Investigate",P.investigate,"INVESTIGATE")},
-              {label:"Sell-In",val:(view.sellInQtyTotal||0).toLocaleString(),color:"#10b981",sub:`${(view.sellInVisitsTotal||0).toLocaleString()} kunjungan`,drill:undefined},
-            ].map((k,i,arr)=>{
-              const barPct=typeof k.val==="string"&&k.val.includes("%")?parseFloat(k.val):null;
-              return(
-                <div key={i} style={{borderBottom:i<arr.length-1?`1px solid ${t.border}`:"none"}}>
-                  <div onClick={k.drill||undefined} style={{display:"flex",alignItems:"center",padding:"11px 0 "+(k.sublink?"2px":"11px"),cursor:k.drill?"pointer":"default"}}>
-                    <div style={{flex:1,minWidth:0,marginRight:12}}>
-                      <div style={{display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:600,color:t.text}}>
-                        {barPct!=null&&<span style={{width:7,height:7,borderRadius:"50%",background:k.color,flexShrink:0}}/>}
-                        <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.label}</span>
-                      </div>
-                      {barPct!=null&&<div style={{width:"100%",height:3,background:t.border,borderRadius:99,marginTop:6}}><div style={{width:barPct+"%",height:3,background:k.color,borderRadius:99}}/></div>}
-                    </div>
-                    {k.sub&&<div style={{fontSize:11,color:t.muted,width:isMobile?70:90,textAlign:"right",flexShrink:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.sub}</div>}
-                    <div style={{fontSize:isMobile?14:16,fontWeight:800,color:k.color,width:isMobile?58:70,textAlign:"right",flexShrink:0}}>{k.val}</div>
-                  </div>
-                  {k.sublink&&<div onClick={k.sublink} style={{fontSize:10,fontWeight:700,color:P.accent,cursor:"pointer",paddingBottom:11}}>🔍 Lihat penyebab ›</div>}
-                </div>
-              );
-            })}
-          </div>
 
-          <div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:16,marginBottom:14}}>
+          <div style={{...card(),height:"100%",boxSizing:"border-box",display:"flex",flexDirection:"column"}}>
             <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:10}}>#Canvasser</div>
+            <div style={{flex:1,display:"flex",flexDirection:"column",justifyContent:"space-between"}}>
             {[
                 {label:"Total Canvasser",val:cvs.length.toLocaleString(),color:t.text},
-                {label:"A1 — Normal",val:pctS(impactedA1,cvs.length||1),color:P.a1,sub:impactedA1.toLocaleString()+" orang",drill:()=>setCanvCategoryDrill({label:"A1 - Normal",color:P.a1,statusKey:"A1",list:cvs.filter(c=>(c.A1||0)>0)})},
-                {label:"A2 — Anomaly",val:pctS(impactedA2,cvs.length||1),color:P.a2,sub:impactedA2.toLocaleString()+" orang",drill:()=>setCanvCategoryDrill({label:"A2 - Anomaly",color:P.a2,statusKey:"A2",list:cvs.filter(c=>(c.A2||0)>0)})},
-                {label:"A3 — Incomplete",val:pctS(impactedA3,cvs.length||1),color:P.a3,sub:impactedA3.toLocaleString()+" orang",drill:()=>setCanvCategoryDrill({label:"A3 - Incomplete",color:P.a3,statusKey:"A3",list:cvs.filter(c=>(c.A3||0)>0)})},
+                {label:"A1 — Normal",val:pctS(impactedA1,cvs.length||1),color:P.a1,sub:impactedA1.toLocaleString()+" orang",sub2:(ac["A1 - NORMAL"]||0).toLocaleString()+" aktivitas",drill:()=>setCanvCategoryDrill({label:"A1 - Normal",color:P.a1,statusKey:"A1",list:cvs.filter(c=>(c.A1||0)>0)})},
+                {label:"A2 — Anomaly",val:pctS(impactedA2,cvs.length||1),color:P.a2,sub:impactedA2.toLocaleString()+" orang",sub2:(ac["A2 - ANOMALY"]||0).toLocaleString()+" aktivitas",drill:()=>setCanvCategoryDrill({label:"A2 - Anomaly",color:P.a2,statusKey:"A2",list:cvs.filter(c=>(c.A2||0)>0)})},
+                {label:"A3 — Incomplete",val:pctS(impactedA3,cvs.length||1),color:P.a3,sub:impactedA3.toLocaleString()+" orang",sub2:(ac["A3 - INCOMPLETE"]||0).toLocaleString()+" aktivitas",drill:()=>setCanvCategoryDrill({label:"A3 - Incomplete",color:P.a3,statusKey:"A3",list:cvs.filter(c=>(c.A3||0)>0)})},
                 {label:"Total Aktivitas",val:T.toLocaleString(),color:t.muted},
             ].map((k,i,arr)=>{
                   const barPct=typeof k.val==="string"&&k.val.includes("%")?parseFloat(k.val):null;
@@ -3159,24 +3095,115 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                         </div>
                         {barPct!=null&&<div style={{width:"100%",height:3,background:t.border,borderRadius:99,marginTop:6}}><div style={{width:barPct+"%",height:3,background:k.color,borderRadius:99}}/></div>}
                       </div>
-                      {k.sub&&<div style={{fontSize:11,color:t.muted,width:isMobile?70:90,textAlign:"right",flexShrink:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.sub}</div>}
+                      {k.sub&&<div style={{fontSize:11,color:t.muted,width:isMobile?70:90,textAlign:"right",flexShrink:0}}>
+                        <div style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.sub}</div>
+                        {k.sub2&&<div style={{fontSize:9,opacity:0.75,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.sub2}</div>}
+                      </div>}
                       <div style={{fontSize:isMobile?14:16,fontWeight:800,color:k.color,width:isMobile?58:70,textAlign:"right",flexShrink:0}}>{k.val}</div>
                     </div>
                   );
             })}
+            </div>
           </div>
+
+          {view.fakeVisitRiskCount>0&&(()=>{
+            const evalSet=new Set(view.evaluatedCanvasserNames||[]);
+            const noRegularNames=(view.canvassers||[]).map(c=>c.id).filter(n=>!evalSet.has(n));
+            const rows=[
+              {label:"Hanya Fake Visit",icon:"🚩",val:view.onlyFakeCanvasserCount,color:P.investigate,onClick:()=>{const rws=getRowsForCanvasserNames(view.onlyFakeCanvasserNames);setCanvDetail({canvasser:{name:"Seluruh Canvasser",cluster:"Hanya Fake Visit",icon:"🚩"},drillLabel:"Kunjungan Fake Visit",color:P.investigate,rows:rws,drillKey:null,sessionKey:Date.now()});}},
+              {label:"Hanya Perlu Verifikasi",icon:"🔎",val:view.onlyVerifyCanvasserCount,color:P.a2,onClick:()=>{const rws=getRowsForCanvasserNames(view.onlyVerifyCanvasserNames);setCanvDetail({canvasser:{name:"Seluruh Canvasser",cluster:"Hanya Perlu Verifikasi",icon:"🔎"},drillLabel:"Kunjungan Perlu Verifikasi",color:P.a2,rows:rws,drillKey:null,sessionKey:Date.now()});}},
+              {label:"Fake + Verifikasi",icon:"⚠️",val:view.overlapCanvasserCount,color:P.accent,onClick:()=>{const rws=getRowsForCanvasserNames(view.overlapCanvasserNames);setCanvDetail({canvasser:{name:"Seluruh Canvasser",cluster:"Fake Visit + Perlu Verifikasi",icon:"⚠️"},drillLabel:"Kunjungan Fake Visit + Perlu Verifikasi",color:P.accent,rows:rws,drillKey:null,sessionKey:Date.now()});}},
+              {label:"Siklus Bersih",icon:"✅",val:view.cleanCanvasserCount,color:P.a1,onClick:()=>{const rws=getCleanCycleRows(view.cleanCanvasserNames);setCanvDetail({canvasser:{name:"Seluruh Canvasser",cluster:"Siklus Kunjungan Bersih",icon:"✅"},drillLabel:"Kunjungan Siklus Bersih (Visit 1 Lolos)",color:P.a1,rows:rws,drillKey:null,sessionKey:Date.now()});}},
+              {label:"Tanpa Regular Visit",icon:"➖",val:noRegularNames.length,color:t.muted,onClick:()=>{const rws=getAllRowsForCanvasserNames(noRegularNames);setCanvDetail({canvasser:{name:"Seluruh Canvasser",cluster:"Tanpa Regular Visit",icon:"➖"},drillLabel:"Kunjungan Canvasser Tanpa Regular Visit",color:t.muted,rows:rws,drillKey:null,sessionKey:Date.now()});}},
+            ].filter(r=>r.val>0);
+            return(
+              <div style={{...card(),height:"100%",boxSizing:"border-box",border:`1px solid ${P.investigate}44`}}>
+                <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:8}}>🚩 Indikasi Fake Visit</div>
+                <ul style={{margin:"0 0 10px",paddingLeft:16,listStyle:"disc",fontSize:10.5,color:t.muted,lineHeight:1.45}}>
+                  <li style={{display:"list-item"}}>Visit 1 (Senin/Selasa) berfungsi sebagai gate validasi berdasarkan AVA, Sell-In, dan anomali</li>
+                  <li style={{display:"list-item"}}>Jika gate gagal, kunjungan berikutnya (Visit 2-7) ditandai Fake Visit atau Perlu Verifikasi, tergantung ketersediaan bukti pada kunjungan tersebut</li>
+                </ul>
+                {rows.map((r,i)=>(
+                  <div key={i} onClick={r.onClick} style={{display:"flex",alignItems:"center",padding:"9px 0",borderBottom:i<rows.length-1?`1px solid ${t.border}`:"none",cursor:"pointer"}}>
+                    <div style={{flex:1,fontSize:12,fontWeight:600,color:t.text,display:"flex",alignItems:"center",gap:6,minWidth:0}}>
+                      <span style={{flexShrink:0}}>{r.icon}</span><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.label}</span>
+                    </div>
+                    <div style={{textAlign:"right",flexShrink:0}}>
+                      <div style={{fontSize:20,fontWeight:800,color:r.color,lineHeight:1.1}}>{r.val.toLocaleString()}</div>
+                      <div style={{fontSize:9,color:t.muted}}>orang</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+
+          {(view.chronicOutlets||[]).length>0&&(()=>{
+            const allFlaggedOutlets=view.chronicOutlets||[];
+            const invOutletCountAll=allFlaggedOutlets.filter(o=>o.investigate>0).length;
+            const obsOutletCountAll=allFlaggedOutlets.filter(o=>o.observe>0).length;
+            const rows=[
+              {label:"Outlet Berstatus Investigate",icon:"🔍",val:invOutletCountAll,color:P.investigate,onClick:()=>setOutletListDrill({label:"Daftar Outlet — Investigate",color:P.investigate,statusKey:"investigate",outlets:[...allFlaggedOutlets].filter(o=>o.investigate>0).sort((a,b)=>b.investigate-a.investigate)})},
+              {label:"Outlet Berstatus Observe",icon:"⚠️",val:obsOutletCountAll,color:P.a2,onClick:()=>setOutletListDrill({label:"Daftar Outlet — Observe",color:P.a2,statusKey:"observe",outlets:[...allFlaggedOutlets].filter(o=>o.observe>0).sort((a,b)=>b.observe-a.observe)})},
+            ].filter(r=>r.val>0);
+            const buildReasons=(o,catKey)=>{
+              const sellInRate=o.flagged?pct(o.flaggedSellInVisits,o.flagged):0;
+              const r=[];
+              if(catKey==="investigate") r.push(`${o.investigate} kunjungan Investigate`);
+              else r.push(`${o.observe} kunjungan Observe`);
+              if(o.canvasserCount>1) r.push(`${o.canvasserCount} canvasser berbeda tercatat pada outlet yang sama`);
+              if(sellInRate<20) r.push(`hanya ${sellInRate}% kunjungan flagged tetap ada Sell-In — indikasi kunjungan tidak wajar`);
+              else if(sellInRate<50) r.push(`${sellInRate}% kunjungan flagged tetap ada Sell-In — perlu verifikasi lapangan`);
+              else r.push(`${sellInRate}% kunjungan flagged tetap ada Sell-In — kemungkinan hanya masalah GPS`);
+              return r;
+            };
+            const invTop=[...allFlaggedOutlets].filter(o=>o.investigate>0).sort((a,b)=>b.investigate-a.investigate).slice(0,10).map(o=>({...o,reasons:buildReasons(o,"investigate")}));
+            const obsTop=[...allFlaggedOutlets].filter(o=>o.observe>0).sort((a,b)=>b.observe-a.observe).slice(0,10).map(o=>({...o,reasons:buildReasons(o,"observe")}));
+            const renderCategory=(label,icon,color,list,catKey)=>{
+              if(!list.length) return null;
+              const totalActivityTop10=list.reduce((s,o)=>s+(o[catKey]||0),0);
+              return(
+                <div onClick={()=>setPriorityDrill({label,color,catKey,list})}
+                  style={{padding:"10px 12px",borderRadius:10,background:color+"14",cursor:"pointer",marginTop:8}}
+                  onMouseEnter={e=>e.currentTarget.style.opacity="0.85"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+                  <div style={{fontSize:10,color:t.muted,fontWeight:700}}>🎯 Prioritas Kunjungan RO — Top 10 {label}</div>
+                  <div style={{fontSize:15,fontWeight:800,color,marginTop:2}}>{totalActivityTop10.toLocaleString()} kunjungan {label}</div>
+                  <div style={{fontSize:10,color:t.muted}}>dari {list.length} outlet · Lihat daftar ›</div>
+                </div>
+              );
+            };
+            return(
+              <div style={{...card(),height:"100%",boxSizing:"border-box"}}>
+                <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:8}}>🔎 Outlet Terdampak Fake Visit</div>
+                {rows.map((r,i)=>(
+                  <div key={i} onClick={r.onClick} style={{display:"flex",alignItems:"center",padding:"9px 0",borderBottom:`1px solid ${t.border}`,cursor:"pointer"}}>
+                    <div style={{flex:1,fontSize:12,fontWeight:600,color:t.text,display:"flex",alignItems:"center",gap:6,minWidth:0}}>
+                      <span style={{flexShrink:0}}>{r.icon}</span><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.label}</span>
+                    </div>
+                    <div style={{textAlign:"right",flexShrink:0}}>
+                      <div style={{fontSize:20,fontWeight:800,color:r.color,lineHeight:1.1}}>{r.val.toLocaleString()}</div>
+                      <div style={{fontSize:9,color:t.muted}}>outlet</div>
+                    </div>
+                  </div>
+                ))}
+                {renderCategory("Investigate","🔍",P.investigate,invTop,"investigate")}
+                {renderCategory("Observe","⚠️",P.a2,obsTop,"observe")}
+              </div>
+            );
+          })()}
         </div>
 
-        {(a2p>=80||a3p>=80)&&<div style={{fontSize:11,color:t.text,marginBottom:20,lineHeight:1.7,background:t.card,border:`1px solid ${P.accent}60`,borderRadius:8,padding:"12px 16px",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
-          <div style={{fontWeight:700,marginBottom:4,color:P.accent}}>💡 Catatan</div>
+        <div style={{...card(),marginBottom:14,boxSizing:"border-box"}}>
+          <div style={{fontWeight:700,marginBottom:8,color:P.accent,fontSize:13}}>💡 Catatan</div>
           <ul style={{margin:0,paddingLeft:16,listStyle:"disc"}}>
-            {a2p>=80&&<li style={{display:"list-item"}}>Sebanyak {a2p}% canvasser tercatat memiliki minimal satu aktivitas berstatus A2.</li>}
-            {a3p>=80&&<li style={{display:"list-item"}}>Sebanyak {a3p}% canvasser tercatat memiliki minimal satu aktivitas berstatus A3.</li>}
-            <li style={{display:"list-item"}}>Hal ini wajar karena rata-rata volume aktivitas per canvasser cukup tinggi ({Math.round(T/(cvs.length||1)).toLocaleString()} aktivitas per orang), sehingga satu aktivitas bermasalah saja sudah tercatat dalam perhitungan ini.</li>
+            {a2p>=80&&<li style={{display:"list-item",fontSize:12,color:t.text,marginBottom:6,lineHeight:1.5}}>Sebanyak {a2p}% canvasser tercatat memiliki minimal satu aktivitas berstatus A2.</li>}
+            {a3p>=80&&<li style={{display:"list-item",fontSize:12,color:t.text,marginBottom:6,lineHeight:1.5}}>Sebanyak {a3p}% canvasser tercatat memiliki minimal satu aktivitas berstatus A3.</li>}
+            <li style={{display:"list-item",fontSize:12,color:t.text,lineHeight:1.5}}>Hal ini wajar karena rata-rata volume aktivitas per canvasser cukup tinggi ({Math.round(T/(cvs.length||1)).toLocaleString()} aktivitas per orang), sehingga satu aktivitas bermasalah saja sudah tercatat dalam perhitungan ini.</li>
           </ul>
-        </div>}
+        </div>
           </>);
         })()}
+
 
         {/* ── TAB BUTTONS ── */}
         <div style={{display:"flex",gap:22,marginBottom:20,borderBottom:`1px solid ${t.border}`,overflowX:"auto",overflowY:"hidden",scrollbarWidth:"none",msOverflowStyle:"none",touchAction:"pan-x"}}>
@@ -3190,189 +3217,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
           <div style={{display:"grid",gap:16}}>
 
             {/* ── Key Insights ── */}
-            <div style={{fontWeight:700,marginBottom:14,fontSize:11,letterSpacing:"0.06em",textTransform:"uppercase",color:t.muted}}>Wawasan Utama</div>
-
-            {/* ── Indikasi Fake Visit (Siklus Mingguan) ── */}
-            {(view.fakeVisitRiskCount>0)&&(
-              <div style={{...card(),marginBottom:24,border:`1px solid ${P.investigate}44`}}>
-                <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase"}}>🚩 Indikasi Fake Visit — Siklus Mingguan</div>
-                <div style={{fontSize:11,color:t.muted,marginTop:2,marginBottom:14,lineHeight:1.7}}>
-                  <ul style={{margin:0,paddingLeft:16,listStyle:"disc"}}>
-                    <li style={{display:"list-item"}}>Visit 1 (Senin/Selasa, Regular Visit) berfungsi sebagai gate</li>
-                    <li style={{display:"list-item"}}>Gate gagal jika: AVA/Sell-In Visit 1 tidak terpenuhi, atau ada anomali (Investigate/Observe)</li>
-                    <li style={{display:"list-item"}}>Kalau gate gagal → kunjungan berikutnya (Visit 2-7) di minggu &amp; outlet yang sama ditandai</li>
-                    <li style={{display:"list-item"}}>Kunjungan tsb sendiri gak punya bukti (AVA/Sell-In kosong) → <b style={{color:P.investigate}}>Fake Visit</b></li>
-                    <li style={{display:"list-item"}}>Kunjungan tsb sendiri punya AVA &amp; Sell-In → <b style={{color:P.a2}}>Perlu Verifikasi</b> (bukan otomatis fake)</li>
-                  </ul>
-                </div>
-                <div onClick={()=>{const rows=getRowsForCanvasserNames(view.onlyFakeCanvasserNames);setCanvDetail({canvasser:{name:"Seluruh Canvasser",cluster:"Hanya Fake Visit",icon:"🚩"},drillLabel:"Kunjungan Fake Visit",color:P.investigate,rows,drillKey:null,sessionKey:Date.now()});}}
-                  style={{padding:"12px 14px",borderRadius:10,background:P.investigate+"14",cursor:"pointer"}}
-                  onMouseEnter={e=>e.currentTarget.style.opacity="0.85"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                  <div style={{fontSize:22,fontWeight:800,color:P.investigate}}>{view.onlyFakeCanvasserCount.toLocaleString()} canvasser</div>
-                  <div style={{fontSize:10,color:t.text,fontWeight:600,marginTop:1}}>hanya Fake Visit</div>
-                  <div style={{fontSize:10,color:t.muted,marginTop:3}}>🏪 {view.onlyFakeOutletCount.toLocaleString()} outlet tercatat</div>
-                  <div style={{fontSize:11,color:P.investigate,fontWeight:700,marginTop:8}}>Lihat daftar ›</div>
-                </div>
-                {view.onlyVerifyCanvasserCount>0&&(
-                  <div onClick={()=>{const rows=getRowsForCanvasserNames(view.onlyVerifyCanvasserNames);setCanvDetail({canvasser:{name:"Seluruh Canvasser",cluster:"Hanya Perlu Verifikasi",icon:"🔎"},drillLabel:"Kunjungan Perlu Verifikasi",color:P.a2,rows,drillKey:null,sessionKey:Date.now()});}}
-                    style={{padding:"12px 14px",borderRadius:10,background:P.a2+"14",cursor:"pointer",marginTop:10}}
-                    onMouseEnter={e=>e.currentTarget.style.opacity="0.85"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                    <div style={{fontSize:22,fontWeight:800,color:P.a2}}>{view.onlyVerifyCanvasserCount.toLocaleString()} canvasser</div>
-                    <div style={{fontSize:10,color:t.text,fontWeight:600,marginTop:1}}>hanya Perlu Verifikasi</div>
-                    <div style={{fontSize:10,color:t.muted,marginTop:3}}>🏪 {view.onlyVerifyOutletCount.toLocaleString()} outlet tercatat</div>
-                    <div style={{fontSize:11,color:P.a2,fontWeight:700,marginTop:8}}>Lihat daftar ›</div>
-                  </div>
-                )}
-                {view.overlapCanvasserCount>0&&(
-                  <div onClick={()=>{const rows=getRowsForCanvasserNames(view.overlapCanvasserNames);setCanvDetail({canvasser:{name:"Seluruh Canvasser",cluster:"Fake Visit + Perlu Verifikasi",icon:"⚠️"},drillLabel:"Kunjungan Fake Visit + Perlu Verifikasi",color:P.accent,rows,drillKey:null,sessionKey:Date.now()});}}
-                    style={{padding:"12px 14px",borderRadius:10,background:P.accent+"14",cursor:"pointer",marginTop:10}}
-                    onMouseEnter={e=>e.currentTarget.style.opacity="0.85"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                    <div style={{fontSize:22,fontWeight:800,color:P.accent}}>{view.overlapCanvasserCount.toLocaleString()} canvasser</div>
-                    <div style={{fontSize:10,color:t.text,fontWeight:600,marginTop:1}}>Fake Visit + Perlu Verifikasi (kena dua-duanya, beda minggu/outlet)</div>
-                    <div style={{fontSize:10,color:t.muted,marginTop:3}}>🏪 {view.overlapOutletCount.toLocaleString()} outlet tercatat</div>
-                    <div style={{fontSize:11,color:P.accent,fontWeight:700,marginTop:8}}>Lihat daftar ›</div>
-                  </div>
-                )}
-                {view.cleanCanvasserCount>0&&(
-                  <div onClick={()=>{const rows=getCleanCycleRows(view.cleanCanvasserNames);setCanvDetail({canvasser:{name:"Seluruh Canvasser",cluster:"Siklus Kunjungan Bersih",icon:"✅"},drillLabel:"Kunjungan Siklus Bersih (Visit 1 Lolos)",color:P.a1,rows,drillKey:null,sessionKey:Date.now()});}}
-                    style={{padding:"12px 14px",borderRadius:10,background:P.a1+"14",cursor:"pointer",marginTop:10}}
-                    onMouseEnter={e=>e.currentTarget.style.opacity="0.85"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                    <div style={{fontSize:22,fontWeight:800,color:P.a1}}>{view.cleanCanvasserCount.toLocaleString()} canvasser</div>
-                    <div style={{fontSize:10,color:t.text,fontWeight:600,marginTop:1}}>siklus kunjungan bersih (Visit 1 selalu lolos)</div>
-                    <div style={{fontSize:11,color:P.a1,fontWeight:700,marginTop:8}}>Lihat daftar ›</div>
-                  </div>
-                )}
-                {(()=>{
-                  const totalCv=(view.canvassers||[]).length;
-                  const evalSet=new Set(view.evaluatedCanvasserNames||[]);
-                  const noRegularNames=(view.canvassers||[]).map(c=>c.id).filter(n=>!evalSet.has(n));
-                  if(!noRegularNames.length) return null;
-                  return(
-                    <div onClick={()=>{const rows=getAllRowsForCanvasserNames(noRegularNames);setCanvDetail({canvasser:{name:"Seluruh Canvasser",cluster:"Tanpa Regular Visit",icon:"➖"},drillLabel:"Kunjungan Canvasser Tanpa Regular Visit",color:t.muted,rows,drillKey:null,sessionKey:Date.now()});}}
-                      style={{padding:"12px 14px",borderRadius:10,background:t.border,cursor:"pointer",marginTop:10}}
-                      onMouseEnter={e=>e.currentTarget.style.opacity="0.85"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                      <div style={{fontSize:22,fontWeight:800,color:t.text}}>{noRegularNames.length.toLocaleString()} canvasser</div>
-                      <div style={{fontSize:10,color:t.text,fontWeight:600,marginTop:1}}>tanpa Regular Visit (di luar cakupan gate ini)</div>
-                      <div style={{fontSize:11,color:t.text,fontWeight:700,marginTop:8}}>Lihat daftar ›</div>
-                    </div>
-                  );
-                })()}
-                {view.totalRiskCanvasserCount>0&&(()=>{
-                  const totalCv=(view.canvassers||[]).length;
-                  const noRegularCount=Math.max(0,totalCv-view.evaluatedCanvasserCount);
-                  return(
-                  <div style={{marginTop:12,fontSize:10,color:t.muted,lineHeight:1.6}}>
-                    ℹ️ {view.cleanCanvasserCount.toLocaleString()} bersih + {view.onlyFakeCanvasserCount.toLocaleString()} hanya Fake + {view.onlyVerifyCanvasserCount.toLocaleString()} hanya Verifikasi + {view.overlapCanvasserCount.toLocaleString()} kena dua-duanya + {noRegularCount.toLocaleString()} tanpa Regular Visit = <b style={{color:t.text}}>{totalCv.toLocaleString()} total canvasser</b>.
-                  </div>
-                  );
-                })()}
-                {view.fakeVisitBySeq&&Object.keys(view.fakeVisitBySeq).length>0&&(
-                  <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${t.border}`}}>
-                    <div style={{fontSize:10,color:t.muted,fontWeight:700,marginBottom:6}}>Rincian per urutan kunjungan:</div>
-                    {["2","3","4","5","6","7","7+"].filter(k=>view.fakeVisitBySeq[k]).map(k=>(
-                      <div key={k} style={{display:"flex",justifyContent:"space-between",fontSize:10,color:t.muted,padding:"2px 0"}}>
-                        <span>Visit {k}</span>
-                        <span style={{fontWeight:700,color:P.investigate}}>{view.fakeVisitBySeq[k].toLocaleString()} kunjungan</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ── Temuan Utama: Outlet Perlu Ditinjau ── */}
-            {(()=>{
-              const allFlaggedOutlets=view.chronicOutlets||[];
-              if(!allFlaggedOutlets.length) return null;
-              const invOutletCountAll=allFlaggedOutlets.filter(o=>o.investigate>0).length;
-              const obsOutletCountAll=allFlaggedOutlets.filter(o=>o.observe>0).length;
-              const invCanvCountAll=(view.canvassers||[]).filter(c=>(c.INVESTIGATE||0)>0).length;
-              const obsCanvCountAll=(view.canvassers||[]).filter(c=>(c.OBSERVE||0)>0).length;
-              return(
-                <div style={{...card(),marginBottom:24}}>
-                  <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase"}}>🔎 Temuan Utama — Outlet Perlu Ditinjau</div>
-                  <div style={{fontSize:11,color:t.muted,marginTop:2,marginBottom:14,lineHeight:1.7}}>
-                    Diurutkan dari total kunjungan Investigate + Observe terbanyak.
-                    <div style={{marginTop:8,fontSize:10,color:t.muted,opacity:0.85}}>
-                      <div style={{fontWeight:700,marginBottom:3}}>Catatan:</div>
-                      <ul style={{margin:0,paddingLeft:16,listStyle:"disc"}}>
-                        <li style={{display:"list-item"}}>Multiple flag pada outlet yang sama dapat mengindikasikan koordinat outlet belum akurat.</li>
-                        <li style={{display:"list-item"}}>Rasio Sell-In dapat menjadi indikator validitas kunjungan.</li>
-                      </ul>
-                    </div>
-                    <div style={{marginTop:8}}>Klik untuk lihat detail</div>
-                  </div>
-
-                  <div style={{display:"flex",gap:12}}>
-                    <div onClick={()=>setOutletListDrill({label:"Daftar Outlet — Investigate",color:P.investigate,statusKey:"investigate",outlets:[...allFlaggedOutlets].filter(o=>o.investigate>0).sort((a,b)=>b.investigate-a.investigate)})}
-                      style={{flex:1,textAlign:"center",padding:"14px 8px",borderRadius:10,background:P.investigate+"14",cursor:"pointer"}}
-                      onMouseEnter={e=>e.currentTarget.style.opacity="0.8"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                      <div style={{fontSize:24,fontWeight:800,color:P.investigate}}>{invOutletCountAll.toLocaleString()}</div>
-                      <div style={{fontSize:10,color:t.text,fontWeight:700,marginTop:2}}>🔍 Outlet Berstatus Investigate</div>
-                      <div style={{fontSize:10,color:t.muted,marginTop:3}}>👤 {invCanvCountAll.toLocaleString()} canvasser tercatat</div>
-                      <div style={{fontSize:9,color:P.investigate,fontWeight:700,marginTop:4}}>Lihat daftar ›</div>
-                    </div>
-                    <div onClick={()=>setOutletListDrill({label:"Daftar Outlet — Observe",color:P.a2,statusKey:"observe",outlets:[...allFlaggedOutlets].filter(o=>o.observe>0).sort((a,b)=>b.observe-a.observe)})}
-                      style={{flex:1,textAlign:"center",padding:"14px 8px",borderRadius:10,background:P.a2+"14",cursor:"pointer"}}
-                      onMouseEnter={e=>e.currentTarget.style.opacity="0.8"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                      <div style={{fontSize:24,fontWeight:800,color:P.a2}}>{obsOutletCountAll.toLocaleString()}</div>
-                      <div style={{fontSize:10,color:t.text,fontWeight:700,marginTop:2}}>⚠️ Outlet Berstatus Observe</div>
-                      <div style={{fontSize:10,color:t.muted,marginTop:3}}>👤 {obsCanvCountAll.toLocaleString()} canvasser tercatat</div>
-                      <div style={{fontSize:9,color:P.a2,fontWeight:700,marginTop:4}}>Lihat daftar ›</div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* ── Prioritas Kunjungan RO — dipisah per kategori, list disembunyikan sampai diklik ── */}
-            {(()=>{
-              const pool=(view.chronicOutlets||[]);
-              if(!pool.length) return null;
-
-              const buildReasons=(o,catKey)=>{
-                const sellInRate=o.flagged?pct(o.flaggedSellInVisits,o.flagged):0;
-                const r=[];
-                if(catKey==="investigate") r.push(`${o.investigate} kunjungan Investigate`);
-                else r.push(`${o.observe} kunjungan Observe`);
-                if(o.canvasserCount>1) r.push(`${o.canvasserCount} canvasser berbeda tercatat pada outlet yang sama`);
-                if(sellInRate<20) r.push(`hanya ${sellInRate}% kunjungan flagged tetap ada Sell-In — indikasi kunjungan tidak wajar`);
-                else if(sellInRate<50) r.push(`${sellInRate}% kunjungan flagged tetap ada Sell-In — perlu verifikasi lapangan`);
-                else r.push(`${sellInRate}% kunjungan flagged tetap ada Sell-In — kemungkinan hanya masalah GPS`);
-                return r;
-              };
-
-              const invTop=[...pool].filter(o=>o.investigate>0).sort((a,b)=>b.investigate-a.investigate).slice(0,10)
-                .map(o=>({...o,reasons:buildReasons(o,"investigate")}));
-              const obsTop=[...pool].filter(o=>o.observe>0).sort((a,b)=>b.observe-a.observe).slice(0,10)
-                .map(o=>({...o,reasons:buildReasons(o,"observe")}));
-
-              const renderCategory=(label,icon,color,list,catKey)=>{
-                if(!list.length) return null;
-                const totalActivityTop10=list.reduce((s,o)=>s+(o[catKey]||0),0);
-                return(
-                  <div style={{...card(),marginBottom:24,border:`1px solid ${color}44`}}>
-                    <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase"}}>{icon} Prioritas Kunjungan RO — Top 10 {label}</div>
-                    <div style={{fontSize:11,color:t.muted,marginTop:2,marginBottom:12,lineHeight:1.6}}>Outlet yang paling disarankan untuk dikunjungi/diverifikasi lebih dulu, diurutkan dari jumlah kunjungan {label} terbanyak.</div>
-                    <div onClick={()=>setPriorityDrill({label,color,catKey,list})}
-                      style={{padding:"12px 14px",borderRadius:10,background:color+"14",cursor:"pointer"}}
-                      onMouseEnter={e=>e.currentTarget.style.opacity="0.85"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                      <div style={{fontSize:20,fontWeight:800,color}}>{totalActivityTop10.toLocaleString()} kunjungan {label}</div>
-                      <div style={{fontSize:10,color:t.muted,marginTop:1}}>dari {list.length} outlet prioritas teratas</div>
-                      <div style={{fontSize:11,color,fontWeight:700,marginTop:8}}>🎯 Lihat Top 10 Prioritas Kunjungan ›</div>
-                    </div>
-                  </div>
-                );
-              };
-
-              return(
-                <>
-                  {renderCategory("Investigate","🔍",P.investigate,invTop,"investigate")}
-                  {renderCategory("Observe","⚠️",P.a2,obsTop,"observe")}
-
-                </>
-              );
-            })()}
+            <div style={{fontWeight:700,marginBottom:14,fontSize:11,letterSpacing:"0.06em",textTransform:"uppercase",color:t.muted}}>Key Insight</div>
 
                 {(()=>{
                   const wA2=[...view.canvassers].filter(c=>c.A2>0).sort((a,b)=>b.A2-a.A2)[0];
@@ -3447,38 +3292,42 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
 
                   return(
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:16}}>
-                    <div style={{...card(),height:520,overflowY:"auto"}}>
+                    <div style={{...card()}}>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+                    <div>
                       {/* Section 1 */}
                       {topCanvasserItems.length>0&&<>
                         <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Canvasser Teratas per Status</div>
-                        <div style={{fontSize:10,color:t.muted,marginBottom:8}}>Klik buat lihat detail kunjungannya</div>
+                        <div style={{fontSize:10,color:t.muted,marginBottom:6}}>Klik buat lihat detail kunjungannya</div>
                         {topCanvasserItems.map((it,i)=>(
-                          <div key={i} onClick={it.onClick} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:`1px solid ${t.border}`,cursor:"pointer"}}
+                          <div key={i} onClick={it.onClick} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 0",borderBottom:`1px solid ${t.border}`,cursor:"pointer"}}
                             onMouseEnter={e=>e.currentTarget.style.opacity="0.75"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                            <div style={{width:24,height:24,borderRadius:7,background:it.color+"1f",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,flexShrink:0}}>{it.icon}</div>
+                            <div style={{width:22,height:22,borderRadius:7,background:it.color+"1f",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,flexShrink:0}}>{it.icon}</div>
                             <div style={{flex:1,minWidth:0}}>
-                              <div style={{fontSize:10,color:t.muted}}>{it.title}</div>
-                              <div style={{fontSize:12,fontWeight:700,color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.name}</div>
-                              <div style={{fontSize:9,color:t.muted}}>{it.cluster}</div>
+                              <div style={{fontSize:9,color:t.muted}}>{it.title}</div>
+                              <div style={{fontSize:11,fontWeight:700,color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.name}</div>
+                              <div style={{fontSize:8,color:t.muted}}>{it.cluster}</div>
                             </div>
-                            <div style={{fontSize:13,fontWeight:800,color:it.color,flexShrink:0}}>{it.val.toLocaleString()}</div>
+                            <div style={{fontSize:12,fontWeight:800,color:it.color,flexShrink:0}}>{it.val.toLocaleString()}</div>
                           </div>
                         ))}
                       </>}
+                    </div>
 
+                    <div>
                       {/* Section 2 */}
-                      {(topRegions.length>0||topClusters.length>0)&&<div style={{marginTop:18}}>
-                        <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:8}}>Peringkat Cluster & Region</div>
-                        <div style={{display:"flex",gap:14,marginBottom:10}}>
+                      {(topRegions.length>0||topClusters.length>0)&&<div>
+                        <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:6}}>Peringkat Cluster & Region</div>
+                        <div style={{display:"flex",gap:14,marginBottom:8}}>
                           {["A1","A2","A3"].map(k=>(
-                            <span key={k} onClick={()=>setInsightRankTab(k)} style={{fontSize:11,fontWeight:700,color:insightRankTab===k?rankColorMap[k]:t.muted,paddingBottom:5,borderBottom:`2px solid ${insightRankTab===k?rankColorMap[k]:"transparent"}`,cursor:"pointer"}}>{k}</span>
+                            <span key={k} onClick={()=>setInsightRankTab(k)} style={{fontSize:11,fontWeight:700,color:insightRankTab===k?rankColorMap[k]:t.muted,paddingBottom:4,borderBottom:`2px solid ${insightRankTab===k?rankColorMap[k]:"transparent"}`,cursor:"pointer"}}>{k}</span>
                           ))}
                         </div>
                         <div style={{display:"flex",gap:20}}>
                           {topRegions.length>0&&<div style={{flex:1,minWidth:0}}>
-                            <div style={{fontSize:9,color:t.muted,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>🗺 Region Teratas</div>
+                            <div style={{fontSize:9,color:t.muted,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:4}}>🗺 Region Teratas</div>
                             {topRegions.map((r,ri)=>(
-                              <div key={ri} onClick={()=>openRank(r)} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"5px 0",borderBottom:ri<topRegions.length-1?`1px solid ${t.border}`:"none",cursor:r.v?"pointer":"default"}}
+                              <div key={ri} onClick={()=>openRank(r)} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"4px 0",borderBottom:ri<topRegions.length-1?`1px solid ${t.border}`:"none",cursor:r.v?"pointer":"default"}}
                                 onMouseEnter={e=>{if(r.v)e.currentTarget.style.opacity="0.7";}} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
                                 <span style={{color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{["🥇","🥈","🥉"][ri]} {r.code}</span>
                                 <span style={{color:t.muted,fontWeight:700,flexShrink:0,marginLeft:6}}>{r.v.toLocaleString()}</span>
@@ -3486,9 +3335,9 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                             ))}
                           </div>}
                           {topClusters.length>0&&<div style={{flex:1,minWidth:0}}>
-                            <div style={{fontSize:9,color:t.muted,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>📍 Cluster Teratas</div>
+                            <div style={{fontSize:9,color:t.muted,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:4}}>📍 Cluster Teratas</div>
                             {topClusters.map((r,ri)=>(
-                              <div key={ri} onClick={()=>openRank(r)} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"5px 0",borderBottom:ri<topClusters.length-1?`1px solid ${t.border}`:"none",cursor:r.v?"pointer":"default"}}
+                              <div key={ri} onClick={()=>openRank(r)} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"4px 0",borderBottom:ri<topClusters.length-1?`1px solid ${t.border}`:"none",cursor:r.v?"pointer":"default"}}
                                 onMouseEnter={e=>{if(r.v)e.currentTarget.style.opacity="0.7";}} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
                                 <span style={{color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{["🥇","🥈","🥉"][ri]} {r.code}</span>
                                 <span style={{color:t.muted,fontWeight:700,flexShrink:0,marginLeft:6}}>{r.v.toLocaleString()}</span>
@@ -3497,40 +3346,42 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                           </div>}
                         </div>
                       </div>}
+                    </div>
+                    </div>
 
-                      {/* Section 5: AVA & Sell-In */}
-                      {(avaBuckets||sellInBuckets)&&<div style={{marginTop:18}}>
+                    {/* Section 5: AVA & Sell-In — full width, di bawah divider */}
+                    {(avaBuckets||sellInBuckets)&&<div style={{marginTop:14,paddingTop:12,borderTop:`1px solid ${t.border}`}}>
                         <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Ringkasan AVA & Sell-In</div>
-                        <div style={{fontSize:10,color:t.muted,marginBottom:10}}>Nilai per kelompok pencapaian — klik untuk lihat daftar canvasser-nya</div>
-                        {avaBuckets&&<div style={{marginBottom:14}}>
-                          <div style={{fontSize:10,fontWeight:700,color:t.text,marginBottom:6}}>🏷 AVA Tracking</div>
+                        <div style={{fontSize:9,color:t.muted,marginBottom:8}}>Nilai per kelompok pencapaian — klik untuk lihat daftar canvasser-nya</div>
+                        {avaBuckets&&<div style={{marginBottom:8,padding:"8px 12px",borderRadius:10,background:t.cardAlt,border:`1px solid ${t.border}`}}>
+                          <div style={{fontSize:9,fontWeight:700,color:t.text,marginBottom:6}}>🏷 AVA Tracking</div>
                           <div style={{display:"flex",gap:8}}>
                             {[["Tinggi",avaBuckets.tinggi,"#22c55e"],["Sedang",avaBuckets.sedang,"#f59e0b"],["Rendah",avaBuckets.rendah,"#ef4444"]].map(([lbl,list,clr])=>{
                               const val=list.reduce((s,c)=>s+(c.avaYes||0),0);
                               return(
-                              <div key={lbl} onClick={()=>list.length&&openBucketDrill(`AVA Tracking — ${lbl}`,clr,list,"avaYes","avaTotal","kunjungan AVA",false)} style={{flex:1,textAlign:"center",padding:"8px 4px",borderRadius:8,background:clr+"14",cursor:list.length?"pointer":"default"}}>
-                                <div style={{fontSize:15,fontWeight:800,color:clr}}>{val.toLocaleString()}</div>
-                                <div style={{fontSize:8,color:t.muted,textTransform:"uppercase",marginTop:2}}>{lbl}</div>
-                                <div style={{fontSize:8,color:t.muted,marginTop:1}}>{list.length} canvasser</div>
+                              <div key={lbl} onClick={()=>list.length&&openBucketDrill(`AVA Tracking — ${lbl}`,clr,list,"avaYes","avaTotal","kunjungan AVA",false)} style={{flex:1,textAlign:"center",padding:"6px 4px",borderRadius:8,background:clr+"14",cursor:list.length?"pointer":"default"}}>
+                                <div style={{fontSize:14,fontWeight:800,color:clr}}>{val.toLocaleString()}</div>
+                                <div style={{fontSize:8,color:t.muted,textTransform:"uppercase",marginTop:1}}>{lbl}</div>
+                                <div style={{fontSize:8,color:t.muted}}>{list.length} canvasser</div>
                               </div>
                               );})}
                           </div>
                         </div>}
-                        {sellInBuckets&&<div>
-                          <div style={{fontSize:10,fontWeight:700,color:t.text,marginBottom:6}}>💰 Sell-In</div>
+                        {sellInBuckets&&<div style={{padding:"8px 12px",borderRadius:10,background:t.cardAlt,border:`1px solid ${t.border}`}}>
+                          <div style={{fontSize:9,fontWeight:700,color:t.text,marginBottom:6}}>💰 Sell-In</div>
                           <div style={{display:"flex",gap:8}}>
                             {[["Tinggi",sellInBuckets.tinggi,"#22c55e"],["Sedang",sellInBuckets.sedang,"#f59e0b"],["Rendah",sellInBuckets.rendah,"#ef4444"]].map(([lbl,list,clr])=>{
                               const val=list.reduce((s,c)=>s+(c.sellInQty||0),0);
                               return(
-                              <div key={lbl} onClick={()=>list.length&&openBucketDrill(`Sell-In — ${lbl}`,clr,list,"sellInQty","total","Qty Sell-In",true)} style={{flex:1,textAlign:"center",padding:"8px 4px",borderRadius:8,background:clr+"14",cursor:list.length?"pointer":"default"}}>
-                                <div style={{fontSize:15,fontWeight:800,color:clr}}>{val.toLocaleString()}</div>
-                                <div style={{fontSize:8,color:t.muted,textTransform:"uppercase",marginTop:2}}>{lbl}</div>
-                                <div style={{fontSize:8,color:t.muted,marginTop:1}}>{list.length} canvasser</div>
+                              <div key={lbl} onClick={()=>list.length&&openBucketDrill(`Sell-In — ${lbl}`,clr,list,"sellInQty","total","Qty Sell-In",true)} style={{flex:1,textAlign:"center",padding:"6px 4px",borderRadius:8,background:clr+"14",cursor:list.length?"pointer":"default"}}>
+                                <div style={{fontSize:14,fontWeight:800,color:clr}}>{val.toLocaleString()}</div>
+                                <div style={{fontSize:8,color:t.muted,textTransform:"uppercase",marginTop:1}}>{lbl}</div>
+                                <div style={{fontSize:8,color:t.muted}}>{list.length} canvasser</div>
                               </div>
                               );})}
                           </div>
                         </div>}
-                      </div>}
+                    </div>}
                     </div>
 
                     <div style={{...card(),height:520,overflowY:"auto"}}>
