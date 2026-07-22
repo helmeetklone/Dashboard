@@ -3317,27 +3317,18 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                 {typeBreakdownSorted.length>0&&(
                   <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${t.border}`,overflowX:"auto"}}>
                     <div style={{fontSize:9,color:t.muted,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.04em"}}>Kategori RO Terdampak</div>
-                    <div style={{display:"flex",gap:0,marginBottom:4,paddingLeft:52}}>
+                    <div style={{display:"grid",gridTemplateColumns:`44px repeat(${typeBreakdownSorted.length},minmax(52px,1fr))`,rowGap:4,columnGap:0,minWidth:44+typeBreakdownSorted.length*52}}>
+                      <div/>
                       {typeBreakdownSorted.map(([ty],i)=>(
-                        <span key={ty} style={{fontSize:9,color:t.muted,fontWeight:700,minWidth:56,textAlign:"center",whiteSpace:"nowrap"}}>
-                          {ty}{i<typeBreakdownSorted.length-1?<span style={{color:t.border,margin:"0 5px"}}>|</span>:null}
-                        </span>
+                        <div key={ty} style={{fontSize:9,color:t.muted,fontWeight:700,textAlign:"center",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",borderRight:i<typeBreakdownSorted.length-1?`1px solid ${t.border}`:"none",paddingBottom:3}}>{ty}</div>
                       ))}
-                    </div>
-                    <div style={{display:"flex",alignItems:"center",marginBottom:3}}>
-                      <span style={{fontSize:9.5,color:P.investigate,fontWeight:700,width:52,flexShrink:0}}>🔍 Inv</span>
+                      <div style={{fontSize:9.5,color:P.investigate,fontWeight:700,display:"flex",alignItems:"center"}}>🔍 Inv</div>
                       {typeBreakdownSorted.map(([ty,v],i)=>(
-                        <span key={ty} style={{fontSize:9.5,fontWeight:700,color:v.investigate>0?P.investigate:t.muted,minWidth:56,textAlign:"center",whiteSpace:"nowrap"}}>
-                          {fmtID(v.investigate)}{i<typeBreakdownSorted.length-1?<span style={{color:t.border,margin:"0 5px"}}>|</span>:null}
-                        </span>
+                        <div key={ty} style={{fontSize:9.5,fontWeight:700,textAlign:"center",color:v.investigate>0?P.investigate:t.muted,borderRight:i<typeBreakdownSorted.length-1?`1px solid ${t.border}`:"none",display:"flex",alignItems:"center",justifyContent:"center"}}>{fmtID(v.investigate)}</div>
                       ))}
-                    </div>
-                    <div style={{display:"flex",alignItems:"center"}}>
-                      <span style={{fontSize:9.5,color:P.a2,fontWeight:700,width:52,flexShrink:0}}>⚠️ Obs</span>
+                      <div style={{fontSize:9.5,color:P.a2,fontWeight:700,display:"flex",alignItems:"center"}}>⚠️ Obs</div>
                       {typeBreakdownSorted.map(([ty,v],i)=>(
-                        <span key={ty} style={{fontSize:9.5,fontWeight:700,color:v.observe>0?P.a2:t.muted,minWidth:56,textAlign:"center",whiteSpace:"nowrap"}}>
-                          {fmtID(v.observe)}{i<typeBreakdownSorted.length-1?<span style={{color:t.border,margin:"0 5px"}}>|</span>:null}
-                        </span>
+                        <div key={ty} style={{fontSize:9.5,fontWeight:700,textAlign:"center",color:v.observe>0?P.a2:t.muted,borderRight:i<typeBreakdownSorted.length-1?`1px solid ${t.border}`:"none",display:"flex",alignItems:"center",justifyContent:"center"}}>{fmtID(v.observe)}</div>
                       ))}
                     </div>
                   </div>
