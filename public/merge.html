@@ -76,6 +76,11 @@
   <div class="sub">Upload semua file Visit Group per micro-cluster sekaligus (boleh drag &amp; drop banyak file). Tools ini otomatis menggabungkan semuanya jadi satu file Excel, siap diupload ke dashboard lewat "Ganti Berkas".</div>
 
   <div class="card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+      <label style="font-size:13px;font-weight:700;color:var(--text);">📄 Baca dari sheet ke-</label>
+      <input type="number" id="sheetIndex" value="3" min="1" style="width:60px;background:var(--cardAlt);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 10px;font-size:13px;font-weight:700;text-align:center;" />
+      <span style="font-size:12px;color:var(--muted);">(urutan sheet dalam file, bukan nama — sheet 1 = paling kiri)</span>
+    </div>
     <div class="drop" id="drop">
       <input type="file" id="fileInput" multiple accept=".xlsx,.xls" />
       <div class="drop-icon">📥</div>
@@ -121,22 +126,41 @@ dropEl.addEventListener('drop', e => {
 fileInput.addEventListener('change', e => { handleFiles(e.target.files); fileInput.value=''; });
 clearBtn.addEventListener('click', () => { entries = []; render(); });
 
-async function handleFiles(fileList) {
+const sheetIndexInput = document.getElementById('sheetIndex');
+sheetIndexInput.addEventListener('change', () => reparseAll());
+
+async function reparseAll() {
+  const files = entries.map(e => e.file);
+  entries = [];
+  render();
+  await handleFiles(files, true);
+}
+
+async function readEntry(file) {
+  const sheetNum = Math.max(1, parseInt(sheetIndexInput.value) || 1);
+  const entry = { file, rows: [], headers: [], error: null };
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    if (sheetNum > wb.SheetNames.length) {
+      throw new Error(`File cuma punya ${wb.SheetNames.length} sheet (diminta sheet ke-${sheetNum})`);
+    }
+    const ws = wb.Sheets[wb.SheetNames[sheetNum - 1]];
+    const rows = XLSX.utils.sheet_to_json(ws, { defval: null });
+    if (!rows.length) throw new Error(`Sheet ke-${sheetNum} ("${wb.SheetNames[sheetNum-1]}") kosong`);
+    entry.rows = rows;
+    entry.headers = Object.keys(rows[0]);
+  } catch (err) {
+    entry.error = err.message || 'Gagal dibaca';
+  }
+  return entry;
+}
+
+async function handleFiles(fileList, skipDedup) {
   const files = Array.from(fileList).filter(f => /\.(xlsx|xls)$/i.test(f.name));
   for (const file of files) {
-    if (entries.some(e => e.file.name === file.name && e.file.size === file.size)) continue;
-    const entry = { file, rows: [], headers: [], error: null };
-    try {
-      const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type: 'array' });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, { defval: null });
-      if (!rows.length) throw new Error('Sheet kosong');
-      entry.rows = rows;
-      entry.headers = Object.keys(rows[0]);
-    } catch (err) {
-      entry.error = err.message || 'Gagal dibaca';
-    }
+    if (!skipDedup && entries.some(e => e.file.name === file.name && e.file.size === file.size)) continue;
+    const entry = await readEntry(file);
     entries.push(entry);
   }
   render();
