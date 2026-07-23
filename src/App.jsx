@@ -2171,6 +2171,101 @@ function CanvasserDetailPanel({detail,onClose,t}){
 // ─────────────────────────────────────────────────────────────────────────────
 // UPLOAD SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// RO FILE PARSING — shared utilities (dipakai UploadScreen & Dashboard, dua-duanya
+// punya tombol "Upload File RO" jadi logic parsing-nya harus satu sumber yang sama)
+// ─────────────────────────────────────────────────────────────────────────────
+const DAY_NAME_MAP=[["senin",1],["selasa",2],["rabu",3],["kamis",4],["jumat",5],["sabtu",6],["minggu",0]];
+const normHeader=(h)=>String(h||"").toLowerCase().replace(/[^a-z0-9]/g,"");
+const findCol=(headers,candidates)=>{
+  for(const cand of candidates){
+    const idx=headers.findIndex(h=>normHeader(h)===cand);
+    if(idx>=0) return headers[idx];
+  }
+  for(const cand of candidates){
+    const idx=headers.findIndex(h=>normHeader(h).includes(cand));
+    if(idx>=0) return headers[idx];
+  }
+  return null;
+};
+const parseDayNamesFromText=(txt)=>{
+  const s=String(txt||"").toLowerCase();
+  const days=DAY_NAME_MAP.filter(([name])=>s.includes(name)).map(([,d])=>d);
+  return [...new Set(days)];
+};
+const pickAssignmentSheet=(wb)=>{
+  // Prioritas: nama sheet mengandung "assignment". Kalau tidak ada, ambil sheet dengan baris terbanyak
+  // yang punya kolom Outlet ID (menghindari sheet ringkasan/summary/2-baris-header).
+  const byName=wb.SheetNames.find(sn=>/assignment/i.test(sn));
+  if(byName) return byName;
+  let best=null, bestRows=0;
+  wb.SheetNames.forEach(sn=>{
+    const ws=wb.Sheets[sn]; if(!ws||!ws["!ref"]) return;
+    const rows=XLSX.utils.sheet_to_json(ws,{defval:null});
+    if(!rows.length) return;
+    const headers=Object.keys(rows[0]);
+    const hasOutletId=headers.some(h=>normHeader(h).includes("outletid"));
+    if(hasOutletId && rows.length>bestRows){ best=sn; bestRows=rows.length; }
+  });
+  return best||wb.SheetNames[0];
+};
+const parseRoFiles=async(fileList)=>{
+  const maps=await Promise.all(Array.from(fileList).map(async file=>{
+    const buf=await file.arrayBuffer();
+    const wb=XLSX.read(buf,{type:"array", cellHTML:false});
+    const sheetName=pickAssignmentSheet(wb);
+    const ws=wb.Sheets[sheetName];
+    const rows=XLSX.utils.sheet_to_json(ws,{defval:null});
+    const map={};
+    if(!rows.length) throw new Error(`File "${file.name}": sheet "${sheetName}" kosong`);
+    const headers=Object.keys(rows[0]);
+    const col={
+      outletId:findCol(headers,["outletid","roid"]),
+      lat:findCol(headers,["latitudefix","latitude","lat"]),
+      lon:findCol(headers,["longitudefix","longitude","long","lng"]),
+      latLong:findCol(headers,["latlongro","latlong","koordinat"]),
+      census:findCol(headers,["fromrocensus","census"]),
+      type:findCol(headers,["outlettype"]),
+      cluster:findCol(headers,["salescluster","microcluster","area"]),
+      name:findCol(headers,["outletname","namaro"]),
+      visitFreq:findCol(headers,["visitfreq","visitfrequency"]),
+      visitGroup:findCol(headers,["visitgroup","visitschedule"]),
+    };
+    if(!col.outletId) throw new Error(`File "${file.name}": kolom Outlet ID / RO ID tidak ditemukan di sheet "${sheetName}". Kolom yang ada: ${headers.join(", ")}`);
+    rows.forEach(r=>{
+      const id=col.outletId?String(r[col.outletId]||"").trim():""; if(!id) return;
+      const vgText=col.visitGroup?r[col.visitGroup]:null;
+      const days=parseDayNamesFromText(vgText);
+      const freqFromVisitGroup=vgText!=null?parseInt(String(vgText).trim()):NaN;
+      const freqFromCol=col.visitFreq?parseInt(r[col.visitFreq]):NaN;
+      const visitFreq = !isNaN(freqFromCol)&&freqFromCol>0 ? freqFromCol
+        : (days.length>0 ? days.length
+        : (!isNaN(freqFromVisitGroup)&&freqFromVisitGroup>0 ? freqFromVisitGroup : null));
+      let lat=col.lat?parseFloat(r[col.lat])||null:null;
+      let lon=col.lon?parseFloat(r[col.lon])||null:null;
+      if((lat==null||lon==null)&&col.latLong&&r[col.latLong]){
+        const parts=String(r[col.latLong]).split(/[,/;|]|\s{2,}/).map(s=>parseFloat(s.trim())).filter(n=>!isNaN(n));
+        if(parts.length>=2){ lat=lat??parts[0]; lon=lon??parts[1]; }
+      }
+      map[id]={
+        lat,lon,
+        census:col.census?String(r[col.census]||"").toUpperCase()==="YES":false,
+        type:col.type?String(r[col.type]||"").trim():"",
+        cluster:col.cluster?String(r[col.cluster]||"").trim():"",
+        name:col.name?String(r[col.name]||"").trim():"",
+        visitGroup:vgText?String(vgText).trim():null,
+        visitFreq,
+        visitDays:days,
+      };
+    });
+    return map;
+  }));
+  const merged=Object.assign({},...maps);
+  const count=Object.keys(merged).length;
+  if(!count) throw new Error("Tidak ada outlet yang berhasil dibaca dari file RO ini.");
+  return merged;
+};
+
 function UploadScreen({onLoad,roMap,onRoLoad,t}){
   const [drag,setDrag]=useState(false);
   const [loading,setLoading]=useState(false);
@@ -2180,96 +2275,23 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
   const folderRef=useRef();
   const jsonRef=useRef();
 
-  const DAY_NAME_MAP=[["senin",1],["selasa",2],["rabu",3],["kamis",4],["jumat",5],["sabtu",6],["minggu",0]];
-  const normHeader=(h)=>String(h||"").toLowerCase().replace(/[^a-z0-9]/g,"");
-  const findCol=(headers,candidates)=>{
-    for(const cand of candidates){
-      const idx=headers.findIndex(h=>normHeader(h)===cand);
-      if(idx>=0) return headers[idx];
-    }
-    for(const cand of candidates){
-      const idx=headers.findIndex(h=>normHeader(h).includes(cand));
-      if(idx>=0) return headers[idx];
-    }
-    return null;
-  };
-  const parseDayNamesFromText=(txt)=>{
-    const s=String(txt||"").toLowerCase();
-    const days=DAY_NAME_MAP.filter(([name])=>s.includes(name)).map(([,d])=>d);
-    return [...new Set(days)];
-  };
-  const pickAssignmentSheet=(wb)=>{
-    // Prioritas: nama sheet mengandung "assignment". Kalau tidak ada, ambil sheet dengan baris terbanyak
-    // yang punya kolom Outlet ID (menghindari sheet ringkasan/summary/2-baris-header).
-    const byName=wb.SheetNames.find(sn=>/assignment/i.test(sn));
-    if(byName) return byName;
-    let best=null, bestRows=0;
-    wb.SheetNames.forEach(sn=>{
-      const ws=wb.Sheets[sn]; if(!ws||!ws["!ref"]) return;
-      const rows=XLSX.utils.sheet_to_json(ws,{defval:null});
-      if(!rows.length) return;
-      const headers=Object.keys(rows[0]);
-      const hasOutletId=headers.some(h=>normHeader(h).includes("outletid"));
-      if(hasOutletId && rows.length>bestRows){ best=sn; bestRows=rows.length; }
-    });
-    return best||wb.SheetNames[0];
-  };
-
   const handleRoFile=async(fileList)=>{
     if(!fileList||!fileList.length) return;
+    setError(null);
+    const totalSize=Array.from(fileList).reduce((s,f)=>s+f.size,0);
+    const bigFiles=Array.from(fileList).filter(f=>f.size>15*1024*1024);
+    setLoading(bigFiles.length?`Membaca jadwal RO... (${(totalSize/1024/1024).toFixed(1)}MB, mungkin butuh waktu lebih lama)`:"Membaca jadwal RO...");
+    // beri browser waktu render loading state dulu sebelum kerjaan berat (sinkron) mulai
+    await new Promise(r=>setTimeout(r,50));
     try{
-      const maps=await Promise.all(Array.from(fileList).map(async file=>{
-        const buf=await file.arrayBuffer();
-        const wb=XLSX.read(buf,{type:"array", cellHTML:false});
-        const sheetName=pickAssignmentSheet(wb);
-        const ws=wb.Sheets[sheetName];
-        const rows=XLSX.utils.sheet_to_json(ws,{defval:null});
-        const map={};
-        if(!rows.length) return map;
-        const headers=Object.keys(rows[0]);
-        const col={
-          outletId:findCol(headers,["outletid","roid"]),
-          lat:findCol(headers,["latitudefix","latitude","lat"]),
-          lon:findCol(headers,["longitudefix","longitude","long","lng"]),
-          latLong:findCol(headers,["latlongro","latlong","koordinat"]),
-          census:findCol(headers,["fromrocensus","census"]),
-          type:findCol(headers,["outlettype"]),
-          cluster:findCol(headers,["salescluster","microcluster","area"]),
-          name:findCol(headers,["outletname","namaro"]),
-          visitFreq:findCol(headers,["visitfreq","visitfrequency"]),
-          visitGroup:findCol(headers,["visitgroup","visitschedule"]),
-        };
-        rows.forEach(r=>{
-          const id=col.outletId?String(r[col.outletId]||"").trim():""; if(!id) return;
-          const vgText=col.visitGroup?r[col.visitGroup]:null;
-          const days=parseDayNamesFromText(vgText);
-          const freqFromVisitGroup=vgText!=null?parseInt(String(vgText).trim()):NaN;
-          const freqFromCol=col.visitFreq?parseInt(r[col.visitFreq]):NaN;
-          const visitFreq = !isNaN(freqFromCol)&&freqFromCol>0 ? freqFromCol
-            : (days.length>0 ? days.length
-            : (!isNaN(freqFromVisitGroup)&&freqFromVisitGroup>0 ? freqFromVisitGroup : null));
-          let lat=col.lat?parseFloat(r[col.lat])||null:null;
-          let lon=col.lon?parseFloat(r[col.lon])||null:null;
-          if((lat==null||lon==null)&&col.latLong&&r[col.latLong]){
-            const parts=String(r[col.latLong]).split(/[,/;|]|\s{2,}/).map(s=>parseFloat(s.trim())).filter(n=>!isNaN(n));
-            if(parts.length>=2){ lat=lat??parts[0]; lon=lon??parts[1]; }
-          }
-          map[id]={
-            lat,lon,
-            census:col.census?String(r[col.census]||"").toUpperCase()==="YES":false,
-            type:col.type?String(r[col.type]||"").trim():"",
-            cluster:col.cluster?String(r[col.cluster]||"").trim():"",
-            name:col.name?String(r[col.name]||"").trim():"",
-            visitGroup:vgText?String(vgText).trim():null,
-            visitFreq,
-            visitDays:days,
-          };
-        });
-        return map;
-      }));
-      const merged=Object.assign({},...maps);
+      const merged=await parseRoFiles(fileList);
       onRoLoad(prev=>({...prev,...merged}));
-    }catch(e){console.error("RO parse error:",e);}
+      setLoading(false);
+    }catch(e){
+      console.error("RO parse error:",e);
+      setLoading(false);
+      setError("⚠️ Gagal membaca file Jadwal RO: "+e.message);
+    }
   };
 
   const handleJsonFile=useCallback(async files=>{
@@ -2470,6 +2492,11 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
           <span style={{marginLeft:"auto",fontSize:10,color:t.muted}}>Opsional</span>
         </div>
         <div style={{fontSize:10,color:t.muted,marginBottom:8}}>Upload data master outlet (RO ID, koordinat, jadwal visit/minggu) — dipakai untuk hitung jarak GPS, Census, dan status Merah/Orange/Kuning/Hijau. Bisa diupload sebelum atau sesudah data aktivitas, urutan bebas.</div>
+        {typeof loading==="string"&&loading.includes("jadwal RO")?(
+          <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 0",color:"#60a5fa",fontSize:11,fontWeight:700}}>
+            <span style={{fontSize:16}}>⚙️</span> {loading}
+          </div>
+        ):(
         <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
           <label style={{display:"inline-flex",alignItems:"center",gap:6,background:Object.keys(roMap).length>0?"#22c55e22":t.cardAlt,color:Object.keys(roMap).length>0?"#22c55e":t.muted,borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:11,fontWeight:700,border:`1px solid ${Object.keys(roMap).length>0?"#22c55e":t.border}`}}>
             📂 {Object.keys(roMap).length>0?"✓ Tambah / Ganti Jadwal RO":"Upload Jadwal Visit RO"}
@@ -2481,6 +2508,7 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
             </button>
           )}
         </div>
+        )}
       </div>
 
       {error&&<div style={{marginTop:12,background:error.startsWith("⚠️")?"rgba(245,158,11,0.1)":"rgba(239,68,68,0.1)",border:`1px solid ${error.startsWith("⚠️")?"#f59e0b":"#ef4444"}`,borderRadius:10,padding:"10px 18px",color:error.startsWith("⚠️")?"#fbbf24":"#f87171",fontSize:12,maxWidth:520}}>{error}</div>}
@@ -2521,7 +2549,7 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
 // ─────────────────────────────────────────────────────────────────────────────
 // DASHBOARD
 // ─────────────────────────────────────────────────────────────────────────────
-function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
+function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={},onRoLoad}){
   const t=dark?DARK:LIGHT;
   const [params,setParams]=useState({...DEFAULT_PARAMS});
   const [showParams,setShowParams]=useState(false);
@@ -2543,6 +2571,23 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
   const [overlapBreakdown,setOverlapBreakdown]=useState(null);
   const [addLoading,setAddLoading]=useState(null);
   const [showFileManager,setShowFileManager]=useState(false);
+  const [roUploadStatus,setRoUploadStatus]=useState(null); // {type:'loading'|'error'|'success', message}
+  const handleRoFile=async(fileList)=>{
+    if(!fileList||!fileList.length) return;
+    const totalSize=Array.from(fileList).reduce((s,f)=>s+f.size,0);
+    const bigFiles=Array.from(fileList).filter(f=>f.size>15*1024*1024);
+    setRoUploadStatus({type:"loading",message:bigFiles.length?`Membaca jadwal RO... (${(totalSize/1024/1024).toFixed(1)}MB, mungkin butuh waktu lebih lama)`:"Membaca jadwal RO..."});
+    await new Promise(r=>setTimeout(r,50));
+    try{
+      const merged=await parseRoFiles(fileList);
+      onRoLoad(prev=>({...(prev||{}),...merged}));
+      setRoUploadStatus({type:"success",message:`✓ ${Object.keys(merged).length} outlet berhasil dibaca`});
+      setTimeout(()=>setRoUploadStatus(null),2500);
+    }catch(e){
+      console.error("RO parse error:",e);
+      setRoUploadStatus({type:"error",message:"Gagal membaca file: "+e.message});
+    }
+  };
   const [outletTypeDrill,setOutletTypeDrill]=useState(null);
   const [vtDrill,setVtDrill]=useState(null);
   const [reasonDrill,setReasonDrill]=useState(null);
@@ -4799,6 +4844,14 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
               </label>
             </div>
             <div style={{fontSize:9.5,color:t.muted,marginTop:8,lineHeight:1.5}}>🏪 Upload File RO = data master outlet (koordinat, tipe, dan jadwal Visit Group) — dipakai untuk hitung jarak GPS, Census, dan status Merah/Orange/Kuning/Hijau. Bisa upload beberapa file / cluster sekaligus, akan digabung otomatis berdasarkan Outlet ID.</div>
+            {roUploadStatus&&(
+              <div style={{marginTop:8,padding:"8px 12px",borderRadius:8,fontSize:11,fontWeight:600,display:"flex",alignItems:"center",gap:6,
+                background:roUploadStatus.type==="error"?"rgba(239,68,68,0.12)":roUploadStatus.type==="success"?"rgba(34,197,94,0.12)":"rgba(96,165,250,0.12)",
+                color:roUploadStatus.type==="error"?"#f87171":roUploadStatus.type==="success"?"#4ade80":"#60a5fa"}}>
+                <span>{roUploadStatus.type==="loading"?"⚙️":roUploadStatus.type==="error"?"⚠️":"✓"}</span>
+                <span>{roUploadStatus.message}</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -5063,6 +5116,6 @@ export default function App(){
   const [dark,setDark]=useState(true);
   const t=dark?DARK:LIGHT;
   return(<><style>{hideScrollbarStyle}</style>{files
-    ?<Dashboard files={files} onReset={()=>setFiles(null)} onAddFiles={setFiles} dark={dark} toggleDark={()=>setDark(d=>!d)} roMap={roMap}/>
+    ?<Dashboard files={files} onReset={()=>setFiles(null)} onAddFiles={setFiles} dark={dark} toggleDark={()=>setDark(d=>!d)} roMap={roMap} onRoLoad={setRoMap}/>
     :<UploadScreen onLoad={setFiles} roMap={roMap} onRoLoad={setRoMap} t={t}/>}</>);
 }
