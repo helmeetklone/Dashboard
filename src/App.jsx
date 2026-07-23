@@ -3801,10 +3801,10 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={},onRoLoad})
                       const rws=getAllRowsForCanvasserNames(noA2Names);
                       setCanvDetail({canvasser:{name:"Seluruh Canvasser",cluster:"Tanpa A2",icon:"❓"},drillLabel:"Canvasser Tanpa A2 di Regular Visit",color:t.muted,rows:rws,drillKey:null,sessionKey:Date.now()});
                     }} style={{display:"flex",alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${t.border}`,cursor:"pointer"}}>
-                      <div style={{flex:1,fontSize:12,fontWeight:600,color:t.text}}>❓ Tanpa A2</div>
+                      <div style={{flex:1,fontSize:12,fontWeight:600,color:t.text,whiteSpace:"nowrap"}}>❓ Tanpa A2</div>
                       <div style={{textAlign:"right",flexShrink:0}}>
                         <div style={{fontSize:14,fontWeight:800,color:t.muted}}>{noA2Names.length.toLocaleString()} <span style={{fontSize:11,fontWeight:600}}>canvasser</span></div>
-                        <div style={{fontSize:9,color:t.muted}}>Tidak pernah berstatus A2 pada Regular Visit — klik untuk melihat detail</div>
+                        <div style={{fontSize:9,color:t.muted}}>di Regular Visit</div>
                       </div>
                     </div>
                   )}
