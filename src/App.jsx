@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect, Fragment } from "react";
 import * as XLSX from "xlsx";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   PieChart, Pie, Cell, ResponsiveContainer, LineChart, Line, LabelList } from "recharts";
@@ -420,7 +420,7 @@ function processRows(rows) {
     const as1 = vs==="VALID"?"A1 - NORMAL":vs==="OBSERVE"||vs==="INVESTIGATE"?"A2 - ANOMALY":vs==="INCOMPLETE"?"A3 - INCOMPLETE":"";
     r["_CAS1"]=as1; r["_CVS"]=vs;
     const vt=String(r["Activity Type"]||"Unknown").trim();
-    if(!vtMap[vt])vtMap[vt]={type:vt,total:0,A1:0,A2:0,A3:0};
+    if(!vtMap[vt])vtMap[vt]={type:vt,total:0,A1:0,A2:0,A3:0,sellInQty:0};
     vtMap[vt].total++;
     if(as1==="A1 - NORMAL")vtMap[vt].A1++;
     else if(as1==="A2 - ANOMALY")vtMap[vt].A2++;
@@ -519,6 +519,7 @@ function processRows(rows) {
     const didSellIn = rowSellInQty>0;
     sellInQtyTotal += rowSellInQty;
     if(didSellIn) sellInVisitsTotal++;
+    if(vtMap[vt]) vtMap[vt].sellInQty += rowSellInQty;
 
     // AVA Tracking — dianggap "melakukan AVA" kalau kolom AVA Tracking? = Yes
     const avaVal=String(r["AVA Tracking?"]||"").trim().toLowerCase();
@@ -677,6 +678,113 @@ function processRows(rows) {
     });
   });
 
+  // ── Status Merah/Orange/Kuning/Hijau — turunan dari A2 (Anomaly) saja ──
+  // Per canvasser+outlet: urut kronologis, kelompokkan per minggu (Senin-anchored).
+  // shortCount=durasi<2menit, identikCount=Long/Lat sama persis dgn kunjungan SEBELUMNYA
+  // (riwayat historis per canvasser+outlet, bukan cuma dalam minggu itu), outCount=jarak>200m.
+  // avaOk/sellInOk = terpenuhi di minimal 1 kunjungan minggu itu (bebas Visit 1-3).
+  // Hasil warnanya ditempel ke SETIAP Activity ID (baris) di grup minggu itu.
+  {
+    const colorHistoryMap={};
+    const colorGroups={};
+    rows.forEach(r=>{
+      if(String(r["_CAS1"]||"")!=="A2 - ANOMALY") return;
+      if(String(r["Activity Type"]||"").trim()!=="Regular Visit") return;
+      const tv=r["Actual Visit Time"]?new Date(r["Actual Visit Time"]):null;
+      if(!tv||isNaN(tv.getTime())) return;
+      const cvName=String(r["Canvasser ID"]||r["Canvasser"]||"").trim();
+      const outId=String(r["Outlet ID"]||"").trim();
+      if(!cvName||!outId) return;
+      const d=new Date(tv.getFullYear(),tv.getMonth(),tv.getDate());
+      const dow=d.getDay();
+      const diffToMon=(dow===0?-6:1-dow);
+      const monday=new Date(d); monday.setDate(d.getDate()+diffToMon);
+      const weekKey=monday.toISOString().slice(0,10);
+      const gKey=cvName+"|"+outId+"|"+weekKey;
+      if(!colorGroups[gKey]) colorGroups[gKey]=[];
+      colorGroups[gKey].push({r,t:tv,cvName,outId});
+    });
+
+    Object.values(colorGroups).forEach(list=>{
+      list.sort((a,b)=>a.t-b.t);
+      const histKey=list[0].cvName+"|"+list[0].outId;
+      if(!colorHistoryMap[histKey]) colorHistoryMap[histKey]=[];
+      const hist=colorHistoryMap[histKey];
+
+      let shortCount=0, identikCount=0, outCount=0, avaOk=false, sellInOk=false;
+      list.forEach(x=>{
+        const r=x.r;
+        const durMin=parseFloat(r["Visit Duration (Menit)"]);
+        if(!isNaN(durMin)&&durMin<2) shortCount++;
+
+        const ciLat=parseFloat(r["Check-In Latitude"]), ciLon=parseFloat(r["Check-In Longitude"]);
+        let isIdentik=false;
+        if(!isNaN(ciLat)&&!isNaN(ciLon)){
+          isIdentik=hist.some(h=>Math.abs(h.lat-ciLat)<0.00005&&Math.abs(h.lon-ciLon)<0.00005); // ~±5m
+          hist.push({lat:ciLat,lon:ciLon});
+        }
+        if(isIdentik) identikCount++;
+
+        const distIn=parseFloat(r["Distance Check In (Meter)"])||0;
+        const distOut=parseFloat(r["Distance Check Out (Meter)"])||0;
+        if(Math.max(distIn,distOut)>200) outCount++;
+
+        const avaVal=String(r["AVA Tracking?"]||"").trim().toLowerCase();
+        if(avaVal==="yes"||avaVal==="ya"||avaVal==="true"||avaVal==="1") avaOk=true;
+        const sellQty=(parseFloat(String(r["Sell-In"]||"").replace(/[^0-9.\-]/g,""))||0)+(parseFloat(String(r["Online Sell-In"]||"").replace(/[^0-9.\-]/g,""))||0);
+        if(sellQty>0) sellInOk=true;
+      });
+
+      const primary=Math.max(shortCount,identikCount);
+      let color;
+      if(!avaOk||!sellInOk) color="MERAH";
+      else if(primary>=2) color="MERAH";
+      else if(primary===1) color=outCount>=1?"ORANGE":"KUNING";
+      else color="HIJAU";
+
+      list.forEach(x=>{
+        x.r._colorStatus=color;
+        x.r._colorShortCount=shortCount;
+        x.r._colorIdentikCount=identikCount;
+        x.r._colorOutCount=outCount;
+        x.r._colorAvaOk=avaOk;
+        x.r._colorSellInOk=sellInOk;
+      });
+    });
+  }
+
+  // Ringkasan status warna baru (Merah/Orange/Kuning/Hijau) — dari baris ber-_colorStatus
+  const colorCanvSets={MERAH:new Set(),ORANGE:new Set(),KUNING:new Set(),HIJAU:new Set()};
+  const colorOutletSets={MERAH:new Set(),ORANGE:new Set(),KUNING:new Set(),HIJAU:new Set()};
+  const colorRowCounts={MERAH:0,ORANGE:0,KUNING:0,HIJAU:0};
+  const colorOutletMap={};
+  rows.forEach(r=>{
+    if(!r._colorStatus) return;
+    colorRowCounts[r._colorStatus]++;
+    colorCanvSets[r._colorStatus].add(String(r["Canvasser ID"]||r["Canvasser"]||"").trim());
+    colorOutletSets[r._colorStatus].add(String(r["Outlet ID"]||"").trim());
+
+    const oid=String(r["Outlet ID"]||"").trim();
+    if(!oid) return;
+    if(!colorOutletMap[oid]) colorOutletMap[oid]={id:oid,name:String(r["Outlet"]||r["Outlet Name"]||oid).trim(),cluster:String(r["Cluster"]||r["_clLabel"]||"Unknown"),outletType:String(r["Outlet Type"]||"").trim(),MERAH:0,ORANGE:0,KUNING:0,HIJAU:0,canvasserSet:new Set(),sellInQty:0};
+    const op=colorOutletMap[oid];
+    op[r._colorStatus]++;
+    op.canvasserSet.add(String(r["Canvasser ID"]||r["Canvasser"]||"").trim());
+    const qty=(parseFloat(String(r["Sell-In"]||"").replace(/[^0-9.\-]/g,""))||0)+(parseFloat(String(r["Online Sell-In"]||"").replace(/[^0-9.\-]/g,""))||0);
+    op.sellInQty+=qty;
+  });
+  const colorChronicOutlets=Object.values(colorOutletMap).map(o=>({
+    id:o.id,name:o.name,cluster:o.cluster,outletType:o.outletType,
+    MERAH:o.MERAH,ORANGE:o.ORANGE,KUNING:o.KUNING,HIJAU:o.HIJAU,
+    canvasserCount:o.canvasserSet.size,sellInQty:o.sellInQty,
+    flagged:o.MERAH+o.ORANGE+o.KUNING+o.HIJAU,
+  })).sort((a,b)=>b.flagged-a.flagged);
+  const colorSummary={
+    rowCounts:{...colorRowCounts},
+    canvasserNames:{MERAH:[...colorCanvSets.MERAH],ORANGE:[...colorCanvSets.ORANGE],KUNING:[...colorCanvSets.KUNING],HIJAU:[...colorCanvSets.HIJAU]},
+    outletIds:{MERAH:[...colorOutletSets.MERAH],ORANGE:[...colorOutletSets.ORANGE],KUNING:[...colorOutletSets.KUNING],HIJAU:[...colorOutletSets.HIJAU]},
+  };
+
   let fakeVisitRiskCount=0, needsVerificationCount=0;
   const fakeVisitCanvasserSet=new Set(), fakeVisitOutletSet=new Set();
   const verifyCanvasserSet=new Set(), verifyOutletSet=new Set();
@@ -729,6 +837,8 @@ function processRows(rows) {
     outletData:Object.values(outMap).filter(d=>!d._isCensus).sort((a,b)=>b.total-a.total),
     censusData,
     chronicOutlets,
+    colorChronicOutlets,
+    colorSummary,
     fakeVisitRiskCount,
     fakeVisitCanvasserCount:fakeVisitCanvasserSet.size,
     fakeVisitOutletCount:fakeVisitOutletSet.size,
@@ -766,8 +876,8 @@ function aggregateList(dataList) {
     const m={};
     dataList.forEach(r=>(r[key]||[]).forEach(item=>{
       const k=item[gk];
-      if(!m[k])m[k]={...item,total:0,A1:0,A2:0,A3:0,VALID:0,OBSERVE:0,INVESTIGATE:0,INCOMPLETE:0};
-      ["total","A1","A2","A3","VALID","OBSERVE","INVESTIGATE","INCOMPLETE"].forEach(f=>{m[k][f]=(m[k][f]||0)+(item[f]||0);});
+      if(!m[k])m[k]={...item,total:0,A1:0,A2:0,A3:0,VALID:0,OBSERVE:0,INVESTIGATE:0,INCOMPLETE:0,sellInQty:0};
+      ["total","A1","A2","A3","VALID","OBSERVE","INVESTIGATE","INCOMPLETE","sellInQty"].forEach(f=>{m[k][f]=(m[k][f]||0)+(item[f]||0);});
     }));
     return Object.values(m).sort((a,b)=>b.total-a.total);
   };
@@ -822,7 +932,40 @@ function aggregateList(dataList) {
       }));
       return Object.values(m).sort((a,b)=>b.flagged-a.flagged);
     })(),
+    colorChronicOutlets:(()=>{
+      const m={};
+      dataList.forEach(d=>(d.colorChronicOutlets||[]).forEach(o=>{
+        if(!m[o.id]) m[o.id]={...o};
+        else {
+          m[o.id].MERAH+=o.MERAH; m[o.id].ORANGE+=o.ORANGE; m[o.id].KUNING+=o.KUNING; m[o.id].HIJAU+=o.HIJAU;
+          m[o.id].flagged+=o.flagged; m[o.id].canvasserCount+=o.canvasserCount;
+          m[o.id].sellInQty=(m[o.id].sellInQty||0)+(o.sellInQty||0);
+        }
+      }));
+      return Object.values(m).sort((a,b)=>b.flagged-a.flagged);
+    })(),
     fakeVisitRiskCount:dataList.reduce((s,r)=>s+(r.fakeVisitRiskCount||0),0),
+    colorSummary:(()=>{
+      const COLORS=["MERAH","ORANGE","KUNING","HIJAU"];
+      const rowCounts={MERAH:0,ORANGE:0,KUNING:0,HIJAU:0};
+      const canvSets={MERAH:new Set(),ORANGE:new Set(),KUNING:new Set(),HIJAU:new Set()};
+      const outletSets={MERAH:new Set(),ORANGE:new Set(),KUNING:new Set(),HIJAU:new Set()};
+      dataList.forEach(d=>{
+        const cs=d.colorSummary; if(!cs) return;
+        COLORS.forEach(c=>{
+          rowCounts[c]+=(cs.rowCounts||{})[c]||0;
+          ((cs.canvasserNames||{})[c]||[]).forEach(n=>canvSets[c].add(n));
+          ((cs.outletIds||{})[c]||[]).forEach(n=>outletSets[c].add(n));
+        });
+      });
+      return {
+        rowCounts,
+        canvasserCounts:{MERAH:canvSets.MERAH.size,ORANGE:canvSets.ORANGE.size,KUNING:canvSets.KUNING.size,HIJAU:canvSets.HIJAU.size},
+        outletCounts:{MERAH:outletSets.MERAH.size,ORANGE:outletSets.ORANGE.size,KUNING:outletSets.KUNING.size,HIJAU:outletSets.HIJAU.size},
+        canvasserNames:{MERAH:[...canvSets.MERAH],ORANGE:[...canvSets.ORANGE],KUNING:[...canvSets.KUNING],HIJAU:[...canvSets.HIJAU]},
+        outletIds:{MERAH:[...outletSets.MERAH],ORANGE:[...outletSets.ORANGE],KUNING:[...outletSets.KUNING],HIJAU:[...outletSets.HIJAU]},
+      };
+    })(),
     fakeVisitCanvasserCount:dataList.reduce((s,r)=>s+(r.fakeVisitCanvasserCount||0),0),
     fakeVisitOutletCount:dataList.reduce((s,r)=>s+(r.fakeVisitOutletCount||0),0),
     fakeVisitBySeq:(()=>{
@@ -1618,6 +1761,44 @@ function CanvasserDetailPanel({detail,onClose,t}){
     return b.total-a.total;
   });
 
+  const exportToXlsx=()=>{
+    try{
+      const data=filteredRows.map((r,i)=>{
+        const distIn=parseFloat(r["Distance Check In (Meter)"])||0;
+        const distOut=parseFloat(r["Distance Check Out (Meter)"])||0;
+        const sellQty=(parseFloat(String(r["Sell-In"]||"").replace(/[^0-9.\-]/g,""))||0)+(parseFloat(String(r["Online Sell-In"]||"").replace(/[^0-9.\-]/g,""))||0);
+        const avaVal=String(r["AVA Tracking?"]||"").trim().toLowerCase();
+        const avaYes=avaVal==="yes"||avaVal==="ya"||avaVal==="true"||avaVal==="1";
+        const dt=r["Actual Visit Time"]?new Date(r["Actual Visit Time"]):null;
+        return{
+          "#":i+1,
+          "Tanggal":dt&&!isNaN(dt.getTime())?dt.toLocaleDateString("id-ID"):"",
+          "Visit Ke-":r._visitSeq||"",
+          "Canvasser":r["Canvasser"]||r["Canvasser ID"]||"",
+          "Visit Type":r["Activity Type"]||"",
+          "Outlet ID":r["Outlet ID"]||"",
+          "Outlet":r["Outlet"]||r["Outlet Name"]||"",
+          "Status":r["_CAS1"]||"",
+          "In Range":r["In Range Check In"]||r["In Range"]||"",
+          "Jarak Check-In (m)":distIn||"",
+          "Jarak Check-Out (m)":distOut||"",
+          "Durasi (menit)":r["_DUR_MIN"]||r["Duration (Minute)"]||"",
+          "Sell-In":sellQty||"",
+          "AVA":avaYes?"Ya":"Tidak",
+          "Alasan":typeof getReason==="function"?getReason(r):"",
+        };
+      });
+      const ws=XLSX.utils.json_to_sheet(data);
+      ws["!cols"]=[{wch:5},{wch:12},{wch:9},{wch:20},{wch:14},{wch:12},{wch:22},{wch:20},{wch:10},{wch:14},{wch:15},{wch:12},{wch:9},{wch:8},{wch:40}];
+      const wb=XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb,ws,"Aktivitas");
+      const safeName=`${canvasser?.name||"Detail"}_${drillLabel||""}`.replace(/[^a-zA-Z0-9_\- ]/g,"").trim().replace(/\s+/g,"_").slice(0,60);
+      XLSX.writeFile(wb,`${safeName||"export"}.xlsx`);
+    }catch(err){
+      alert("Gagal export: "+err.message);
+    }
+  };
+
   return(
     <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:1100,display:"flex",alignItems:"flex-end",background:"rgba(0,0,0,0.75)",backdropFilter:"blur(4px)"}}
       onClick={onClose}>
@@ -1651,6 +1832,7 @@ function CanvasserDetailPanel({detail,onClose,t}){
               <button onClick={()=>setView("ava")} style={{background:view==="ava"?"#f59e0b":t.cardAlt,color:view==="ava"?"#fff":t.muted,border:"1px solid "+t.border,borderRadius:6,padding:"3px 10px",fontSize:10,fontWeight:700,cursor:"pointer"}}>🏷 AVA</button>
             </div>
           </div>
+          <button onClick={exportToXlsx} style={{background:"#10b981",border:"none",color:"#fff",borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:12,fontWeight:700,flexShrink:0}}>⬇ Export XLSX</button>
           <button onClick={onClose} style={{background:t.cardAlt,border:`1px solid ${t.border}`,color:t.text,borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:13,fontWeight:700}}>✕</button>
         </div>
            {/* Visit Type Filter */}
@@ -1921,6 +2103,13 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
   const folderRef=useRef();
   const jsonRef=useRef();
 
+  const DAY_NAME_MAP=[["senin",1],["selasa",2],["rabu",3],["kamis",4],["jumat",5],["sabtu",6],["minggu",0]];
+  const parseVisitGroup=(vg)=>{
+    const s=String(vg||"").toLowerCase();
+    const days=DAY_NAME_MAP.filter(([name])=>s.includes(name)).map(([,d])=>d);
+    return {count:days.length,days};
+  };
+
   const handleRoFile=async(fileList)=>{
     if(!fileList||!fileList.length) return;
     try{
@@ -1932,6 +2121,7 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
         const map={};
         rows.forEach(r=>{
           const id=String(r["Outlet ID"]||"").trim(); if(!id) return;
+          const vgParsed=parseVisitGroup(r["Visit Group"]);
           map[id]={
             lat:parseFloat(r["Latitude"])||null,
             lon:parseFloat(r["Longitude"])||null,
@@ -1939,6 +2129,9 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
             type:String(r["Outlet Type"]||"").trim(),
             cluster:String(r["Sales Cluster"]||"").trim(),
             name:String(r["Outlet Name"]||"").trim(),
+            visitGroup:String(r["Visit Group"]||"").trim()||null,
+            visitFreq:vgParsed.count>0?vgParsed.count:null,
+            visitDays:vgParsed.days,
           };
         });
         return map;
@@ -2192,6 +2385,9 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
   const [trendDrill,setTrendDrill]=useState(null);
   const [trendDrillSort,setTrendDrillSort]=useState({key:"total",dir:"desc"});
   const [trendPeriod,setTrendPeriod]=useState("daily");
+  const [vtMatrixType,setVtMatrixType]=useState("Regular Visit");
+  const [vtCellDrill,setVtCellDrill]=useState(null);
+  const [overlapBreakdown,setOverlapBreakdown]=useState(null);
   const [addLoading,setAddLoading]=useState(null);
   const [showFileManager,setShowFileManager]=useState(false);
   const [outletTypeDrill,setOutletTypeDrill]=useState(null);
@@ -2237,6 +2433,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
           "RO Longitude": r["RO Longitude"] ?? ro.lon,
           "RO Census":    r["RO Census"]    ?? (ro.census?"YES":"NO"),
           "Outlet Type":  r["Outlet Type"]  || ro.type,
+          "_ROVisitFreq": ro.visitFreq || null,
         }:r;
         return computeValidation(enriched,params);
       });
@@ -2367,6 +2564,65 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
       total:c.total,color:c.color,
     }));
   },[selRegion,selCluster,clusters,regionGroups,regionAgg,regionCodes]);
+
+  // ── Visit × Minggu Matrix (drill-down "Volume per Tipe Kunjungan") ──
+  // Untuk tiap Tipe Kunjungan: kelompokkan per canvasser+outlet+minggu (Senin-anchored),
+  // beri nomor urut Visit ke- di minggu itu (reset tiap minggu, BUKAN lanjut 1-7 lintas minggu),
+  // lalu agregasi status A1/A2/A3 dan Sell-In per sel (Visit ke- x Minggu).
+  const visitWeekMatrix=useMemo(()=>{
+    const scopedClusters=selCluster?clusters.filter(cl=>cl.label===selCluster)
+      :selRegion?clusters.filter(cl=>cl.regionCode===selRegion)
+      :clusters;
+    const allRows=scopedClusters.flatMap(cl=>cl.rawRows||[]);
+    const groups={};
+    const weekKeySet=new Set();
+    allRows.forEach(r=>{
+      const tv=r["Actual Visit Time"]?new Date(r["Actual Visit Time"]):null;
+      if(!tv||isNaN(tv.getTime())) return;
+      const cvName=String(r["Canvasser ID"]||r["Canvasser"]||"").trim();
+      const outId=r["Outlet ID"]!=null?String(r["Outlet ID"]).trim():"";
+      const actType=String(r["Activity Type"]||"").trim();
+      if(!cvName||!outId||!actType) return;
+      const d=new Date(tv.getFullYear(),tv.getMonth(),tv.getDate());
+      const dow=d.getDay();
+      const diffToMon=(dow===0?-6:1-dow);
+      const monday=new Date(d); monday.setDate(d.getDate()+diffToMon);
+      const weekKey=monday.toISOString().slice(0,10);
+      weekKeySet.add(weekKey);
+      const gKey=cvName+"|"+outId+"|"+actType+"|"+weekKey;
+      if(!groups[gKey]) groups[gKey]=[];
+      groups[gKey].push({r,t:tv,actType,weekKey});
+    });
+    const weekKeysSorted=[...weekKeySet].sort();
+    const weekLabelMap={};
+    weekKeysSorted.forEach((wk,i)=>{weekLabelMap[wk]="W"+(i+1);});
+    const weekLabels=weekKeysSorted.map((wk,i)=>"W"+(i+1));
+
+    const matrix={};
+    let maxSeq={};
+    Object.values(groups).forEach(list=>{
+      list.sort((a,b)=>a.t-b.t);
+      list.forEach((x,i)=>{
+        const seq=i+1;
+        const type=x.actType;
+        const wl=weekLabelMap[x.weekKey];
+        if(!matrix[type]) matrix[type]={};
+        if(!matrix[type][seq]) matrix[type][seq]={};
+        if(!matrix[type][seq][wl]) matrix[type][seq][wl]={total:0,A1:0,A2:0,A3:0,sellIn:0,rows:[]};
+        const cell=matrix[type][seq][wl];
+        cell.total++;
+        const as1=String(x.r["_CAS1"]||"");
+        if(as1==="A1 - NORMAL")cell.A1++;
+        else if(as1==="A2 - ANOMALY")cell.A2++;
+        else if(as1==="A3 - INCOMPLETE")cell.A3++;
+        const qty=(parseFloat(String(x.r["Sell-In"]||"").replace(/[^0-9.\-]/g,""))||0)+(parseFloat(String(x.r["Online Sell-In"]||"").replace(/[^0-9.\-]/g,""))||0);
+        cell.sellIn+=qty;
+        cell.rows.push(x.r);
+        maxSeq[type]=Math.max(maxSeq[type]||0,seq);
+      });
+    });
+    return {matrix,weekLabels,maxSeq};
+  },[selCluster,selRegion,clusters]);
 
   // ── Canvasser sort/filter ────────────────────────────────────────────────
   const sorted=useMemo(()=>{
@@ -2666,6 +2922,11 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
     return all.sort((a,b)=>new Date(a["Actual Visit Time"]||0)-new Date(b["Actual Visit Time"]||0));
   },[clusters]);
   // Ambil semua kunjungan (fake + verify) milik sekumpulan canvasser tertentu (dipakai utk 3 bucket eksklusif)
+  const getRowsForColor = useCallback((color) => {
+    let all=[];
+    clusters.forEach(c=>{ all=all.concat((c.rawRows||[]).filter(r=>r._colorStatus===color)); });
+    return all.sort((a,b)=>new Date(a["Actual Visit Time"]||0)-new Date(b["Actual Visit Time"]||0));
+  },[clusters]);
   const getRowsForCanvasserNames = useCallback((names) => {
     const nameSet=new Set(names||[]);
     let all=[];
@@ -3223,22 +3484,35 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
             </div>
           </div>
 
-          {view.fakeVisitRiskCount>0&&(()=>{
-            const evalSet=new Set(view.evaluatedCanvasserNames||[]);
-            const noRegularNames=(view.canvassers||[]).map(c=>c.id).filter(n=>!evalSet.has(n));
+          {(()=>{
+            const cs=view.colorSummary?.canvasserCounts||{MERAH:0,ORANGE:0,KUNING:0,HIJAU:0};
+            const namesByColor=view.colorSummary?.canvasserNames||{MERAH:[],ORANGE:[],KUNING:[],HIJAU:[]};
             const rows=[
-              {label:"Hanya Fake Visit",icon:"🚩",val:view.onlyFakeCanvasserCount,color:P.investigate,onClick:()=>{const rws=getRowsForCanvasserNames(view.onlyFakeCanvasserNames);setCanvDetail({canvasser:{name:"Seluruh Canvasser",cluster:"Hanya Fake Visit",icon:"🚩"},drillLabel:"Kunjungan Fake Visit",color:P.investigate,rows:rws,drillKey:null,sessionKey:Date.now()});}},
-              {label:"Hanya Perlu Verifikasi",icon:"🔎",val:view.onlyVerifyCanvasserCount,color:P.a2,onClick:()=>{const rws=getRowsForCanvasserNames(view.onlyVerifyCanvasserNames);setCanvDetail({canvasser:{name:"Seluruh Canvasser",cluster:"Hanya Perlu Verifikasi",icon:"🔎"},drillLabel:"Kunjungan Perlu Verifikasi",color:P.a2,rows:rws,drillKey:null,sessionKey:Date.now()});}},
-              {label:"Fake + Verifikasi",icon:"⚠️",val:view.overlapCanvasserCount,color:P.accent,onClick:()=>{const rws=getRowsForCanvasserNames(view.overlapCanvasserNames);setCanvDetail({canvasser:{name:"Seluruh Canvasser",cluster:"Fake Visit + Perlu Verifikasi",icon:"⚠️"},drillLabel:"Kunjungan Fake Visit + Perlu Verifikasi",color:P.accent,rows:rws,drillKey:null,sessionKey:Date.now()});}},
-              {label:"Siklus Bersih",icon:"✅",val:view.cleanCanvasserCount,color:P.a1,onClick:()=>{const rws=getCleanCycleRows(view.cleanCanvasserNames);setCanvDetail({canvasser:{name:"Seluruh Canvasser",cluster:"Siklus Kunjungan Bersih",icon:"✅"},drillLabel:"Kunjungan Siklus Bersih (Visit 1 Lolos)",color:P.a1,rows:rws,drillKey:null,sessionKey:Date.now()});}},
-              {label:"Tanpa Regular Visit",icon:"➖",val:noRegularNames.length,color:t.muted,onClick:()=>{const rws=getAllRowsForCanvasserNames(noRegularNames);setCanvDetail({canvasser:{name:"Seluruh Canvasser",cluster:"Tanpa Regular Visit",icon:"➖"},drillLabel:"Kunjungan Canvasser Tanpa Regular Visit",color:t.muted,rows:rws,drillKey:null,sessionKey:Date.now()});}},
+              {label:"Merah",icon:"🔴",val:cs.MERAH||0,color:P.investigate,onClick:()=>{setCanvDetail({canvasser:{name:"Seluruh Canvasser",cluster:"Merah",icon:"🔴"},drillLabel:"Status Merah",color:P.investigate,rows:getRowsForColor("MERAH"),drillKey:null,sessionKey:Date.now()});}},
+              {label:"Orange",icon:"🟠",val:cs.ORANGE||0,color:P.a2,onClick:()=>{setCanvDetail({canvasser:{name:"Seluruh Canvasser",cluster:"Orange",icon:"🟠"},drillLabel:"Status Orange",color:P.a2,rows:getRowsForColor("ORANGE"),drillKey:null,sessionKey:Date.now()});}},
+              {label:"Kuning",icon:"🟡",val:cs.KUNING||0,color:"#eab308",onClick:()=>{setCanvDetail({canvasser:{name:"Seluruh Canvasser",cluster:"Kuning",icon:"🟡"},drillLabel:"Status Kuning",color:"#eab308",rows:getRowsForColor("KUNING"),drillKey:null,sessionKey:Date.now()});}},
+              {label:"Hijau",icon:"🟢",val:cs.HIJAU||0,color:P.a1,onClick:()=>{setCanvDetail({canvasser:{name:"Seluruh Canvasser",cluster:"Hijau",icon:"🟢"},drillLabel:"Status Hijau",color:P.a1,rows:getRowsForColor("HIJAU"),drillKey:null,sessionKey:Date.now()});}},
             ].filter(r=>r.val>0);
+            if(!rows.length) return null;
+
+            // Deteksi canvasser yang beririsan di >1 warna (karena beda minggu/outlet bisa beda status)
+            const colorCountMap={};
+            ["MERAH","ORANGE","KUNING","HIJAU"].forEach(cKey=>{
+              (namesByColor[cKey]||[]).forEach(n=>{
+                if(!colorCountMap[n]) colorCountMap[n]={name:n,colors:[]};
+                colorCountMap[n].colors.push(cKey);
+              });
+            });
+            const overlapList=Object.values(colorCountMap).filter(c=>c.colors.length>1);
+            const overlapNames=new Set(overlapList.map(c=>c.name));
+            const totalUnique=Object.keys(colorCountMap).length;
+
             return(
               <div style={{...card(),height:"100%",boxSizing:"border-box",border:`1px solid ${P.investigate}44`}}>
-                <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:8}}>🚩 Indikasi Fake Visit</div>
+                <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:8}}>🚩 Status Kunjungan</div>
                 <ul style={{margin:"0 0 10px",paddingLeft:16,listStyle:"disc",fontSize:10.5,color:t.muted,lineHeight:1.45}}>
-                  <li style={{display:"list-item"}}>Visit 1 (Senin/Selasa) berfungsi sebagai gate validasi berdasarkan AVA, Sell-In, dan anomali</li>
-                  <li style={{display:"list-item"}}>Jika gate gagal, kunjungan berikutnya (Visit 2-7) ditandai Fake Visit atau Perlu Verifikasi, tergantung ketersediaan bukti pada kunjungan tersebut</li>
+                  <li style={{display:"list-item"}}>Dihitung khusus dari Regular Visit — per canvasser+outlet+minggu, berdasarkan durasi kunjungan, kecocokan lokasi (Long/Lat), jarak (Range), serta kelengkapan AVA & Sell-In</li>
+                  <li style={{display:"list-item"}}>Angka di bawah = jumlah canvasser unik per warna (bukan jumlah aktivitas)</li>
                 </ul>
                 {rows.map((r,i)=>(
                   <div key={i} onClick={r.onClick} style={{display:"flex",alignItems:"center",padding:"9px 0",borderBottom:i<rows.length-1?`1px solid ${t.border}`:"none",cursor:"pointer"}}>
@@ -3247,36 +3521,53 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                     </div>
                     <div style={{textAlign:"right",flexShrink:0}}>
                       <div style={{fontSize:20,fontWeight:800,color:r.color,lineHeight:1.1}}>{r.val.toLocaleString()}</div>
-                      <div style={{fontSize:9,color:t.muted}}>orang</div>
+                      <div style={{fontSize:9,color:t.muted}}>canvasser</div>
                     </div>
                   </div>
                 ))}
+                {overlapList.length>0&&(
+                  <div onClick={()=>{
+                    const COLOR_ORDER=["MERAH","ORANGE","KUNING","HIJAU"];
+                    const comboMap={};
+                    overlapList.forEach(c=>{
+                      const key=COLOR_ORDER.filter(k=>c.colors.includes(k)).join("+");
+                      if(!comboMap[key]) comboMap[key]={key,colors:COLOR_ORDER.filter(k=>c.colors.includes(k)),names:[]};
+                      comboMap[key].names.push(c.name);
+                    });
+                    const combos=Object.values(comboMap).sort((a,b)=>b.names.length-a.names.length);
+                    setOverlapBreakdown({combos,totalUnique});
+                  }} style={{marginTop:10,padding:"9px 10px",borderRadius:8,background:P.accent+"14",border:`1px solid ${P.accent}40`,cursor:"pointer"}}>
+                    <div style={{fontSize:10,color:t.text,lineHeight:1.6}}>
+                      💡 Jumlah tiap kategori dapat melebihi total canvasser (<b>{(view.canvassers||[]).length.toLocaleString()}</b>) karena satu canvasser dapat termasuk dalam lebih dari satu kategori, tergantung minggu dan outlet yang dikunjungi. Terdapat <b style={{color:P.accent}}>{overlapList.length} canvasser</b> yang beririsan pada lebih dari satu kategori. Klik untuk melihat rinciannya.
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })()}
 
-          {(view.chronicOutlets||[]).length>0&&(()=>{
-            const allFlaggedOutlets=view.chronicOutlets||[];
-            const invOutletCountAll=allFlaggedOutlets.filter(o=>o.investigate>0).length;
-            const obsOutletCountAll=allFlaggedOutlets.filter(o=>o.observe>0).length;
+          {(view.colorChronicOutlets||[]).length>0&&(()=>{
+            const allFlaggedOutlets=view.colorChronicOutlets||[];
             const totalOutletCount=(view.outletData||[]).reduce((s,d)=>s+(d.outletCount||0),0);
-            const rows=[
-              {label:"Outlet Berstatus Investigate",icon:"🔍",val:invOutletCountAll,color:P.investigate,onClick:()=>setOutletListDrill({label:"Daftar Outlet — Investigate",color:P.investigate,statusKey:"investigate",outlets:[...allFlaggedOutlets].filter(o=>o.investigate>0).sort((a,b)=>b.investigate-a.investigate)})},
-              {label:"Outlet Berstatus Observe",icon:"⚠️",val:obsOutletCountAll,color:P.a2,onClick:()=>setOutletListDrill({label:"Daftar Outlet — Observe",color:P.a2,statusKey:"observe",outlets:[...allFlaggedOutlets].filter(o=>o.observe>0).sort((a,b)=>b.observe-a.observe)})},
-            ].filter(r=>r.val>0);
+            const COLOR_DEF=[
+              ["MERAH","Outlet Berstatus Merah","🔴",P.investigate],
+              ["ORANGE","Outlet Berstatus Orange","🟠",P.a2],
+              ["KUNING","Outlet Berstatus Kuning","🟡","#eab308"],
+              ["HIJAU","Outlet Berstatus Hijau","🟢",P.a1],
+            ];
+            const rows=COLOR_DEF.map(([key,label,icon,color])=>{
+              const cnt=allFlaggedOutlets.filter(o=>o[key]>0).length;
+              return {label,icon,val:cnt,color,onClick:()=>setOutletListDrill({label:`Daftar Outlet — ${label.replace("Outlet Berstatus ","")}`,color,statusKey:key,outlets:[...allFlaggedOutlets].filter(o=>o[key]>0).sort((a,b)=>b[key]-a[key])})};
+            }).filter(r=>r.val>0);
             const buildReasons=(o,catKey)=>{
-              const sellInRate=o.flagged?pct(o.flaggedSellInVisits,o.flagged):0;
               const r=[];
-              if(catKey==="investigate") r.push(`${o.investigate} kunjungan Investigate`);
-              else r.push(`${o.observe} kunjungan Observe`);
+              r.push(`${o[catKey]} kunjungan ${catKey==="MERAH"?"Merah":catKey==="ORANGE"?"Orange":catKey==="KUNING"?"Kuning":"Hijau"}`);
               if(o.canvasserCount>1) r.push(`${o.canvasserCount} canvasser berbeda tercatat pada outlet yang sama`);
-              if(sellInRate<20) r.push(`hanya ${sellInRate}% kunjungan flagged tetap ada Sell-In — indikasi kunjungan tidak wajar`);
-              else if(sellInRate<50) r.push(`${sellInRate}% kunjungan flagged tetap ada Sell-In — perlu verifikasi lapangan`);
-              else r.push(`${sellInRate}% kunjungan flagged tetap ada Sell-In — kemungkinan hanya masalah GPS`);
+              r.push(`Total Sell-In di outlet ini: ${(o.sellInQty||0).toLocaleString("id-ID")}`);
               return r;
             };
-            const invTop=[...allFlaggedOutlets].filter(o=>o.investigate>0).sort((a,b)=>b.investigate-a.investigate).slice(0,10).map(o=>({...o,reasons:buildReasons(o,"investigate")}));
-            const obsTop=[...allFlaggedOutlets].filter(o=>o.observe>0).sort((a,b)=>b.observe-a.observe).slice(0,10).map(o=>({...o,reasons:buildReasons(o,"observe")}));
+            const merahTop=[...allFlaggedOutlets].filter(o=>o.MERAH>0).sort((a,b)=>b.MERAH-a.MERAH).slice(0,10).map(o=>({...o,reasons:buildReasons(o,"MERAH")}));
+            const orangeTop=[...allFlaggedOutlets].filter(o=>o.ORANGE>0).sort((a,b)=>b.ORANGE-a.ORANGE).slice(0,10).map(o=>({...o,reasons:buildReasons(o,"ORANGE")}));
             const renderCategory=(label,icon,color,list,catKey)=>{
               if(!list.length) return null;
               const totalActivityTop10=list.reduce((s,o)=>s+(o[catKey]||0),0);
@@ -3293,16 +3584,18 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
             const typeBreakdown={};
             allFlaggedOutlets.forEach(o=>{
               const ty=o.outletType||"Unknown";
-              if(!typeBreakdown[ty]) typeBreakdown[ty]={investigate:0,observe:0};
-              if(o.investigate>0) typeBreakdown[ty].investigate++;
-              if(o.observe>0) typeBreakdown[ty].observe++;
+              if(!typeBreakdown[ty]) typeBreakdown[ty]={MERAH:0,ORANGE:0,KUNING:0,HIJAU:0};
+              ["MERAH","ORANGE","KUNING","HIJAU"].forEach(k=>{ if(o[k]>0) typeBreakdown[ty][k]++; });
             });
-            const typeBreakdownSorted=Object.entries(typeBreakdown).sort((a,b)=>(b[1].investigate+b[1].observe)-(a[1].investigate+a[1].observe));
+            const typeBreakdownSorted=Object.entries(typeBreakdown).sort((a,b)=>{
+              const sa=a[1].MERAH+a[1].ORANGE+a[1].KUNING+a[1].HIJAU, sb=b[1].MERAH+b[1].ORANGE+b[1].KUNING+b[1].HIJAU;
+              return sb-sa;
+            });
             const fmtID=(n)=>n?n.toLocaleString("id-ID"):"–";
             return(
               <div style={{...card(),height:"100%",boxSizing:"border-box",display:"flex",flexDirection:"column"}}>
                 <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>🔎 Outlet Terdampak Fake Visit</div>
-                <div style={{fontSize:10,color:t.muted,marginBottom:8}}>dari total <b style={{color:t.text}}>{totalOutletCount.toLocaleString()} outlet</b></div>
+                <div style={{fontSize:10,color:t.muted,marginBottom:8}}>dari total <b style={{color:t.text}}>{totalOutletCount.toLocaleString()} outlet</b> · dihitung dari Regular Visit</div>
                 {rows.map((r,i)=>(
                   <div key={i} onClick={r.onClick} style={{display:"flex",alignItems:"center",padding:"9px 0",borderBottom:`1px solid ${t.border}`,cursor:"pointer"}}>
                     <div style={{flex:1,fontSize:12,fontWeight:600,color:t.text,display:"flex",alignItems:"center",gap:6,minWidth:0}}>
@@ -3322,20 +3615,20 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                       {typeBreakdownSorted.map(([ty],i)=>(
                         <div key={ty} style={{fontSize:9,color:t.muted,fontWeight:700,textAlign:"center",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",borderRight:i<typeBreakdownSorted.length-1?`1px solid ${t.border}`:"none",paddingBottom:3}}>{ty}</div>
                       ))}
-                      <div style={{fontSize:9.5,color:P.investigate,fontWeight:700,display:"flex",alignItems:"center"}}>🔍 Inv</div>
-                      {typeBreakdownSorted.map(([ty,v],i)=>(
-                        <div key={ty} style={{fontSize:9.5,fontWeight:700,textAlign:"center",color:v.investigate>0?P.investigate:t.muted,borderRight:i<typeBreakdownSorted.length-1?`1px solid ${t.border}`:"none",display:"flex",alignItems:"center",justifyContent:"center"}}>{fmtID(v.investigate)}</div>
-                      ))}
-                      <div style={{fontSize:9.5,color:P.a2,fontWeight:700,display:"flex",alignItems:"center"}}>⚠️ Obs</div>
-                      {typeBreakdownSorted.map(([ty,v],i)=>(
-                        <div key={ty} style={{fontSize:9.5,fontWeight:700,textAlign:"center",color:v.observe>0?P.a2:t.muted,borderRight:i<typeBreakdownSorted.length-1?`1px solid ${t.border}`:"none",display:"flex",alignItems:"center",justifyContent:"center"}}>{fmtID(v.observe)}</div>
+                      {[["MERAH","🔴",P.investigate],["ORANGE","🟠",P.a2],["KUNING","🟡","#eab308"],["HIJAU","🟢",P.a1]].map(([key,icon,color])=>(
+                        <Fragment key={key}>
+                          <div style={{fontSize:9.5,color,fontWeight:700,display:"flex",alignItems:"center"}}>{icon}</div>
+                          {typeBreakdownSorted.map(([ty,v],i)=>(
+                            <div key={ty} style={{fontSize:9.5,fontWeight:700,textAlign:"center",color:v[key]>0?color:t.muted,borderRight:i<typeBreakdownSorted.length-1?`1px solid ${t.border}`:"none",display:"flex",alignItems:"center",justifyContent:"center"}}>{fmtID(v[key])}</div>
+                          ))}
+                        </Fragment>
                       ))}
                     </div>
                   </div>
                 )}
                 <div style={{flex:1}}/>
-                {renderCategory("Investigate","🔍",P.investigate,invTop,"investigate")}
-                {renderCategory("Observe","⚠️",P.a2,obsTop,"observe")}
+                {renderCategory("Merah","🔴",P.investigate,merahTop,"MERAH")}
+                {renderCategory("Orange","🟠",P.a2,orangeTop,"ORANGE")}
               </div>
             );
           })()}
@@ -3441,8 +3734,6 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                   return(
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:16}}>
                     <div style={{...card()}}>
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-                    <div>
                       {/* Section 1 */}
                       {topCanvasserItems.length>0&&<>
                         <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Canvasser Teratas per Status</div>
@@ -3460,42 +3751,6 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                           </div>
                         ))}
                       </>}
-                    </div>
-
-                    <div>
-                      {/* Section 2 */}
-                      {(topRegions.length>0||topClusters.length>0)&&<div>
-                        <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:6}}>Peringkat Cluster & Region</div>
-                        <div style={{display:"flex",gap:14,marginBottom:8}}>
-                          {["A1","A2","A3"].map(k=>(
-                            <span key={k} onClick={()=>setInsightRankTab(k)} style={{fontSize:11,fontWeight:700,color:insightRankTab===k?rankColorMap[k]:t.muted,paddingBottom:4,borderBottom:`2px solid ${insightRankTab===k?rankColorMap[k]:"transparent"}`,cursor:"pointer"}}>{k}</span>
-                          ))}
-                        </div>
-                        <div style={{display:"flex",gap:20}}>
-                          {topRegions.length>0&&<div style={{flex:1,minWidth:0}}>
-                            <div style={{fontSize:9,color:t.muted,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:4}}>🗺 Region Teratas</div>
-                            {topRegions.map((r,ri)=>(
-                              <div key={ri} onClick={()=>openRank(r)} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"4px 0",borderBottom:ri<topRegions.length-1?`1px solid ${t.border}`:"none",cursor:r.v?"pointer":"default"}}
-                                onMouseEnter={e=>{if(r.v)e.currentTarget.style.opacity="0.7";}} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                                <span style={{color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{["🥇","🥈","🥉"][ri]} {r.code}</span>
-                                <span style={{color:t.muted,fontWeight:700,flexShrink:0,marginLeft:6}}>{r.v.toLocaleString()}</span>
-                              </div>
-                            ))}
-                          </div>}
-                          {topClusters.length>0&&<div style={{flex:1,minWidth:0}}>
-                            <div style={{fontSize:9,color:t.muted,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:4}}>📍 Cluster Teratas</div>
-                            {topClusters.map((r,ri)=>(
-                              <div key={ri} onClick={()=>openRank(r)} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"4px 0",borderBottom:ri<topClusters.length-1?`1px solid ${t.border}`:"none",cursor:r.v?"pointer":"default"}}
-                                onMouseEnter={e=>{if(r.v)e.currentTarget.style.opacity="0.7";}} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                                <span style={{color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{["🥇","🥈","🥉"][ri]} {r.code}</span>
-                                <span style={{color:t.muted,fontWeight:700,flexShrink:0,marginLeft:6}}>{r.v.toLocaleString()}</span>
-                              </div>
-                            ))}
-                          </div>}
-                        </div>
-                      </div>}
-                    </div>
-                    </div>
 
                     {/* Section 5: AVA & Sell-In — full width, di bawah divider */}
                     {(avaBuckets||sellInBuckets)&&<div style={{marginTop:14,paddingTop:12,borderTop:`1px solid ${t.border}`}}>
@@ -3590,30 +3845,70 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
 
             {/* ── ROW 2: Comparison (region/cluster) + Volume per Tipe Kunjungan — bersebelahan kayak Key Insights ── */}
             {(()=>{
+              const activeType=(view.visitTypeData||[]).some(d=>d.type===vtMatrixType)?vtMatrixType:((view.visitTypeData||[])[0]?.type||"Regular Visit");
+              const mData=visitWeekMatrix.matrix[activeType]||{};
+              const weekLabels=visitWeekMatrix.weekLabels||[];
+              const maxSeq=Math.min(visitWeekMatrix.maxSeq[activeType]||0,7);
+              const sellInByGroup={"Regular Visit":0,"Ad-Hoc Visit":0,"Consignment Visit":0};
+              (view.visitTypeData||[]).forEach(d=>{
+                const grp=/consignment/i.test(d.type)?"Consignment Visit":/ad-?hoc/i.test(d.type)?"Ad-Hoc Visit":"Regular Visit";
+                sellInByGroup[grp]+=(d.sellInQty||0);
+              });
               const visitTypeBlock=(view.visitTypeData||[]).length>0&&(
                 <div>
-                  <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:2}}>Volume per Tipe Kunjungan</div>
-                  <div style={{fontSize:11,color:t.muted,marginBottom:12}}>Regular = rute terjadwal, Ad-Hoc = kunjungan tambahan di luar rute, Consignment = konsinyasi/titip barang</div>
-                  {(view.visitTypeData||[]).map((d,vi)=>{
-                    const dTotal=d.total||1;
-                    return(
-                    <div key={d.type} onClick={()=>openVtDrill(d.type,null)} style={{padding:"11px 0",borderBottom:vi<(view.visitTypeData||[]).length-1?`1px solid ${t.border}`:"none",cursor:"pointer"}}>
-                      <div style={{display:"flex",alignItems:"center",marginBottom:6}}>
-                        <div style={{fontWeight:700,fontSize:12,color:t.text,flex:1}}>{d.type}</div>
-                        <div style={{fontSize:13,fontWeight:800,color:t.text,flexShrink:0}}>{d.total.toLocaleString()}</div>
+                  <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:8}}>Sell-In per Tipe Kunjungan</div>
+                  <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+                    {Object.entries(sellInByGroup).map(([type,qty])=>(
+                      <div key={type} style={{flex:"1 1 100px",minWidth:100,background:t.cardAlt,border:`1px solid ${t.border}`,borderRadius:10,padding:"9px 10px"}}>
+                        <div style={{fontSize:9,color:t.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{type}</div>
+                        <div style={{fontSize:15,fontWeight:800,color:"#10b981",marginTop:2}}>{qty.toLocaleString("id-ID")}</div>
                       </div>
-                      <div style={{display:"flex",height:6,borderRadius:3,overflow:"hidden",marginBottom:6}}>
-                        <div style={{width:pctS(d.A1,dTotal),background:P.a1}}/>
-                        <div style={{width:pctS(d.A2,dTotal),background:P.a2}}/>
-                        <div style={{width:pctS(d.A3,dTotal),background:P.a3}}/>
+                    ))}
+                  </div>
+                  {/* ── Matrix: Visit ke- (reset tiap minggu) × Minggu — pilih tipe via dropdown, khusus Regular Visit untuk status warna ── */}
+                  {weekLabels.length>0&&maxSeq>0&&(
+                    <div>
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:2}}>
+                        <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase"}}>Siklus Visit</div>
+                        <select value={activeType} onChange={e=>setVtMatrixType(e.target.value)}
+                          style={{marginLeft:"auto",background:t.cardAlt,color:t.text,border:`1px solid ${t.border}`,borderRadius:6,padding:"3px 8px",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                          {(view.visitTypeData||[]).map(d=><option key={d.type} value={d.type}>{d.type}</option>)}
+                        </select>
                       </div>
-                      <div style={{display:"flex",gap:14,fontSize:10,flexWrap:"wrap"}}>
-                        <span onClick={e=>{e.stopPropagation();openVtDrill(d.type,"A1 - NORMAL");}} style={{color:P.a1,cursor:"pointer",fontWeight:700}}>A1: {d.A1.toLocaleString()} ({pctS(d.A1,dTotal)})</span>
-                        <span onClick={e=>{e.stopPropagation();openVtDrill(d.type,"A2 - ANOMALY");}} style={{color:P.a2,cursor:"pointer",fontWeight:700}}>A2: {d.A2.toLocaleString()} ({pctS(d.A2,dTotal)})</span>
-                        <span onClick={e=>{e.stopPropagation();openVtDrill(d.type,"A3 - INCOMPLETE");}} style={{color:P.a3,cursor:"pointer",fontWeight:700}}>A3: {d.A3.toLocaleString()} ({pctS(d.A3,dTotal)})</span>
+                      <div style={{fontSize:10,color:t.muted,marginBottom:10}}>{activeType==="Regular Visit"?"Nomor visit reset tiap minggu · warna angka = status Merah/Orange/Kuning/Hijau · klik sel untuk lihat Sell-In":"Status Merah/Orange/Kuning/Hijau khusus dihitung untuk Regular Visit — tipe ini hanya menampilkan pola kunjungan & Sell-In"}</div>
+                      <div style={{overflowX:"auto"}}>
+                        <div style={{display:"grid",gridTemplateColumns:`40px repeat(${weekLabels.length},minmax(48px,1fr))`,rowGap:6,columnGap:0,minWidth:40+weekLabels.length*48}}>
+                          <div/>
+                          {weekLabels.map((wl,wi)=>(
+                            <div key={wl} style={{fontSize:9.5,color:t.muted,fontWeight:700,textAlign:"center",borderRight:wi<weekLabels.length-1?`1px solid ${t.border}`:"none",paddingBottom:4}}>{wl}</div>
+                          ))}
+                          {Array.from({length:maxSeq},(_,si)=>si+1).map(seq=>(
+                            <Fragment key={seq}>
+                              <div style={{fontSize:9.5,color:t.text,fontWeight:700,display:"flex",alignItems:"center"}}>V{seq}</div>
+                              {weekLabels.map((wl,wi)=>{
+                                const cell=(mData[seq]||{})[wl];
+                                const border={borderRight:wi<weekLabels.length-1?`1px solid ${t.border}`:"none"};
+                                if(!cell||cell.total===0) return <div key={wl} style={{...border,textAlign:"center",fontSize:11,color:t.muted,display:"flex",alignItems:"center",justifyContent:"center"}}>–</div>;
+                                const dom=cell.A1>=cell.A2&&cell.A1>=cell.A3?P.a1:cell.A2>=cell.A3?P.a2:P.a3;
+                                return(
+                                  <div key={wl} onClick={()=>setVtCellDrill({type:activeType,seq,week:wl,cell})}
+                                    style={{...border,textAlign:"center",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}
+                                    onMouseEnter={e=>e.currentTarget.style.opacity="0.65"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+                                    <span style={{fontSize:12,fontWeight:800,color:dom}}>{cell.total.toLocaleString()}</span>
+                                  </div>
+                                );
+                              })}
+                            </Fragment>
+                          ))}
+                        </div>
+                      </div>
+                      <div style={{display:"flex",gap:12,marginTop:10,fontSize:9,color:t.muted}}>
+                        <span><span style={{display:"inline-block",width:8,height:8,borderRadius:2,background:P.a1,marginRight:3}}/>A1 Normal</span>
+                        <span><span style={{display:"inline-block",width:8,height:8,borderRadius:2,background:P.a2,marginRight:3}}/>A2 Anomaly</span>
+                        <span><span style={{display:"inline-block",width:8,height:8,borderRadius:2,background:P.a3,marginRight:3}}/>A3 Incomplete</span>
                       </div>
                     </div>
-                  );})}
+                  )}
                 </div>
               );
 
@@ -4249,93 +4544,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
     {/* ── FILE MANAGER PANEL ── */}
     {showFileManager&&(
       <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:2500,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)"}} onClick={()=>setShowFileManager(false)}>
-        <div onClick={e=>e.stopPropagation()} style={{background:t.card,borderRadius:16,border:`1px solid ${t.border}`,width:"min(560px,95vw)",maxHeight:"80vh",overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 8px 40px rgba(0,0,0,0.5)",fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
-          <div style={{padding:"16px 20px",borderBottom:`1px solid ${t.border}`,display:"flex",alignItems:"center",gap:8}}>
-            <span style={{fontWeight:800,fontSize:15,color:t.text,flex:1}}>📋 File Manager</span>
-            <span style={{fontSize:11,color:t.muted}}>{clusters.length} cluster loaded</span>
-            <button onClick={()=>setShowFileManager(false)} style={{background:t.cardAlt,border:`1px solid ${t.border}`,color:t.text,borderRadius:8,padding:"4px 10px",cursor:"pointer",fontSize:12,fontWeight:700}}>✕</button>
-          </div>
-          <div style={{overflowY:"auto",flex:1,padding:"8px 0"}}>
-            {clusters.map((cl,i)=>(
-              <div key={cl.label} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 20px",borderBottom:`1px solid ${t.border}`,background:i%2===0?"transparent":t.rowAlt}}>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
-                    <span style={{background:cl.color+"22",color:cl.color,padding:"1px 8px",borderRadius:999,fontSize:10,fontWeight:700}}>{cl.regionCode||"?"}</span>
-                    <span style={{fontWeight:700,fontSize:12,color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cl.label}</span>
-                  </div>
-                  <div style={{fontSize:10,color:t.muted,display:"flex",gap:8}}>
-                    {cl.dateRange?.min&&<span>📅 {fmtPeriod(cl.dateRange)}</span>}
-                    <span>📊 {(cl.rawRows||[]).length.toLocaleString()} baris</span>
-                  </div>
-                </div>
-                <div style={{display:"flex",gap:6,flexShrink:0}}>
-                  <label style={{background:P.accent+"22",color:P.accent,border:`1px solid ${P.accent}40`,borderRadius:7,padding:"4px 10px",fontSize:10,fontWeight:700,cursor:"pointer"}}>
-                    🔄 Ganti
-                    <input type="file" accept=".xlsx,.xls" style={{display:"none"}} onClick={e=>e.target.value=""} onChange={async e=>{
-                      const file=e.target.files?.[0]; if(!file) return;
-                      setAddLoading({current:0,total:1,name:file.name.replace(/\.[^.]+$/,"")});
-                      const reader=new FileReader();
-                      reader.onload=ev=>{
-                        try{
-                          const wb2=XLSX.read(ev.target.result,{type:"array",cellDates:true,cellHTML:false});
-                          const sheets=wb2.SheetNames;
-                          const newResults=[];
-                          for(const sn of sheets){
-                            const ws2=wb2.Sheets[sn]; if(!ws2||!ws2["!ref"]) continue;
-                            const {rows}=readFileRows(wb2,sn);
-                            if(!rows?.length) continue;
-                            const clusterNames=[...new Set(rows.map(r=>r["Cluster"]).filter(Boolean))];
-                            if(clusterNames.length>1){
-                              clusterNames.forEach(cln=>{
-                                const clRows=rows.filter(r=>String(r["Cluster"]||"").trim()===cln);
-                                if(clRows.length) newResults.push({name:file.name+"|"+cln,label:cln,regionCode:getRegionCode(cln),rows:clRows,originFile:file});
-                              });
-                            } else {
-                              const label=clusterNames[0]||sn;
-                              newResults.push({name:file.name,label,regionCode:getRegionCode(label),rows,originFile:file});
-                            }
-                          }
-                          onAddFiles(prev=>{
-                            const m=[...(prev||[])];
-                            newResults.forEach(r=>{
-                              const reRows=r.rows.map(row=>{
-                                const rid=String(row["Outlet ID"]||"").trim();
-                                const ro=roMap[rid];
-                                return ro?{...row,"RO Latitude":row["RO Latitude"]??ro.lat,"RO Longitude":row["RO Longitude"]??ro.lon,"RO Census":row["RO Census"]??(ro.census?"YES":"NO"),"Outlet Type":row["Outlet Type"]||ro.type}:row;
-                              });
-                              // REPLACE — find by label and overwrite
-                              const byLabel=m.findIndex(x=>x.label===r.label||x.label===cl.label);
-                              if(byLabel>=0) m[byLabel]={...r,rows:reRows};
-                              else m.push({...r,rows:reRows});
-                            });
-                            return m;
-                          });
-                          setAddLoading({current:1,total:1,name:"Selesai!"});
-                          setTimeout(()=>{setAddLoading(null);setShowFileManager(false);},1200);
-                        }catch(err){setAddLoading(null);alert("Error: "+err.message);}
-                      };
-                      reader.readAsArrayBuffer(file);
-                    }}/>
-                  </label>
-                  <button onClick={()=>{
-                    onAddFiles(prev=>(prev||[]).filter(x=>x.label!==cl.label));
-                    if(clusters.length<=1) setShowFileManager(false);
-                  }} style={{background:"#ef444422",color:"#ef4444",border:"1px solid #ef444440",borderRadius:7,padding:"4px 10px",fontSize:10,fontWeight:700,cursor:"pointer"}}>
-                    🗑
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div style={{padding:"12px 20px",borderTop:`1px solid ${t.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <span style={{fontSize:10,color:t.muted}}>🔄 Ganti = replace data cluster tersebut · 🗑 = hapus cluster</span>
-          </div>
-        </div>
-      </div>
-    )}
-{showFileManager&&(
-      <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:2500,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)"}} onClick={()=>setShowFileManager(false)}>
-        <div onClick={e=>e.stopPropagation()} style={{background:t.card,borderRadius:16,border:`1px solid ${t.border}`,width:"min(560px,95vw)",maxHeight:"80vh",overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 8px 40px rgba(0,0,0,0.5)",fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
+        <div onClick={e=>e.stopPropagation()} style={{background:t.card,borderRadius:16,border:`1px solid ${t.border}`,width:"min(560px,95vw)",maxHeight:"85vh",overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 8px 40px rgba(0,0,0,0.5)",fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
           <div style={{padding:"16px 20px",borderBottom:`1px solid ${t.border}`,display:"flex",alignItems:"center",gap:8}}>
             <span style={{fontWeight:800,fontSize:15,color:t.text,flex:1}}>📋 File Manager</span>
             <span style={{fontSize:11,color:t.muted}}>{clusters.length} cluster loaded</span>
@@ -4360,27 +4569,40 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                     <input type="file" accept=".xlsx,.xls" style={{display:"none"}} onClick={e=>e.target.value=""} onChange={async e=>{
                       const file=e.target.files?.[0]; if(!file) return;
                       const targetLabel=cl.label;
-                      setAddLoading({current:0,total:1,name:file.name.split(".")[0]});
-                      const rd=new FileReader();
-                      rd.onload=ev=>{
+                      setAddLoading({current:0,total:1,name:file.name.replace(/\.[^.]+$/,"")});
+                      const reader=new FileReader();
+                      reader.onload=ev=>{
                         try{
                           const wb2=XLSX.read(ev.target.result,{type:"array",cellDates:true,cellHTML:false});
-                          const newR=[];
-                          for(const sn of wb2.SheetNames){
+                          const sheets=wb2.SheetNames;
+                          const newResults=[];
+                          for(const sn of sheets){
                             const ws2=wb2.Sheets[sn]; if(!ws2||!ws2["!ref"]) continue;
                             const {rows}=readFileRows(wb2,sn);
                             if(!rows?.length) continue;
-                            const cls2=[...new Set(rows.map(r=>r["Cluster"]).filter(Boolean))];
-                            if(cls2.length>1){cls2.forEach(c2=>{const r2=rows.filter(r=>String(r["Cluster"]||"").trim()===c2);if(r2.length)newR.push({name:file.name+"|"+c2,label:c2,regionCode:getRegionCode(c2),rows:r2});});}
-                            else{const lbl=cls2[0]||sn;newR.push({name:file.name,label:lbl,regionCode:getRegionCode(lbl),rows});}
+                            const clusterNames=[...new Set(rows.map(r=>r["Cluster"]).filter(Boolean))];
+                            if(clusterNames.length>1){
+                              clusterNames.forEach(cln=>{
+                                const clRows=rows.filter(r=>String(r["Cluster"]||"").trim()===cln);
+                                if(clRows.length) newResults.push({name:file.name+"|"+cln,label:cln,regionCode:getRegionCode(cln),rows:clRows,originFile:file});
+                              });
+                            } else {
+                              const label=clusterNames[0]||sn;
+                              newResults.push({name:file.name,label,regionCode:getRegionCode(label),rows,originFile:file});
+                            }
                           }
-                          if(!newR.length) throw new Error("File kosong");
+                          if(!newResults.length) throw new Error("File kosong");
                           onAddFiles(prev=>{
                             const m=[...(prev||[])];
-                            newR.forEach(r=>{
-                              const reRows=r.rows.map(row=>{const rid=String(row["Outlet ID"]||"").trim();const ro=roMap[rid];return ro?{...row,"RO Latitude":row["RO Latitude"]??ro.lat,"RO Longitude":row["RO Longitude"]??ro.lon}:row;});
-                              const byLabel=m.findIndex(x=>x.label===targetLabel||x.label===r.label);
-                              if(byLabel>=0)m[byLabel]={...r,rows:reRows};
+                            newResults.forEach(r=>{
+                              const reRows=r.rows.map(row=>{
+                                const rid=String(row["Outlet ID"]||"").trim();
+                                const ro=roMap[rid];
+                                return ro?{...row,"RO Latitude":row["RO Latitude"]??ro.lat,"RO Longitude":row["RO Longitude"]??ro.lon,"RO Census":row["RO Census"]??(ro.census?"YES":"NO"),"Outlet Type":row["Outlet Type"]||ro.type,"_ROVisitFreq":ro.visitFreq||null}:row;
+                              });
+                              // REPLACE — find by label and overwrite
+                              const byLabel=m.findIndex(x=>x.label===r.label||x.label===targetLabel);
+                              if(byLabel>=0) m[byLabel]={...r,rows:reRows};
                               else m.push({...r,rows:reRows});
                             });
                             return m;
@@ -4389,26 +4611,120 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                           setTimeout(()=>{setAddLoading(null);setShowFileManager(false);},1200);
                         }catch(err){setAddLoading(null);alert("Error: "+err.message);}
                       };
-                      rd.readAsArrayBuffer(file);
+                      reader.readAsArrayBuffer(file);
                     }}/>
                   </label>
-                  <button onClick={()=>{onAddFiles(prev=>(prev||[]).filter(x=>x.label!==cl.label));}} style={{background:"#ef444422",color:"#ef4444",border:"1px solid #ef444440",borderRadius:7,padding:"4px 10px",fontSize:10,fontWeight:700,cursor:"pointer"}}>🗑</button>
+                  <button onClick={()=>{
+                    onAddFiles(prev=>(prev||[]).filter(x=>x.label!==cl.label));
+                    if(clusters.length<=1) setShowFileManager(false);
+                  }} style={{background:"#ef444422",color:"#ef4444",border:"1px solid #ef444440",borderRadius:7,padding:"4px 10px",fontSize:10,fontWeight:700,cursor:"pointer"}}>
+                    🗑
+                  </button>
                 </div>
               </div>
             ))}
           </div>
-          <div style={{padding:"12px 20px",borderTop:`1px solid ${t.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
-            <span style={{fontSize:10,color:t.muted}}>🔄 Ganti = mengganti berkas · 🗑 = menghapus cluster</span>
-            <label style={{display:"inline-flex",alignItems:"center",gap:6,background:"rgba(34,197,94,0.15)",border:"1px solid rgba(34,197,94,0.4)",color:"#4ade80",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:11,fontWeight:700}}>
-              ➕ Tambah Berkas
-              <input type="file" accept=".xlsx,.xls,.csv,.json" multiple style={{display:"none"}} onClick={e=>e.target.value=""} onChange={e=>{setShowFileManager(false);handleAddFiles(e.target.files);}}/>
-            </label>
+          <div style={{padding:"12px 20px",borderTop:`1px solid ${t.border}`}}>
+            <div style={{fontSize:10,color:t.muted,marginBottom:10}}>🔄 Ganti = replace data cluster tersebut · 🗑 = hapus cluster</div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <label style={{display:"inline-flex",alignItems:"center",gap:6,background:"rgba(34,197,94,0.15)",border:"1px solid rgba(34,197,94,0.4)",color:"#4ade80",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:11,fontWeight:700}}>
+                ➕ Tambah Berkas
+                <input type="file" accept=".xlsx,.xls,.csv,.json" multiple style={{display:"none"}} onClick={e=>e.target.value=""} onChange={e=>{setShowFileManager(false);handleAddFiles(e.target.files);}}/>
+              </label>
+              <label style={{display:"inline-flex",alignItems:"center",gap:6,background:Object.keys(roMap).length>0?"rgba(34,197,94,0.15)":P.accent+"22",border:`1px solid ${Object.keys(roMap).length>0?"rgba(34,197,94,0.4)":P.accent+"55"}`,color:Object.keys(roMap).length>0?"#4ade80":P.accent,borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:11,fontWeight:700}}>
+                🏪 {Object.keys(roMap).length>0?`✓ ${Object.keys(roMap).length} outlet RO`:"Upload File RO"}
+                <input type="file" accept=".xlsx,.xls" multiple style={{display:"none"}} onClick={e=>e.target.value=""} onChange={e=>handleRoFile(e.target.files)}/>
+              </label>
+            </div>
+            <div style={{fontSize:9.5,color:t.muted,marginTop:8,lineHeight:1.5}}>🏪 Upload File RO = data master outlet (koordinat, tipe, dan jadwal Visit Group) — dipakai untuk hitung jarak GPS, Census, dan status Merah/Orange/Kuning/Hijau. Bisa upload beberapa file / cluster sekaligus, akan digabung otomatis berdasarkan Outlet ID.</div>
           </div>
         </div>
       </div>
     )}
     <CanvCategoryDrillModal detail={canvCategoryDrill} onClose={()=>setCanvCategoryDrill(null)} t={t}
       onCanvasserClick={(c)=>{const rows=getCanvasserRows(c.name,c.cluster,canvCategoryDrill.statusKey);setCanvDetail({canvasser:c,drillLabel:canvCategoryDrill.label,color:canvCategoryDrill.color,rows,drillKey:canvCategoryDrill.statusKey,sessionKey:Date.now()});setCanvCategoryDrill(null);}}/>
+    {overlapBreakdown&&(()=>{
+      const COLOR_MAP={MERAH:["🔴",P.investigate],ORANGE:["🟠",P.a2],KUNING:["🟡","#eab308"],HIJAU:["🟢",P.a1]};
+      return(
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:1200,display:"flex",alignItems:"flex-end",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)"}} onClick={()=>setOverlapBreakdown(null)}>
+          <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxHeight:"75vh",background:t.card,borderRadius:"18px 18px 0 0",border:"1px solid "+t.border,overflow:"hidden",display:"flex",flexDirection:"column",fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
+            <div style={{padding:"16px 18px 12px",borderBottom:"1px solid "+t.border,display:"flex",alignItems:"center",gap:10}}>
+              <div style={{width:12,height:12,borderRadius:3,background:P.accent,flexShrink:0}}/>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:800,fontSize:14,color:t.text}}>Rincian Irisan Kategori</div>
+                <div style={{fontSize:11,color:t.muted,marginTop:2}}>Dari {overlapBreakdown.totalUnique.toLocaleString()} canvasser yang berwarna</div>
+              </div>
+              <button onClick={()=>setOverlapBreakdown(null)} style={{background:t.cardAlt,border:"1px solid "+t.border,color:t.text,borderRadius:8,padding:"4px 10px",cursor:"pointer",fontSize:12,fontWeight:700}}>✕</button>
+            </div>
+            <div style={{overflowY:"auto",flex:1,padding:"10px 18px 18px"}}>
+              {overlapBreakdown.combos.map((combo,i)=>(
+                <div key={combo.key} onClick={()=>{
+                  const nameSet=new Set(combo.names);
+                  const rws=clusters.flatMap(c=>(c.rawRows||[]).filter(r=>r._colorStatus&&nameSet.has(String(r["Canvasser ID"]||r["Canvasser"]||"").trim())));
+                  setCanvDetail({canvasser:{name:"Seluruh Canvasser",cluster:combo.colors.join(" + "),icon:"🔀"},drillLabel:`Irisan: ${combo.colors.join(" + ")}`,color:P.accent,rows:rws,drillKey:null,sessionKey:Date.now()});
+                  setOverlapBreakdown(null);
+                }} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 8px",cursor:"pointer",borderBottom:i<overlapBreakdown.combos.length-1?"1px solid "+t.border:"none"}}
+                  onMouseEnter={e=>e.currentTarget.style.opacity="0.7"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+                  <div style={{flex:1,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                    {combo.colors.map((ck,ci)=>(
+                      <span key={ck} style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:13,fontWeight:700,color:COLOR_MAP[ck][1]}}>
+                        {ci>0&&<span style={{color:t.muted,fontWeight:400,margin:"0 2px"}}>+</span>}
+                        {COLOR_MAP[ck][0]} {ck.charAt(0)+ck.slice(1).toLowerCase()}
+                      </span>
+                    ))}
+                  </div>
+                  <div style={{fontSize:15,fontWeight:800,color:t.text,flexShrink:0}}>{combo.names.length.toLocaleString()}</div>
+                  <span style={{fontSize:9,color:t.muted,flexShrink:0}}>canvasser</span>
+                  <span style={{fontSize:12,color:t.muted,flexShrink:0}}>›</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    })()}
+    {vtCellDrill&&(()=>{
+      const{type,seq,week,cell}=vtCellDrill;
+      const dom=cell.A1>=cell.A2&&cell.A1>=cell.A3?P.a1:cell.A2>=cell.A3?P.a2:P.a3;
+      return(
+      <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:1200,display:"flex",alignItems:"flex-end",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)"}} onClick={()=>setVtCellDrill(null)}>
+        <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxHeight:"75vh",background:t.card,borderRadius:"18px 18px 0 0",border:"1px solid "+t.border,overflow:"hidden",display:"flex",flexDirection:"column",fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
+          <div style={{padding:"16px 18px 12px",borderBottom:"1px solid "+t.border,display:"flex",alignItems:"center",gap:10}}>
+            <div style={{width:12,height:12,borderRadius:3,background:dom,flexShrink:0}}/>
+            <div style={{flex:1}}>
+              <div style={{fontWeight:800,fontSize:14,color:t.text}}>{type} — Visit {seq} · {week}</div>
+              <div style={{fontSize:11,color:t.muted,marginTop:2}}>{cell.total.toLocaleString()} aktivitas</div>
+            </div>
+            <button onClick={()=>setVtCellDrill(null)} style={{background:t.cardAlt,border:"1px solid "+t.border,color:t.text,borderRadius:8,padding:"4px 10px",cursor:"pointer",fontSize:12,fontWeight:700}}>✕</button>
+          </div>
+          <div style={{padding:"14px 18px",overflowY:"auto"}}>
+            <div style={{display:"flex",gap:8,marginBottom:14}}>
+              <div style={{flex:1,textAlign:"center",padding:"8px 4px",borderRadius:8,background:P.a1+"14"}}>
+                <div style={{fontSize:16,fontWeight:800,color:P.a1}}>{cell.A1.toLocaleString()}</div>
+                <div style={{fontSize:8,color:t.muted,textTransform:"uppercase",marginTop:2}}>A1 Normal</div>
+              </div>
+              <div style={{flex:1,textAlign:"center",padding:"8px 4px",borderRadius:8,background:P.a2+"14"}}>
+                <div style={{fontSize:16,fontWeight:800,color:P.a2}}>{cell.A2.toLocaleString()}</div>
+                <div style={{fontSize:8,color:t.muted,textTransform:"uppercase",marginTop:2}}>A2 Anomaly</div>
+              </div>
+              <div style={{flex:1,textAlign:"center",padding:"8px 4px",borderRadius:8,background:P.a3+"14"}}>
+                <div style={{fontSize:16,fontWeight:800,color:P.a3}}>{cell.A3.toLocaleString()}</div>
+                <div style={{fontSize:8,color:t.muted,textTransform:"uppercase",marginTop:2}}>A3 Incomplete</div>
+              </div>
+              <div style={{flex:1,textAlign:"center",padding:"8px 4px",borderRadius:8,background:"#10b98114"}}>
+                <div style={{fontSize:16,fontWeight:800,color:"#10b981"}}>{cell.sellIn.toLocaleString("id-ID")}</div>
+                <div style={{fontSize:8,color:t.muted,textTransform:"uppercase",marginTop:2}}>Sell-In</div>
+              </div>
+            </div>
+            <button onClick={()=>{setCanvDetail({canvasser:{name:"Seluruh Canvasser",cluster:`${type} · Visit ${seq} · ${week}`,icon:"📋"},drillLabel:`${type} — Visit ${seq} · ${week}`,color:dom,rows:cell.rows,drillKey:null,sessionKey:Date.now()});setVtCellDrill(null);}}
+              style={{width:"100%",background:dom,color:"#fff",border:"none",borderRadius:8,padding:"9px 0",fontWeight:700,fontSize:12,cursor:"pointer"}}>
+              📋 Lihat {cell.total.toLocaleString()} Aktivitas
+            </button>
+          </div>
+        </div>
+      </div>
+      );
+    })()}
     {reasonDrill&&(
       <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:1200,display:"flex",alignItems:"flex-end",background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)"}} onClick={()=>setReasonDrill(null)}>
         <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxHeight:"75vh",background:t.card,borderRadius:"18px 18px 0 0",border:"1px solid "+t.border,overflow:"hidden",display:"flex",flexDirection:"column",fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
