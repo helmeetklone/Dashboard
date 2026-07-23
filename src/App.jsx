@@ -753,6 +753,45 @@ function processRows(rows) {
     });
   }
 
+  // ── Kepatuhan Jadwal RO (hari & frekuensi) — khusus Regular Visit, semua status A1/A2/A3 ──
+  // Beda dari engine warna di atas (yang cuma jalan di baris A2): ini ngecek SEMUA baris Regular Visit
+  // dalam grup canvasser+outlet+minggu, dibandingkan ke jadwal RO (_ROVisitFreq / _ROVisitDays).
+  {
+    const schedGroups={};
+    rows.forEach(r=>{
+      if(String(r["Activity Type"]||"").trim()!=="Regular Visit") return;
+      const tv=r["Actual Visit Time"]?new Date(r["Actual Visit Time"]):null;
+      if(!tv||isNaN(tv.getTime())) return;
+      const cvName=String(r["Canvasser ID"]||r["Canvasser"]||"").trim();
+      const outId=String(r["Outlet ID"]||"").trim();
+      if(!cvName||!outId) return;
+      const d=new Date(tv.getFullYear(),tv.getMonth(),tv.getDate());
+      const dow=d.getDay();
+      const diffToMon=(dow===0?-6:1-dow);
+      const monday=new Date(d); monday.setDate(d.getDate()+diffToMon);
+      const weekKey=monday.toISOString().slice(0,10);
+      const gKey=cvName+"|"+outId+"|"+weekKey;
+      if(!schedGroups[gKey]) schedGroups[gKey]=[];
+      schedGroups[gKey].push({r,dow});
+    });
+
+    Object.values(schedGroups).forEach(list=>{
+      const visitDays=list[0].r["_ROVisitDays"];
+      const visitFreq=list[0].r["_ROVisitFreq"];
+      const freqOk = visitFreq==null ? null : (list.length===visitFreq);
+      list.forEach(x=>{
+        const dayOk = (visitDays&&visitDays.length) ? visitDays.includes(x.dow) : null;
+        x.r._scheduleDayOk=dayOk;
+        x.r._scheduleFreqOk=freqOk;
+        const issues=[];
+        if(dayOk===false) issues.push("hari kunjungan tidak sesuai jadwal RO");
+        if(freqOk===false) issues.push(`jumlah kunjungan minggu ini (${list.length}x) tidak sesuai jadwal (${visitFreq}x)`);
+        x.r._scheduleIssue = issues.length ? issues.join("; ") : null;
+        x.r._scheduleCompliant = (dayOk===false||freqOk===false) ? false : (dayOk===null&&freqOk===null?null:true);
+      });
+    });
+  }
+
   // Ringkasan status warna baru (Merah/Orange/Kuning/Hijau) — dari baris ber-_colorStatus
   const colorCanvSets={MERAH:new Set(),ORANGE:new Set(),KUNING:new Set(),HIJAU:new Set()};
   const colorOutletSets={MERAH:new Set(),ORANGE:new Set(),KUNING:new Set(),HIJAU:new Set()};
@@ -783,6 +822,25 @@ function processRows(rows) {
     rowCounts:{...colorRowCounts},
     canvasserNames:{MERAH:[...colorCanvSets.MERAH],ORANGE:[...colorCanvSets.ORANGE],KUNING:[...colorCanvSets.KUNING],HIJAU:[...colorCanvSets.HIJAU]},
     outletIds:{MERAH:[...colorOutletSets.MERAH],ORANGE:[...colorOutletSets.ORANGE],KUNING:[...colorOutletSets.KUNING],HIJAU:[...colorOutletSets.HIJAU]},
+  };
+
+  // Ringkasan kepatuhan jadwal RO (hari & frekuensi) — hanya baris yang punya data jadwal (_scheduleCompliant!=null)
+  const schedNonCompliantCanvSet=new Set(), schedNonCompliantOutletSet=new Set();
+  let schedNonCompliantRowCount=0, schedEvaluatedRowCount=0;
+  rows.forEach(r=>{
+    if(r._scheduleCompliant==null) return;
+    schedEvaluatedRowCount++;
+    if(r._scheduleCompliant===false){
+      schedNonCompliantRowCount++;
+      schedNonCompliantCanvSet.add(String(r["Canvasser ID"]||r["Canvasser"]||"").trim());
+      schedNonCompliantOutletSet.add(String(r["Outlet ID"]||"").trim());
+    }
+  });
+  const scheduleSummary={
+    evaluatedRowCount:schedEvaluatedRowCount,
+    nonCompliantRowCount:schedNonCompliantRowCount,
+    nonCompliantCanvasserNames:[...schedNonCompliantCanvSet],
+    nonCompliantOutletIds:[...schedNonCompliantOutletSet],
   };
 
   let fakeVisitRiskCount=0, needsVerificationCount=0;
@@ -839,6 +897,7 @@ function processRows(rows) {
     chronicOutlets,
     colorChronicOutlets,
     colorSummary,
+    scheduleSummary,
     fakeVisitRiskCount,
     fakeVisitCanvasserCount:fakeVisitCanvasserSet.size,
     fakeVisitOutletCount:fakeVisitOutletSet.size,
@@ -943,6 +1002,24 @@ function aggregateList(dataList) {
         }
       }));
       return Object.values(m).sort((a,b)=>b.flagged-a.flagged);
+    })(),
+    scheduleSummary:(()=>{
+      let evaluatedRowCount=0, nonCompliantRowCount=0;
+      const canvSet=new Set(), outletSet=new Set();
+      dataList.forEach(d=>{
+        const ss=d.scheduleSummary; if(!ss) return;
+        evaluatedRowCount+=ss.evaluatedRowCount||0;
+        nonCompliantRowCount+=ss.nonCompliantRowCount||0;
+        (ss.nonCompliantCanvasserNames||[]).forEach(n=>canvSet.add(n));
+        (ss.nonCompliantOutletIds||[]).forEach(n=>outletSet.add(n));
+      });
+      return {
+        evaluatedRowCount,nonCompliantRowCount,
+        nonCompliantCanvasserNames:[...canvSet],
+        nonCompliantOutletIds:[...outletSet],
+        nonCompliantCanvasserCount:canvSet.size,
+        nonCompliantOutletCount:outletSet.size,
+      };
     })(),
     fakeVisitRiskCount:dataList.reduce((s,r)=>s+(r.fakeVisitRiskCount||0),0),
     colorSummary:(()=>{
@@ -2104,10 +2181,38 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
   const jsonRef=useRef();
 
   const DAY_NAME_MAP=[["senin",1],["selasa",2],["rabu",3],["kamis",4],["jumat",5],["sabtu",6],["minggu",0]];
-  const parseVisitGroup=(vg)=>{
-    const s=String(vg||"").toLowerCase();
+  const normHeader=(h)=>String(h||"").toLowerCase().replace(/[^a-z0-9]/g,"");
+  const findCol=(headers,candidates)=>{
+    for(const cand of candidates){
+      const idx=headers.findIndex(h=>normHeader(h)===cand);
+      if(idx>=0) return headers[idx];
+    }
+    for(const cand of candidates){
+      const idx=headers.findIndex(h=>normHeader(h).includes(cand));
+      if(idx>=0) return headers[idx];
+    }
+    return null;
+  };
+  const parseDayNamesFromText=(txt)=>{
+    const s=String(txt||"").toLowerCase();
     const days=DAY_NAME_MAP.filter(([name])=>s.includes(name)).map(([,d])=>d);
-    return {count:days.length,days};
+    return [...new Set(days)];
+  };
+  const pickAssignmentSheet=(wb)=>{
+    // Prioritas: nama sheet mengandung "assignment". Kalau tidak ada, ambil sheet dengan baris terbanyak
+    // yang punya kolom Outlet ID (menghindari sheet ringkasan/summary/2-baris-header).
+    const byName=wb.SheetNames.find(sn=>/assignment/i.test(sn));
+    if(byName) return byName;
+    let best=null, bestRows=0;
+    wb.SheetNames.forEach(sn=>{
+      const ws=wb.Sheets[sn]; if(!ws||!ws["!ref"]) return;
+      const rows=XLSX.utils.sheet_to_json(ws,{defval:null});
+      if(!rows.length) return;
+      const headers=Object.keys(rows[0]);
+      const hasOutletId=headers.some(h=>normHeader(h).includes("outletid"));
+      if(hasOutletId && rows.length>bestRows){ best=sn; bestRows=rows.length; }
+    });
+    return best||wb.SheetNames[0];
   };
 
   const handleRoFile=async(fileList)=>{
@@ -2116,22 +2221,48 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
       const maps=await Promise.all(Array.from(fileList).map(async file=>{
         const buf=await file.arrayBuffer();
         const wb=XLSX.read(buf,{type:"array", cellHTML:false});
-        const ws=wb.Sheets[wb.SheetNames[0]];
+        const sheetName=pickAssignmentSheet(wb);
+        const ws=wb.Sheets[sheetName];
         const rows=XLSX.utils.sheet_to_json(ws,{defval:null});
         const map={};
+        if(!rows.length) return map;
+        const headers=Object.keys(rows[0]);
+        const col={
+          outletId:findCol(headers,["outletid","roid"]),
+          lat:findCol(headers,["latitudefix","latitude","lat"]),
+          lon:findCol(headers,["longitudefix","longitude","long","lng"]),
+          latLong:findCol(headers,["latlongro","latlong","koordinat"]),
+          census:findCol(headers,["fromrocensus","census"]),
+          type:findCol(headers,["outlettype"]),
+          cluster:findCol(headers,["salescluster","microcluster","area"]),
+          name:findCol(headers,["outletname","namaro"]),
+          visitFreq:findCol(headers,["visitfreq","visitfrequency"]),
+          visitGroup:findCol(headers,["visitgroup","visitschedule"]),
+        };
         rows.forEach(r=>{
-          const id=String(r["Outlet ID"]||"").trim(); if(!id) return;
-          const vgParsed=parseVisitGroup(r["Visit Group"]);
+          const id=col.outletId?String(r[col.outletId]||"").trim():""; if(!id) return;
+          const vgText=col.visitGroup?r[col.visitGroup]:null;
+          const days=parseDayNamesFromText(vgText);
+          const freqFromVisitGroup=vgText!=null?parseInt(String(vgText).trim()):NaN;
+          const freqFromCol=col.visitFreq?parseInt(r[col.visitFreq]):NaN;
+          const visitFreq = !isNaN(freqFromCol)&&freqFromCol>0 ? freqFromCol
+            : (days.length>0 ? days.length
+            : (!isNaN(freqFromVisitGroup)&&freqFromVisitGroup>0 ? freqFromVisitGroup : null));
+          let lat=col.lat?parseFloat(r[col.lat])||null:null;
+          let lon=col.lon?parseFloat(r[col.lon])||null:null;
+          if((lat==null||lon==null)&&col.latLong&&r[col.latLong]){
+            const parts=String(r[col.latLong]).split(/[,/;|]|\s{2,}/).map(s=>parseFloat(s.trim())).filter(n=>!isNaN(n));
+            if(parts.length>=2){ lat=lat??parts[0]; lon=lon??parts[1]; }
+          }
           map[id]={
-            lat:parseFloat(r["Latitude"])||null,
-            lon:parseFloat(r["Longitude"])||null,
-            census:String(r["From RO Census"]||"").toUpperCase()==="YES",
-            type:String(r["Outlet Type"]||"").trim(),
-            cluster:String(r["Sales Cluster"]||"").trim(),
-            name:String(r["Outlet Name"]||"").trim(),
-            visitGroup:String(r["Visit Group"]||"").trim()||null,
-            visitFreq:vgParsed.count>0?vgParsed.count:null,
-            visitDays:vgParsed.days,
+            lat,lon,
+            census:col.census?String(r[col.census]||"").toUpperCase()==="YES":false,
+            type:col.type?String(r[col.type]||"").trim():"",
+            cluster:col.cluster?String(r[col.cluster]||"").trim():"",
+            name:col.name?String(r[col.name]||"").trim():"",
+            visitGroup:vgText?String(vgText).trim():null,
+            visitFreq,
+            visitDays:days,
           };
         });
         return map;
@@ -2330,6 +2461,28 @@ function UploadScreen({onLoad,roMap,onRoLoad,t}){
           </>}
       </div>
 
+      {/* Jadwal Visit RO — opsional, bisa diupload sebelum/sesudah data aktivitas */}
+      <div style={{width:"100%",maxWidth:520,marginTop:14,padding:"12px 16px",background:t.card,borderRadius:12,border:`1px solid ${Object.keys(roMap).length>0?"#22c55e":t.border}`}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+          <span>📅</span>
+          <span style={{fontWeight:700,fontSize:12,color:t.text}}>Jadwal Visit RO</span>
+          {Object.keys(roMap).length>0&&<span style={{background:"#22c55e20",color:"#22c55e",padding:"1px 8px",borderRadius:999,fontSize:10,fontWeight:700}}>✓ {Object.keys(roMap).length} outlet loaded</span>}
+          <span style={{marginLeft:"auto",fontSize:10,color:t.muted}}>Opsional</span>
+        </div>
+        <div style={{fontSize:10,color:t.muted,marginBottom:8}}>Upload data master outlet (RO ID, koordinat, jadwal visit/minggu) — dipakai untuk hitung jarak GPS, Census, dan status Merah/Orange/Kuning/Hijau. Bisa diupload sebelum atau sesudah data aktivitas, urutan bebas.</div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+          <label style={{display:"inline-flex",alignItems:"center",gap:6,background:Object.keys(roMap).length>0?"#22c55e22":t.cardAlt,color:Object.keys(roMap).length>0?"#22c55e":t.muted,borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:11,fontWeight:700,border:`1px solid ${Object.keys(roMap).length>0?"#22c55e":t.border}`}}>
+            📂 {Object.keys(roMap).length>0?"✓ Tambah / Ganti Jadwal RO":"Upload Jadwal Visit RO"}
+            <input type="file" accept=".xlsx,.xls" multiple style={{display:"none"}} onClick={e=>e.target.value=""} onChange={e=>handleRoFile(e.target.files)}/>
+          </label>
+          {Object.keys(roMap).length>0&&(
+            <button onClick={()=>onRoLoad({})} style={{background:"#ef444422",color:"#ef4444",border:"1px solid #ef444440",borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:11,fontWeight:700}}>
+              🗑 Clear
+            </button>
+          )}
+        </div>
+      </div>
+
       {error&&<div style={{marginTop:12,background:error.startsWith("⚠️")?"rgba(245,158,11,0.1)":"rgba(239,68,68,0.1)",border:`1px solid ${error.startsWith("⚠️")?"#f59e0b":"#ef4444"}`,borderRadius:10,padding:"10px 18px",color:error.startsWith("⚠️")?"#fbbf24":"#f87171",fontSize:12,maxWidth:520}}>{error}</div>}
 
       {queue.length>0&&(
@@ -2434,6 +2587,8 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
           "RO Census":    r["RO Census"]    ?? (ro.census?"YES":"NO"),
           "Outlet Type":  r["Outlet Type"]  || ro.type,
           "_ROVisitFreq": ro.visitFreq || null,
+          "_ROVisitDays": ro.visitDays || null,
+          "_ROVisitDays": ro.visitDays || null,
         }:r;
         return computeValidation(enriched,params);
       });
@@ -2759,7 +2914,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
     onAddFiles&&onAddFiles(prev=>{
       const m=[...(prev||[])];
       mergedResults.forEach(r=>{
-        const reRows=(r.rows||[]).map(row=>{const rid=String(row["Outlet ID"]||"").trim();const ro=roMap[rid];return ro?{...row,"RO Latitude":row["RO Latitude"]??ro.lat,"RO Longitude":row["RO Longitude"]??ro.lon,"RO Census":row["RO Census"]??(ro.census?"YES":"NO"),"Outlet Type":row["Outlet Type"]||ro.type}:row;});
+        const reRows=(r.rows||[]).map(row=>{const rid=String(row["Outlet ID"]||"").trim();const ro=roMap[rid];return ro?{...row,"RO Latitude":row["RO Latitude"]??ro.lat,"RO Longitude":row["RO Longitude"]??ro.lon,"RO Census":row["RO Census"]??(ro.census?"YES":"NO"),"Outlet Type":row["Outlet Type"]||ro.type,"_ROVisitFreq":ro.visitFreq||null,"_ROVisitDays":ro.visitDays||null}:row;});
         const byName=m.findIndex(x=>x.name===r.name);
         const byLabel=m.findIndex(x=>x.label===r.label);
         if(byName>=0){m[byName]={...r,rows:reRows};}
@@ -3335,11 +3490,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           <button onClick={()=>setShowParams(p=>!p)} title="Parameter" style={{width:34,height:34,background:showParams?P.accent+"22":t.cardAlt,border:"1px solid "+(showParams?P.accent:t.border),color:showParams?P.accent:t.muted,borderRadius:9,cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>⚙️</button>
           <button onClick={toggleDark} title="Theme" style={{width:34,height:34,background:t.cardAlt,border:`1px solid ${t.border}`,color:t.text,borderRadius:9,cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>{dark?"☀️":"🌙"}</button>
-          <button onClick={()=>setShowFileManager(true)} style={{background:t.cardAlt,border:`1px solid ${t.border}`,color:t.muted,borderRadius:9,padding:"0 14px",height:34,fontSize:11,cursor:"pointer",fontWeight:700}}>↩ Ganti Berkas ({clusters.length})</button>
-          <label style={{background:P.accent,border:"none",color:"#1a1200",borderRadius:9,padding:"0 16px",height:34,fontSize:11,cursor:"pointer",fontWeight:800,display:"inline-flex",alignItems:"center",gap:5}}>
-            + Tambah Berkas
-            <input type="file" accept=".xlsx,.xls,.csv,.json" multiple style={{display:"none"}} onClick={e=>e.target.value=""} onChange={e=>handleAddFiles(e.target.files)}/>
-          </label>
+          <button onClick={()=>setShowFileManager(true)} style={{background:P.accent,border:"none",color:"#1a1200",borderRadius:9,padding:"0 16px",height:34,fontSize:11,cursor:"pointer",fontWeight:800}}>↩ Ganti/Tambah Berkas ({clusters.length})</button>
         </div>
       </div>
 
@@ -3539,6 +3690,17 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                   }} style={{marginTop:10,padding:"9px 10px",borderRadius:8,background:P.accent+"14",border:`1px solid ${P.accent}40`,cursor:"pointer"}}>
                     <div style={{fontSize:10,color:t.text,lineHeight:1.6}}>
                       💡 Jumlah tiap kategori dapat melebihi total canvasser (<b>{(view.canvassers||[]).length.toLocaleString()}</b>) karena satu canvasser dapat termasuk dalam lebih dari satu kategori, tergantung minggu dan outlet yang dikunjungi. Terdapat <b style={{color:P.accent}}>{overlapList.length} canvasser</b> yang beririsan pada lebih dari satu kategori. Klik untuk melihat rinciannya.
+                    </div>
+                  </div>
+                )}
+                {(view.scheduleSummary?.evaluatedRowCount||0)>0&&(view.scheduleSummary?.nonCompliantRowCount||0)>0&&(
+                  <div onClick={()=>{
+                    const names=new Set(view.scheduleSummary.nonCompliantCanvasserNames||[]);
+                    const rws=clusters.flatMap(c=>(c.rawRows||[]).filter(r=>r._scheduleCompliant===false&&names.has(String(r["Canvasser ID"]||r["Canvasser"]||"").trim())));
+                    setCanvDetail({canvasser:{name:"Seluruh Canvasser",cluster:"Tidak Sesuai Jadwal RO",icon:"📅"},drillLabel:"Tidak Sesuai Jadwal RO",color:"#eab308",rows:rws,drillKey:null,sessionKey:Date.now()});
+                  }} style={{marginTop:8,padding:"9px 10px",borderRadius:8,background:"#eab30814",border:"1px solid #eab30840",cursor:"pointer"}}>
+                    <div style={{fontSize:10,color:t.text,lineHeight:1.6}}>
+                      📅 <b style={{color:"#eab308"}}>{(view.scheduleSummary.nonCompliantCanvasserCount||0).toLocaleString()} canvasser</b> di <b style={{color:"#eab308"}}>{(view.scheduleSummary.nonCompliantOutletCount||0).toLocaleString()} outlet</b> tercatat tidak sesuai jadwal RO (hari kunjungan atau jumlah kunjungan per minggu tidak cocok dengan jadwal Visit Group). Klik untuk melihat daftarnya.
                     </div>
                   </div>
                 )}
@@ -4598,7 +4760,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={}}){
                               const reRows=r.rows.map(row=>{
                                 const rid=String(row["Outlet ID"]||"").trim();
                                 const ro=roMap[rid];
-                                return ro?{...row,"RO Latitude":row["RO Latitude"]??ro.lat,"RO Longitude":row["RO Longitude"]??ro.lon,"RO Census":row["RO Census"]??(ro.census?"YES":"NO"),"Outlet Type":row["Outlet Type"]||ro.type,"_ROVisitFreq":ro.visitFreq||null}:row;
+                                return ro?{...row,"RO Latitude":row["RO Latitude"]??ro.lat,"RO Longitude":row["RO Longitude"]??ro.lon,"RO Census":row["RO Census"]??(ro.census?"YES":"NO"),"Outlet Type":row["Outlet Type"]||ro.type,"_ROVisitFreq":ro.visitFreq||null,"_ROVisitDays":ro.visitDays||null}:row;
                               });
                               // REPLACE — find by label and overwrite
                               const byLabel=m.findIndex(x=>x.label===r.label||x.label===targetLabel);
