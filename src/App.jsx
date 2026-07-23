@@ -678,17 +678,19 @@ function processRows(rows) {
     });
   });
 
-  // ── Status Merah/Orange/Kuning/Hijau — turunan dari A2 (Anomaly) saja ──
-  // Per canvasser+outlet: urut kronologis, kelompokkan per minggu (Senin-anchored).
+  // ── Status Merah/Orange/Kuning/Hijau — murni dari Regular Visit yang BENERAN ada ──
+  // Per canvasser+outlet+minggu: dihitung dari SEMUA baris Regular Visit yang ada minggu itu,
+  // berapapun jumlahnya (1, 2, 3, dst) — TIDAK di-override jadi Merah/Kuning cuma karena
+  // jumlahnya kurang dari jadwal RO. Alasannya: CVS biasanya ngelakuin ke-5 kriteria
+  // (AVA/Sell-In/Durasi/Long-Lat/Range) itu di Regular Visit-nya aja; slot kunjungan
+  // berikutnya (kalau ada) biasanya Ad-Hoc/Consignment, bukan Regular Visit lagi.
   // shortCount=durasi<2menit, identikCount=Long/Lat sama persis dgn kunjungan SEBELUMNYA
-  // (riwayat historis per canvasser+outlet, bukan cuma dalam minggu itu), outCount=jarak>200m.
-  // avaOk/sellInOk = terpenuhi di minimal 1 kunjungan minggu itu (bebas Visit 1-3).
-  // Hasil warnanya ditempel ke SETIAP Activity ID (baris) di grup minggu itu.
+  // (riwayat historis per canvasser+outlet), outCount=jarak>200m.
+  // Warna cuma ditempel ke baris yang statusnya A2 - ANOMALY (sesuai kesepakatan awal).
   {
     const colorHistoryMap={};
     const colorGroups={};
     rows.forEach(r=>{
-      if(String(r["_CAS1"]||"")!=="A2 - ANOMALY") return;
       if(String(r["Activity Type"]||"").trim()!=="Regular Visit") return;
       const tv=r["Actual Visit Time"]?new Date(r["Actual Visit Time"]):null;
       if(!tv||isNaN(tv.getTime())) return;
@@ -702,11 +704,18 @@ function processRows(rows) {
       const weekKey=monday.toISOString().slice(0,10);
       const gKey=cvName+"|"+outId+"|"+weekKey;
       if(!colorGroups[gKey]) colorGroups[gKey]=[];
-      colorGroups[gKey].push({r,t:tv,cvName,outId});
+      colorGroups[gKey].push({r,t:tv,dow,cvName,outId});
     });
 
     Object.values(colorGroups).forEach(list=>{
       list.sort((a,b)=>a.t-b.t);
+      const visitDays=list[0].r["_ROVisitDays"];
+
+      // ── Kepatuhan HARI (khusus Regular Visit — Ad-Hoc/Consignment gak perlu ikut jadwal hari) ──
+      list.forEach(x=>{
+        x.r._scheduleDayOk=(visitDays&&visitDays.length)?visitDays.includes(x.dow):null;
+      });
+
       const histKey=list[0].cvName+"|"+list[0].outId;
       if(!colorHistoryMap[histKey]) colorHistoryMap[histKey]=[];
       const hist=colorHistoryMap[histKey];
@@ -740,9 +749,10 @@ function processRows(rows) {
       if(!avaOk||!sellInOk) color="MERAH";
       else if(primary>=2) color="MERAH";
       else if(primary===1) color=outCount>=1?"ORANGE":"KUNING";
-      else color="HIJAU";
+      else color="KUNING"; // A2 gak pernah jadi Hijau — sinyal paling ringan tetap Kuning
 
       list.forEach(x=>{
+        if(String(x.r["_CAS1"]||"")!=="A2 - ANOMALY") return; // warna cuma nempel di baris A2
         x.r._colorStatus=color;
         x.r._colorShortCount=shortCount;
         x.r._colorIdentikCount=identikCount;
@@ -753,13 +763,21 @@ function processRows(rows) {
     });
   }
 
-  // ── Kepatuhan Jadwal RO (hari & frekuensi) — khusus Regular Visit, semua status A1/A2/A3 ──
-  // Beda dari engine warna di atas (yang cuma jalan di baris A2): ini ngecek SEMUA baris Regular Visit
-  // dalam grup canvasser+outlet+minggu, dibandingkan ke jadwal RO (_ROVisitFreq / _ROVisitDays).
+  // ── A1 (Normal) otomatis Hijau — gak perlu dihitung 5 kriteria, karena udah "normal" by definition ──
+  // (tetap dibatasi ke Regular Visit, konsisten sama cakupan engine warna ini)
+  rows.forEach(r=>{
+    if(String(r["Activity Type"]||"").trim()!=="Regular Visit") return;
+    if(String(r["_CAS1"]||"")==="A1 - NORMAL") r._colorStatus="HIJAU";
+  });
+
+  // ── Kepatuhan Jadwal RO (frekuensi) — TOTAL semua tipe visit (Regular+Ad-Hoc+Consignment) ──
+  // per canvasser+outlet+minggu, dibandingkan ke jadwal RO (_ROVisitFreq). Ini TERPISAH dari
+  // warna Merah/Orange/Kuning/Hijau — cuma flag informasi "kunjungannya sesuai kuota jadwal apa enggak".
   {
-    const schedGroups={};
+    const freqGroups={};
     rows.forEach(r=>{
-      if(String(r["Activity Type"]||"").trim()!=="Regular Visit") return;
+      const atype=String(r["Activity Type"]||"").trim();
+      if(!["Regular Visit","Ad-Hoc Visit","Consignment Visit"].includes(atype)) return;
       const tv=r["Actual Visit Time"]?new Date(r["Actual Visit Time"]):null;
       if(!tv||isNaN(tv.getTime())) return;
       const cvName=String(r["Canvasser ID"]||r["Canvasser"]||"").trim();
@@ -771,23 +789,31 @@ function processRows(rows) {
       const monday=new Date(d); monday.setDate(d.getDate()+diffToMon);
       const weekKey=monday.toISOString().slice(0,10);
       const gKey=cvName+"|"+outId+"|"+weekKey;
-      if(!schedGroups[gKey]) schedGroups[gKey]=[];
-      schedGroups[gKey].push({r,dow});
+      if(!freqGroups[gKey]) freqGroups[gKey]=[];
+      freqGroups[gKey].push(r);
     });
 
-    Object.values(schedGroups).forEach(list=>{
-      const visitDays=list[0].r["_ROVisitDays"];
-      const visitFreq=list[0].r["_ROVisitFreq"];
-      const freqOk = visitFreq==null ? null : (list.length===visitFreq);
-      list.forEach(x=>{
-        const dayOk = (visitDays&&visitDays.length) ? visitDays.includes(x.dow) : null;
-        x.r._scheduleDayOk=dayOk;
-        x.r._scheduleFreqOk=freqOk;
+    Object.values(freqGroups).forEach(list=>{
+      const visitFreq=list[0]["_ROVisitFreq"];
+      // freqStatus: 'ok' (pas sesuai jadwal) | 'under' (Kunjungan Kurang — netral, bisa izin/sakit/cuti)
+      // | 'over' (Kunjungan Lebih — perlu diperhatikan) | null (jadwal RO gak diketahui)
+      let freqStatus=null;
+      if(visitFreq!=null){
+        if(list.length===visitFreq) freqStatus="ok";
+        else if(list.length<visitFreq) freqStatus="under";
+        else freqStatus="over";
+      }
+      list.forEach(r=>{
+        r._scheduleFreqStatus=freqStatus;
         const issues=[];
-        if(dayOk===false) issues.push("hari kunjungan tidak sesuai jadwal RO");
-        if(freqOk===false) issues.push(`jumlah kunjungan minggu ini (${list.length}x) tidak sesuai jadwal (${visitFreq}x)`);
-        x.r._scheduleIssue = issues.length ? issues.join("; ") : null;
-        x.r._scheduleCompliant = (dayOk===false||freqOk===false) ? false : (dayOk===null&&freqOk===null?null:true);
+        if(r._scheduleDayOk===false) issues.push("hari kunjungan tidak sesuai jadwal RO");
+        if(freqStatus==="under") issues.push(`Kunjungan Kurang — total kunjungan minggu ini (${list.length}x, semua tipe) di bawah jadwal (${visitFreq}x)`);
+        if(freqStatus==="over") issues.push(`Kunjungan Lebih — total kunjungan minggu ini (${list.length}x, semua tipe) melebihi jadwal (${visitFreq}x)`);
+        r._scheduleIssue = issues.length ? issues.join("; ") : null;
+        const dayOk=r._scheduleDayOk===undefined?null:r._scheduleDayOk;
+        // Compliant murni soal hal yang PERLU DIPERHATIKAN: hari salah atau Kunjungan Lebih.
+        // "Kunjungan Kurang" TIDAK dianggap pelanggaran (netral, bisa izin/sakit/cuti).
+        r._scheduleCompliant = (dayOk===false||freqStatus==="over") ? false : (dayOk===null&&freqStatus==null?null:true);
       });
     });
   }
@@ -824,23 +850,31 @@ function processRows(rows) {
     outletIds:{MERAH:[...colorOutletSets.MERAH],ORANGE:[...colorOutletSets.ORANGE],KUNING:[...colorOutletSets.KUNING],HIJAU:[...colorOutletSets.HIJAU]},
   };
 
-  // Ringkasan kepatuhan jadwal RO (hari & frekuensi) — hanya baris yang punya data jadwal (_scheduleCompliant!=null)
-  const schedNonCompliantCanvSet=new Set(), schedNonCompliantOutletSet=new Set();
-  let schedNonCompliantRowCount=0, schedEvaluatedRowCount=0;
+  // Ringkasan kepatuhan jadwal RO — dipisah 2: "Kunjungan Kurang" (netral) vs "Kunjungan Lebih"+hari salah (perlu perhatian)
+  const schedOverCanvSet=new Set(), schedOverOutletSet=new Set();
+  const schedUnderCanvSet=new Set(), schedUnderOutletSet=new Set();
+  let schedOverRowCount=0, schedUnderRowCount=0, schedEvaluatedRowCount=0;
   rows.forEach(r=>{
-    if(r._scheduleCompliant==null) return;
+    if(r._scheduleCompliant==null&&r._scheduleFreqStatus==null) return;
     schedEvaluatedRowCount++;
     if(r._scheduleCompliant===false){
-      schedNonCompliantRowCount++;
-      schedNonCompliantCanvSet.add(String(r["Canvasser ID"]||r["Canvasser"]||"").trim());
-      schedNonCompliantOutletSet.add(String(r["Outlet ID"]||"").trim());
+      schedOverRowCount++;
+      schedOverCanvSet.add(String(r["Canvasser ID"]||r["Canvasser"]||"").trim());
+      schedOverOutletSet.add(String(r["Outlet ID"]||"").trim());
+    } else if(r._scheduleFreqStatus==="under"){
+      schedUnderRowCount++;
+      schedUnderCanvSet.add(String(r["Canvasser ID"]||r["Canvasser"]||"").trim());
+      schedUnderOutletSet.add(String(r["Outlet ID"]||"").trim());
     }
   });
   const scheduleSummary={
     evaluatedRowCount:schedEvaluatedRowCount,
-    nonCompliantRowCount:schedNonCompliantRowCount,
-    nonCompliantCanvasserNames:[...schedNonCompliantCanvSet],
-    nonCompliantOutletIds:[...schedNonCompliantOutletSet],
+    overRowCount:schedOverRowCount,
+    overCanvasserNames:[...schedOverCanvSet],
+    overOutletIds:[...schedOverOutletSet],
+    underRowCount:schedUnderRowCount,
+    underCanvasserNames:[...schedUnderCanvSet],
+    underOutletIds:[...schedUnderOutletSet],
   };
 
   let fakeVisitRiskCount=0, needsVerificationCount=0;
@@ -1004,21 +1038,25 @@ function aggregateList(dataList) {
       return Object.values(m).sort((a,b)=>b.flagged-a.flagged);
     })(),
     scheduleSummary:(()=>{
-      let evaluatedRowCount=0, nonCompliantRowCount=0;
-      const canvSet=new Set(), outletSet=new Set();
+      let evaluatedRowCount=0, overRowCount=0, underRowCount=0;
+      const overCanvSet=new Set(), overOutletSet=new Set();
+      const underCanvSet=new Set(), underOutletSet=new Set();
       dataList.forEach(d=>{
         const ss=d.scheduleSummary; if(!ss) return;
         evaluatedRowCount+=ss.evaluatedRowCount||0;
-        nonCompliantRowCount+=ss.nonCompliantRowCount||0;
-        (ss.nonCompliantCanvasserNames||[]).forEach(n=>canvSet.add(n));
-        (ss.nonCompliantOutletIds||[]).forEach(n=>outletSet.add(n));
+        overRowCount+=ss.overRowCount||0;
+        underRowCount+=ss.underRowCount||0;
+        (ss.overCanvasserNames||[]).forEach(n=>overCanvSet.add(n));
+        (ss.overOutletIds||[]).forEach(n=>overOutletSet.add(n));
+        (ss.underCanvasserNames||[]).forEach(n=>underCanvSet.add(n));
+        (ss.underOutletIds||[]).forEach(n=>underOutletSet.add(n));
       });
       return {
-        evaluatedRowCount,nonCompliantRowCount,
-        nonCompliantCanvasserNames:[...canvSet],
-        nonCompliantOutletIds:[...outletSet],
-        nonCompliantCanvasserCount:canvSet.size,
-        nonCompliantOutletCount:outletSet.size,
+        evaluatedRowCount,overRowCount,underRowCount,
+        overCanvasserNames:[...overCanvSet],overOutletIds:[...overOutletSet],
+        overCanvasserCount:overCanvSet.size,overOutletCount:overOutletSet.size,
+        underCanvasserNames:[...underCanvSet],underOutletIds:[...underOutletSet],
+        underCanvasserCount:underCanvSet.size,underOutletCount:underOutletSet.size,
       };
     })(),
     fakeVisitRiskCount:dataList.reduce((s,r)=>s+(r.fakeVisitRiskCount||0),0),
@@ -3650,14 +3688,14 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={},onRoLoad})
 
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:16,marginBottom:14}}>
           <div style={{...card(),height:"100%",boxSizing:"border-box",display:"flex",flexDirection:"column"}}>
-            <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:10}}>#Canvasser</div>
+            <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:10}}>#Activity ID</div>
             <div style={{flex:1,display:"flex",flexDirection:"column",justifyContent:"space-between"}}>
             {[
-                {label:"Total Canvasser",val:cvs.length.toLocaleString(),color:t.text},
-                {label:"A1 — Normal",val:pctS(impactedA1,cvs.length||1),color:P.a1,sub:impactedA1.toLocaleString()+" orang",sub2:(ac["A1 - NORMAL"]||0).toLocaleString()+" aktivitas",drill:()=>setCanvCategoryDrill({label:"A1 - Normal",color:P.a1,statusKey:"A1",list:cvs.filter(c=>(c.A1||0)>0)})},
-                {label:"A2 — Anomaly",val:pctS(impactedA2,cvs.length||1),color:P.a2,sub:impactedA2.toLocaleString()+" orang",sub2:(ac["A2 - ANOMALY"]||0).toLocaleString()+" aktivitas",drill:()=>setCanvCategoryDrill({label:"A2 - Anomaly",color:P.a2,statusKey:"A2",list:cvs.filter(c=>(c.A2||0)>0)})},
-                {label:"A3 — Incomplete",val:pctS(impactedA3,cvs.length||1),color:P.a3,sub:impactedA3.toLocaleString()+" orang",sub2:(ac["A3 - INCOMPLETE"]||0).toLocaleString()+" aktivitas",drill:()=>setCanvCategoryDrill({label:"A3 - Incomplete",color:P.a3,statusKey:"A3",list:cvs.filter(c=>(c.A3||0)>0)})},
-                {label:"Total Aktivitas",val:T.toLocaleString(),color:t.muted},
+                {label:"Total Aktivitas",val:T.toLocaleString(),color:t.text},
+                {label:"A1 — Normal",val:pctS(ac["A1 - NORMAL"]||0,T||1),color:P.a1,sub:(ac["A1 - NORMAL"]||0).toLocaleString()+" aktivitas",sub2:impactedA1.toLocaleString()+" canvasser",drill:()=>setCanvCategoryDrill({label:"A1 - Normal",color:P.a1,statusKey:"A1",list:cvs.filter(c=>(c.A1||0)>0)})},
+                {label:"A2 — Anomaly",val:pctS(ac["A2 - ANOMALY"]||0,T||1),color:P.a2,sub:(ac["A2 - ANOMALY"]||0).toLocaleString()+" aktivitas",sub2:impactedA2.toLocaleString()+" canvasser",drill:()=>setCanvCategoryDrill({label:"A2 - Anomaly",color:P.a2,statusKey:"A2",list:cvs.filter(c=>(c.A2||0)>0)})},
+                {label:"A3 — Incomplete",val:pctS(ac["A3 - INCOMPLETE"]||0,T||1),color:P.a3,sub:(ac["A3 - INCOMPLETE"]||0).toLocaleString()+" aktivitas",sub2:impactedA3.toLocaleString()+" canvasser",drill:()=>setCanvCategoryDrill({label:"A3 - Incomplete",color:P.a3,statusKey:"A3",list:cvs.filter(c=>(c.A3||0)>0)})},
+                {label:"Total Canvasser",val:cvs.length.toLocaleString(),color:t.muted},
             ].map((k,i,arr)=>{
                   const barPct=typeof k.val==="string"&&k.val.includes("%")?parseFloat(k.val):null;
                   return(
@@ -3681,19 +3719,12 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={},onRoLoad})
           </div>
 
           {(()=>{
-            const cs=view.colorSummary?.canvasserCounts||{MERAH:0,ORANGE:0,KUNING:0,HIJAU:0};
             const namesByColor=view.colorSummary?.canvasserNames||{MERAH:[],ORANGE:[],KUNING:[],HIJAU:[]};
-            const rows=[
-              {label:"Merah",icon:"🔴",val:cs.MERAH||0,color:P.investigate,onClick:()=>{setCanvDetail({canvasser:{name:"Seluruh Canvasser",cluster:"Merah",icon:"🔴"},drillLabel:"Status Merah",color:P.investigate,rows:getRowsForColor("MERAH"),drillKey:null,sessionKey:Date.now()});}},
-              {label:"Orange",icon:"🟠",val:cs.ORANGE||0,color:P.a2,onClick:()=>{setCanvDetail({canvasser:{name:"Seluruh Canvasser",cluster:"Orange",icon:"🟠"},drillLabel:"Status Orange",color:P.a2,rows:getRowsForColor("ORANGE"),drillKey:null,sessionKey:Date.now()});}},
-              {label:"Kuning",icon:"🟡",val:cs.KUNING||0,color:"#eab308",onClick:()=>{setCanvDetail({canvasser:{name:"Seluruh Canvasser",cluster:"Kuning",icon:"🟡"},drillLabel:"Status Kuning",color:"#eab308",rows:getRowsForColor("KUNING"),drillKey:null,sessionKey:Date.now()});}},
-              {label:"Hijau",icon:"🟢",val:cs.HIJAU||0,color:P.a1,onClick:()=>{setCanvDetail({canvasser:{name:"Seluruh Canvasser",cluster:"Hijau",icon:"🟢"},drillLabel:"Status Hijau",color:P.a1,rows:getRowsForColor("HIJAU"),drillKey:null,sessionKey:Date.now()});}},
-            ].filter(r=>r.val>0);
-            if(!rows.length) return null;
 
             // Deteksi canvasser yang beririsan di >1 warna (karena beda minggu/outlet bisa beda status)
+            // Hijau (A1) sengaja gak diikutin — ini khusus buat 3 warna A2 (Merah/Orange/Kuning)
             const colorCountMap={};
-            ["MERAH","ORANGE","KUNING","HIJAU"].forEach(cKey=>{
+            ["MERAH","ORANGE","KUNING"].forEach(cKey=>{
               (namesByColor[cKey]||[]).forEach(n=>{
                 if(!colorCountMap[n]) colorCountMap[n]={name:n,colors:[]};
                 colorCountMap[n].colors.push(cKey);
@@ -3703,27 +3734,44 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={},onRoLoad})
             const overlapNames=new Set(overlapList.map(c=>c.name));
             const totalUnique=Object.keys(colorCountMap).length;
 
+            // Canvasser yang MURNI cuma 1 warna (gak beririsan sama sekali) — ini yang jadi angka utama
+            const pureNamesByColor={MERAH:[],ORANGE:[],KUNING:[]};
+            Object.values(colorCountMap).forEach(c=>{
+              if(c.colors.length===1) pureNamesByColor[c.colors[0]].push(c.name);
+            });
+
+            const COLOR_META={MERAH:{label:"Merah",icon:"🔴",color:P.investigate},ORANGE:{label:"Orange",icon:"🟠",color:P.a2},KUNING:{label:"Kuning",icon:"🟡",color:"#eab308"}};
+            const rows=["MERAH","ORANGE","KUNING"].map(key=>{
+              const pureNames=pureNamesByColor[key]||[];
+              return {key,...COLOR_META[key],count:pureNames.length,onClick:()=>{
+                const nameSet=new Set(pureNames);
+                const rws=clusters.flatMap(c=>(c.rawRows||[]).filter(row=>row._colorStatus===key&&nameSet.has(String(row["Canvasser ID"]||row["Canvasser"]||"").trim())));
+                setCanvDetail({canvasser:{name:"Seluruh Canvasser",cluster:`Murni ${COLOR_META[key].label}`,icon:COLOR_META[key].icon},drillLabel:`Murni ${COLOR_META[key].label} (Tanpa Irisan)`,color:COLOR_META[key].color,rows:rws,drillKey:null,sessionKey:Date.now()});
+              }};
+            }).filter(r=>r.count>0);
+            if(!rows.length) return null;
+
             return(
               <div style={{...card(),height:"100%",boxSizing:"border-box",border:`1px solid ${P.investigate}44`}}>
-                <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:8}}>🚩 Status Kunjungan</div>
+                <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:8}}>🚩 Status Kunjungan (Based on A2)</div>
                 <ul style={{margin:"0 0 10px",paddingLeft:16,listStyle:"disc",fontSize:10.5,color:t.muted,lineHeight:1.45}}>
                   <li style={{display:"list-item"}}>Dihitung khusus dari Regular Visit — per canvasser+outlet+minggu, berdasarkan durasi kunjungan, kecocokan lokasi (Long/Lat), jarak (Range), serta kelengkapan AVA & Sell-In</li>
-                  <li style={{display:"list-item"}}>Angka di bawah = jumlah canvasser unik per warna (bukan jumlah aktivitas)</li>
+                  <li style={{display:"list-item"}}>Merah/Orange/Kuning = canvasser yang MURNI cuma 1 kategori itu (gak beririsan); yang beririsan masuk "Irisan" di bawah. Keempatnya (termasuk Irisan) = 100% dari {totalUnique.toLocaleString()} canvasser berstatus A2.</li>
                 </ul>
                 {rows.map((r,i)=>(
-                  <div key={i} onClick={r.onClick} style={{display:"flex",alignItems:"center",padding:"9px 0",borderBottom:i<rows.length-1?`1px solid ${t.border}`:"none",cursor:"pointer"}}>
+                  <div key={i} onClick={r.onClick} style={{display:"flex",alignItems:"center",padding:"9px 0",borderBottom:`1px solid ${t.border}`,cursor:"pointer"}}>
                     <div style={{flex:1,fontSize:12,fontWeight:600,color:t.text,display:"flex",alignItems:"center",gap:6,minWidth:0}}>
                       <span style={{flexShrink:0}}>{r.icon}</span><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.label}</span>
                     </div>
                     <div style={{textAlign:"right",flexShrink:0}}>
-                      <div style={{fontSize:20,fontWeight:800,color:r.color,lineHeight:1.1}}>{r.val.toLocaleString()}</div>
-                      <div style={{fontSize:9,color:t.muted}}>canvasser</div>
+                      <div style={{fontSize:20,fontWeight:800,color:r.color,lineHeight:1.1}}>{pctS(r.count,totalUnique||1)}</div>
+                      <div style={{fontSize:9,color:t.muted}}>{r.count.toLocaleString()} canvasser</div>
                     </div>
                   </div>
                 ))}
                 {overlapList.length>0&&(
                   <div onClick={()=>{
-                    const COLOR_ORDER=["MERAH","ORANGE","KUNING","HIJAU"];
+                    const COLOR_ORDER=["MERAH","ORANGE","KUNING"];
                     const comboMap={};
                     overlapList.forEach(c=>{
                       const key=COLOR_ORDER.filter(k=>c.colors.includes(k)).join("+");
@@ -3732,23 +3780,45 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={},onRoLoad})
                     });
                     const combos=Object.values(comboMap).sort((a,b)=>b.names.length-a.names.length);
                     setOverlapBreakdown({combos,totalUnique});
-                  }} style={{marginTop:10,padding:"9px 10px",borderRadius:8,background:P.accent+"14",border:`1px solid ${P.accent}40`,cursor:"pointer"}}>
-                    <div style={{fontSize:10,color:t.text,lineHeight:1.6}}>
-                      💡 Jumlah tiap kategori dapat melebihi total canvasser (<b>{(view.canvassers||[]).length.toLocaleString()}</b>) karena satu canvasser dapat termasuk dalam lebih dari satu kategori, tergantung minggu dan outlet yang dikunjungi. Terdapat <b style={{color:P.accent}}>{overlapList.length} canvasser</b> yang beririsan pada lebih dari satu kategori. Klik untuk melihat rinciannya.
+                  }} style={{display:"flex",alignItems:"center",padding:"9px 0",cursor:"pointer"}}>
+                    <div style={{flex:1,fontSize:12,fontWeight:600,color:t.text,display:"flex",alignItems:"center",gap:6,minWidth:0}}>
+                      <span style={{flexShrink:0}}>🔀</span><span>Irisan</span>
+                    </div>
+                    <div style={{textAlign:"right",flexShrink:0}}>
+                      <div style={{fontSize:20,fontWeight:800,color:P.accent,lineHeight:1.1}}>{pctS(overlapList.length,totalUnique||1)}</div>
+                      <div style={{fontSize:9,color:t.muted}}>{overlapList.length.toLocaleString()} canvasser</div>
                     </div>
                   </div>
                 )}
-                {(view.scheduleSummary?.evaluatedRowCount||0)>0&&(view.scheduleSummary?.nonCompliantRowCount||0)>0&&(
-                  <div onClick={()=>{
-                    const names=new Set(view.scheduleSummary.nonCompliantCanvasserNames||[]);
-                    const rws=clusters.flatMap(c=>(c.rawRows||[]).filter(r=>r._scheduleCompliant===false&&names.has(String(r["Canvasser ID"]||r["Canvasser"]||"").trim())));
-                    setCanvDetail({canvasser:{name:"Seluruh Canvasser",cluster:"Tidak Sesuai Jadwal RO",icon:"📅"},drillLabel:"Tidak Sesuai Jadwal RO",color:"#eab308",rows:rws,drillKey:null,sessionKey:Date.now()});
-                  }} style={{marginTop:8,padding:"9px 10px",borderRadius:8,background:"#eab30814",border:"1px solid #eab30840",cursor:"pointer"}}>
-                    <div style={{fontSize:10,color:t.text,lineHeight:1.6}}>
-                      📅 <b style={{color:"#eab308"}}>{(view.scheduleSummary.nonCompliantCanvasserCount||0).toLocaleString()} canvasser</b> di <b style={{color:"#eab308"}}>{(view.scheduleSummary.nonCompliantOutletCount||0).toLocaleString()} outlet</b> tercatat tidak sesuai jadwal RO (hari kunjungan atau jumlah kunjungan per minggu tidak cocok dengan jadwal Visit Group). Klik untuk melihat daftarnya.
+
+                <div style={{marginTop:6,paddingTop:10,borderTop:`1px solid ${t.border}`}}>
+                  {(view.scheduleSummary?.overCanvasserCount||0)>0&&(
+                    <div onClick={()=>{
+                      const names=new Set(view.scheduleSummary.overCanvasserNames||[]);
+                      const rws=clusters.flatMap(c=>(c.rawRows||[]).filter(r=>r._scheduleCompliant===false&&names.has(String(r["Canvasser ID"]||r["Canvasser"]||"").trim())));
+                      setCanvDetail({canvasser:{name:"Seluruh Canvasser",cluster:"Kunjungan Lebih",icon:"📅"},drillLabel:"Kunjungan Lebih dari Jadwal RO",color:"#eab308",rows:rws,drillKey:null,sessionKey:Date.now()});
+                    }} style={{display:"flex",alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${t.border}`,cursor:"pointer"}}>
+                      <div style={{flex:1,fontSize:12,fontWeight:600,color:t.text}}>Kunjungan Lebih</div>
+                      <div style={{textAlign:"right",flexShrink:0}}>
+                        <div style={{fontSize:14,fontWeight:800,color:"#eab308"}}>{(view.scheduleSummary.overCanvasserCount||0).toLocaleString()} <span style={{fontSize:11,fontWeight:600}}>canvasser</span></div>
+                        <div style={{fontSize:9,color:t.muted}}>{(view.scheduleSummary.overOutletCount||0).toLocaleString()} outlet</div>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                  {(view.scheduleSummary?.underCanvasserCount||0)>0&&(
+                    <div onClick={()=>{
+                      const names=new Set(view.scheduleSummary.underCanvasserNames||[]);
+                      const rws=clusters.flatMap(c=>(c.rawRows||[]).filter(r=>r._scheduleFreqStatus==="under"&&names.has(String(r["Canvasser ID"]||r["Canvasser"]||"").trim())));
+                      setCanvDetail({canvasser:{name:"Seluruh Canvasser",cluster:"Kunjungan Kurang",icon:"📅"},drillLabel:"Kunjungan Kurang dari Jadwal RO",color:"#60a5fa",rows:rws,drillKey:null,sessionKey:Date.now()});
+                    }} style={{display:"flex",alignItems:"center",padding:"8px 0",cursor:"pointer"}}>
+                      <div style={{flex:1,fontSize:12,fontWeight:600,color:t.text}}>Kunjungan Kurang</div>
+                      <div style={{textAlign:"right",flexShrink:0}}>
+                        <div style={{fontSize:14,fontWeight:800,color:"#60a5fa"}}>{(view.scheduleSummary.underCanvasserCount||0).toLocaleString()} <span style={{fontSize:11,fontWeight:600}}>canvasser</span></div>
+                        <div style={{fontSize:9,color:t.muted}}>{(view.scheduleSummary.underOutletCount||0).toLocaleString()} outlet</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             );
           })()}
@@ -3760,7 +3830,6 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={},onRoLoad})
               ["MERAH","Outlet Berstatus Merah","🔴",P.investigate],
               ["ORANGE","Outlet Berstatus Orange","🟠",P.a2],
               ["KUNING","Outlet Berstatus Kuning","🟡","#eab308"],
-              ["HIJAU","Outlet Berstatus Hijau","🟢",P.a1],
             ];
             const rows=COLOR_DEF.map(([key,label,icon,color])=>{
               const cnt=allFlaggedOutlets.filter(o=>o[key]>0).length;
@@ -3791,11 +3860,11 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={},onRoLoad})
             const typeBreakdown={};
             allFlaggedOutlets.forEach(o=>{
               const ty=o.outletType||"Unknown";
-              if(!typeBreakdown[ty]) typeBreakdown[ty]={MERAH:0,ORANGE:0,KUNING:0,HIJAU:0};
-              ["MERAH","ORANGE","KUNING","HIJAU"].forEach(k=>{ if(o[k]>0) typeBreakdown[ty][k]++; });
+              if(!typeBreakdown[ty]) typeBreakdown[ty]={MERAH:0,ORANGE:0,KUNING:0};
+              ["MERAH","ORANGE","KUNING"].forEach(k=>{ if(o[k]>0) typeBreakdown[ty][k]++; });
             });
             const typeBreakdownSorted=Object.entries(typeBreakdown).sort((a,b)=>{
-              const sa=a[1].MERAH+a[1].ORANGE+a[1].KUNING+a[1].HIJAU, sb=b[1].MERAH+b[1].ORANGE+b[1].KUNING+b[1].HIJAU;
+              const sa=a[1].MERAH+a[1].ORANGE+a[1].KUNING, sb=b[1].MERAH+b[1].ORANGE+b[1].KUNING;
               return sb-sa;
             });
             const fmtID=(n)=>n?n.toLocaleString("id-ID"):"–";
@@ -3809,8 +3878,8 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={},onRoLoad})
                       <span style={{flexShrink:0}}>{r.icon}</span><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.label}</span>
                     </div>
                     <div style={{textAlign:"right",flexShrink:0}}>
-                      <div style={{fontSize:20,fontWeight:800,color:r.color,lineHeight:1.1}}>{r.val.toLocaleString()}</div>
-                      <div style={{fontSize:9,color:t.muted}}>outlet · {pctS(r.val,totalOutletCount)}</div>
+                      <div style={{fontSize:20,fontWeight:800,color:r.color,lineHeight:1.1}}>{pctS(r.val,totalOutletCount)}</div>
+                      <div style={{fontSize:9,color:t.muted}}>{r.val.toLocaleString()} outlet</div>
                     </div>
                   </div>
                 ))}
