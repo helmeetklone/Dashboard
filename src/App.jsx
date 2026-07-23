@@ -3760,7 +3760,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={},onRoLoad})
                 <div style={{fontSize:10,color:t.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:8}}>🚩 Status Kunjungan (Based on A2)</div>
                 <ul style={{margin:"0 0 10px",paddingLeft:16,listStyle:"disc",fontSize:10.5,color:t.muted,lineHeight:1.45}}>
                   <li style={{display:"list-item"}}>Dihitung khusus dari Regular Visit — per canvasser+outlet+minggu, berdasarkan durasi kunjungan, kecocokan lokasi (Long/Lat), jarak (Range), serta kelengkapan AVA & Sell-In</li>
-                  <li style={{display:"list-item"}}>Merah/Orange/Kuning = canvasser yang MURNI cuma 1 kategori itu (gak beririsan); yang beririsan masuk "Irisan" di bawah. Keempatnya (termasuk Irisan) = 100% dari {totalUnique.toLocaleString()} canvasser berstatus A2.</li>
+                  <li style={{display:"list-item"}}>Merah/Orange/Kuning = canvasser yang murni hanya termasuk dalam 1 kategori tersebut (tidak beririsan); yang beririsan masuk kategori "Irisan" di bawah. Keempatnya (termasuk Irisan) = 100% dari {totalUnique.toLocaleString()} canvasser berstatus A2.</li>
                 </ul>
                 {rows.map((r,i)=>(
                   <div key={i} onClick={r.onClick} style={{display:"flex",alignItems:"center",padding:"9px 0",borderBottom:`1px solid ${t.border}`,cursor:"pointer"}}>
@@ -3804,7 +3804,7 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={},onRoLoad})
                       <div style={{flex:1,fontSize:12,fontWeight:600,color:t.text}}>❓ Tanpa A2</div>
                       <div style={{textAlign:"right",flexShrink:0}}>
                         <div style={{fontSize:14,fontWeight:800,color:t.muted}}>{noA2Names.length.toLocaleString()} <span style={{fontSize:11,fontWeight:600}}>canvasser</span></div>
-                        <div style={{fontSize:9,color:t.muted}}>gak pernah A2 di Regular Visit — klik lihat detail</div>
+                        <div style={{fontSize:9,color:t.muted}}>Tidak pernah berstatus A2 pada Regular Visit — klik untuk melihat detail</div>
                       </div>
                     </div>
                   )}
