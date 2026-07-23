@@ -20,10 +20,10 @@
     color:var(--text); font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
     padding:32px 20px 60px;
   }
-  .wrap{max-width:860px;margin:0 auto;}
+  .wrap{max-width:900px;margin:0 auto;}
   .kicker{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent2);margin-bottom:8px;}
   h1{font-size:26px;margin:0 0 6px;font-weight:800;}
-  .sub{color:var(--muted);font-size:14px;margin-bottom:14px;line-height:1.6;max-width:680px;}
+  .sub{color:var(--muted);font-size:14px;margin-bottom:14px;line-height:1.6;max-width:700px;}
   .targetbox{background:var(--cardAlt);border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:24px;font-size:12.5px;color:var(--muted);line-height:1.7;}
   .targetbox b{color:var(--text);}
   .card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:22px;margin-bottom:18px;}
@@ -38,18 +38,24 @@
   .drop-sub{font-size:12px;color:var(--muted);}
   .filelist{margin-top:16px;}
   .fileitem{
-    display:flex;align-items:center;gap:10px;background:var(--cardAlt);border:1px solid var(--border);
-    border-radius:10px;padding:10px 14px;margin-bottom:8px;font-size:13px;
+    background:var(--cardAlt);border:1px solid var(--border);
+    border-radius:10px;padding:12px 14px;margin-bottom:10px;font-size:13px;
   }
-  .fileitem .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:2px;align-self:flex-start;}
+  .fileitem.needsattn{border-color:var(--orange);}
+  .fileitem-top{display:flex;align-items:flex-start;gap:10px;}
+  .fileitem .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:6px;}
   .fileitem .dot.ok{background:var(--green);}
   .fileitem .dot.err{background:var(--red);}
+  .fileitem .dot.warn{background:var(--orange);}
   .fileitem .body{flex:1;min-width:0;}
   .fileitem .name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .fileitem .meta{color:var(--muted);font-size:11px;margin-top:2px;}
-  .fileitem .cols{color:var(--accent2);font-size:10.5px;margin-top:3px;}
   .fileitem .rm{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:2px 6px;flex-shrink:0;}
   .fileitem .rm:hover{color:var(--red);}
+  .maplink{background:none;border:none;color:var(--accent2);cursor:pointer;font-size:11px;font-weight:700;padding:0;margin-top:4px;}
+  .mapbox{margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;}
+  .mapfield label{display:block;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:4px;}
+  .mapfield select{width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:12px;}
   .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin:18px 0;}
   .stat{background:var(--cardAlt);border:1px solid var(--border);border-radius:12px;padding:14px;}
   .stat .num{font-size:22px;font-weight:800;color:var(--accent2);}
@@ -77,7 +83,7 @@
 <div class="wrap">
   <div class="kicker">XLSMART · Data Utility</div>
   <h1>🗂 Normalisasi &amp; Gabung Jadwal RO</h1>
-  <div class="sub">Upload file jadwal RO mentah (format bebas, boleh beda-beda per file — kolom, nama sheet, urutan, semua otomatis dideteksi). Tools ini akan menormalkan semuanya jadi satu format bersih, lalu digabung jadi satu file siap upload ke dashboard.</div>
+  <div class="sub">Upload file jadwal RO mentah (format bebas, boleh beda-beda per file). Kolom dideteksi otomatis — kalau tebakannya salah atau ada format baru yang belum dikenali, tiap file bisa dibenerin manual lewat "Sesuaikan Kolom".</div>
   <div class="targetbox">
     📐 Format keluaran (4 kolom tetap):&nbsp; <b>RO ID</b> · <b>Nama RO</b> · <b>Visit Schedule</b> (angka 2 atau 3) · <b>Lat Long RO</b> (gabungan "lat, long")
   </div>
@@ -118,8 +124,18 @@ const previewEl = document.getElementById('preview');
 
 const OUT_HEADERS = ['RO ID', 'Nama RO', 'Visit Schedule', 'Lat Long RO'];
 const DAY_NAME_MAP = [['senin',1],['selasa',2],['rabu',3],['kamis',4],['jumat',5],['sabtu',6],['minggu',0]];
+const MAP_FIELDS = [
+  ['outletId', 'RO ID *wajib*'],
+  ['name', 'Nama RO'],
+  ['visitFreq', 'Kolom Angka Freq (2/3)'],
+  ['visitGroup', 'Kolom Nama Hari / Jadwal'],
+  ['lat', 'Latitude'],
+  ['lon', 'Longitude'],
+  ['latLong', 'Kolom Gabungan Lat,Long'],
+];
 
-let entries = []; // {file, rows (normalized), rawRowCount, error, sheetUsed, colsFound}
+// entry: {file, rawHeaders, rawRows, autoCol, manualCol, mapOpen, rows(normalized), error, sheetUsed}
+let entries = [];
 
 dropEl.addEventListener('click', () => fileInput.click());
 dropEl.addEventListener('dragover', e => { e.preventDefault(); dropEl.classList.add('drag'); });
@@ -167,8 +183,53 @@ function pickAssignmentSheet(wb) {
   return best || wb.SheetNames[0];
 }
 
+function autoDetectCols(headers) {
+  return {
+    outletId: findCol(headers, ['outletid', 'roid']),
+    name: findCol(headers, ['outletname', 'namaro']),
+    lat: findCol(headers, ['latitudefix', 'latitude', 'lat']),
+    lon: findCol(headers, ['longitudefix', 'longitude', 'long', 'lng']),
+    latLong: findCol(headers, ['latlongro', 'latlong', 'koordinat']),
+    visitFreq: findCol(headers, ['visitfreq', 'visitfrequency']),
+    visitGroup: findCol(headers, ['visitgroup', 'visitschedule']),
+  };
+}
+
+function normalizeRows(rawRows, col) {
+  const rows = [];
+  let skipped = 0;
+  rawRows.forEach(r => {
+    const id = col.outletId ? String(r[col.outletId] ?? '').trim() : '';
+    if (!id) { skipped++; return; }
+
+    const vgText = col.visitGroup ? r[col.visitGroup] : null;
+    const days = parseDayNamesFromText(vgText);
+    const freqFromVisitGroup = vgText != null ? parseInt(String(vgText).trim()) : NaN;
+    const freqFromCol = col.visitFreq ? parseInt(r[col.visitFreq]) : NaN;
+    const visitFreq = (!isNaN(freqFromCol) && freqFromCol > 0) ? freqFromCol
+      : (days.length > 0 ? days.length
+      : ((!isNaN(freqFromVisitGroup) && freqFromVisitGroup > 0) ? freqFromVisitGroup : null));
+
+    let lat = col.lat ? parseFloat(r[col.lat]) : NaN;
+    let lon = col.lon ? parseFloat(r[col.lon]) : NaN;
+    if ((isNaN(lat) || isNaN(lon)) && col.latLong && r[col.latLong]) {
+      const parts = String(r[col.latLong]).split(/[,/;|]|\s{2,}/).map(s => parseFloat(s.trim())).filter(n => !isNaN(n));
+      if (parts.length >= 2) { if (isNaN(lat)) lat = parts[0]; if (isNaN(lon)) lon = parts[1]; }
+    }
+    const latLongStr = (!isNaN(lat) && !isNaN(lon)) ? `${lat}, ${lon}` : '';
+
+    rows.push({
+      'RO ID': id,
+      'Nama RO': col.name ? String(r[col.name] ?? '').trim() : '',
+      'Visit Schedule': visitFreq ?? '',
+      'Lat Long RO': latLongStr,
+    });
+  });
+  return { rows, skipped };
+}
+
 async function readEntry(file) {
-  const entry = { file, rows: [], rawRowCount: 0, skippedCount: 0, error: null, sheetUsed: null, colsFound: null };
+  const entry = { file, rawHeaders: [], rawRows: [], autoCol: {}, manualCol: {}, mapOpen: false, rows: [], skipped: 0, error: null, sheetUsed: null };
   try {
     const buf = await file.arrayBuffer();
     const wb = XLSX.read(buf, { type: 'array' });
@@ -177,54 +238,34 @@ async function readEntry(file) {
     const ws = wb.Sheets[sheetName];
     const rawRows = XLSX.utils.sheet_to_json(ws, { defval: null });
     if (!rawRows.length) throw new Error(`Sheet "${sheetName}" kosong`);
-    entry.rawRowCount = rawRows.length;
-
-    const headers = Object.keys(rawRows[0]);
-    const col = {
-      outletId: findCol(headers, ['outletid', 'roid']),
-      name: findCol(headers, ['outletname', 'namaro']),
-      lat: findCol(headers, ['latitudefix', 'latitude', 'lat']),
-      lon: findCol(headers, ['longitudefix', 'longitude', 'long', 'lng']),
-      latLong: findCol(headers, ['latlongro', 'latlong', 'koordinat']),
-      visitFreq: findCol(headers, ['visitfreq', 'visitfrequency']),
-      visitGroup: findCol(headers, ['visitgroup', 'visitschedule']),
-    };
-    entry.colsFound = col;
-    if (!col.outletId) throw new Error('Kolom Outlet ID / RO ID tidak ditemukan di sheet ini');
-
-    const normalized = [];
-    rawRows.forEach(r => {
-      const id = String(r[col.outletId] ?? '').trim();
-      if (!id) { entry.skippedCount++; return; }
-
-      const vgText = col.visitGroup ? r[col.visitGroup] : null;
-      const days = parseDayNamesFromText(vgText);
-      const freqFromVisitGroup = vgText != null ? parseInt(String(vgText).trim()) : NaN;
-      const freqFromCol = col.visitFreq ? parseInt(r[col.visitFreq]) : NaN;
-      const visitFreq = (!isNaN(freqFromCol) && freqFromCol > 0) ? freqFromCol
-        : (days.length > 0 ? days.length
-        : ((!isNaN(freqFromVisitGroup) && freqFromVisitGroup > 0) ? freqFromVisitGroup : null));
-
-      let lat = col.lat ? parseFloat(r[col.lat]) : NaN;
-      let lon = col.lon ? parseFloat(r[col.lon]) : NaN;
-      if ((isNaN(lat) || isNaN(lon)) && col.latLong && r[col.latLong]) {
-        const parts = String(r[col.latLong]).split(/[,/;|]|\s{2,}/).map(s => parseFloat(s.trim())).filter(n => !isNaN(n));
-        if (parts.length >= 2) { if (isNaN(lat)) lat = parts[0]; if (isNaN(lon)) lon = parts[1]; }
-      }
-      const latLongStr = (!isNaN(lat) && !isNaN(lon)) ? `${lat}, ${lon}` : '';
-
-      normalized.push({
-        'RO ID': id,
-        'Nama RO': col.name ? String(r[col.name] ?? '').trim() : '',
-        'Visit Schedule': visitFreq ?? '',
-        'Lat Long RO': latLongStr,
-      });
-    });
-    entry.rows = normalized;
+    entry.rawRows = rawRows;
+    entry.rawHeaders = Object.keys(rawRows[0]);
+    entry.autoCol = autoDetectCols(entry.rawHeaders);
+    const effectiveCol = { ...entry.autoCol, ...entry.manualCol };
+    if (!effectiveCol.outletId) {
+      entry.mapOpen = true; // paksa buka panel mapping kalau RO ID gagal kedeteksi
+    }
+    const { rows, skipped } = normalizeRows(rawRows, effectiveCol);
+    entry.rows = rows;
+    entry.skipped = skipped;
+    if (!rows.length && effectiveCol.outletId) throw new Error('Tidak ada baris dengan RO ID terisi');
   } catch (err) {
     entry.error = err.message || 'Gagal dibaca';
   }
   return entry;
+}
+
+function reprocessEntry(entry) {
+  const effectiveCol = { ...entry.autoCol, ...entry.manualCol };
+  if (!effectiveCol.outletId) {
+    entry.rows = [];
+    entry.error = null; // biarkan user isi manual, jangan error dulu
+    return;
+  }
+  const { rows, skipped } = normalizeRows(entry.rawRows, effectiveCol);
+  entry.rows = rows;
+  entry.skipped = skipped;
+  entry.error = null;
 }
 
 async function handleFiles(fileList) {
@@ -242,38 +283,78 @@ function removeEntry(idx) {
   render();
 }
 
+function toggleMap(idx) {
+  entries[idx].mapOpen = !entries[idx].mapOpen;
+  render();
+}
+
+function updateMapping(idx, field, value) {
+  const entry = entries[idx];
+  entry.manualCol[field] = value === '' ? undefined : value;
+  reprocessEntry(entry);
+  render();
+}
+
 function render() {
   fileListEl.innerHTML = '';
   entries.forEach((e, idx) => {
+    const effectiveCol = { ...e.autoCol, ...e.manualCol };
+    const needsAttn = !e.error && !effectiveCol.outletId;
     const div = document.createElement('div');
-    div.className = 'fileitem';
-    const colsLine = e.colsFound
-      ? `RO ID←"${e.colsFound.outletId}" · Nama←"${e.colsFound.name||'–'}" · Freq←"${e.colsFound.visitFreq||e.colsFound.visitGroup||'–'}" · Lat/Long←"${e.colsFound.latLong||((e.colsFound.lat||'–')+'/'+(e.colsFound.lon||'–'))}"`
-      : '';
-    div.innerHTML = `
-      <span class="dot ${e.error ? 'err' : 'ok'}"></span>
+    div.className = 'fileitem' + (needsAttn ? ' needsattn' : '');
+
+    let metaLine;
+    if (e.error) metaLine = e.error;
+    else if (needsAttn) metaLine = `⚠️ Kolom RO ID belum terdeteksi — sesuaikan manual di bawah`;
+    else metaLine = `${e.rows.length.toLocaleString('id-ID')} outlet · sheet "${e.sheetUsed}"${e.skipped ? ' · ' + e.skipped + ' baris dilewati' : ''}`;
+
+    const top = document.createElement('div');
+    top.className = 'fileitem-top';
+    top.innerHTML = `
+      <span class="dot ${e.error ? 'err' : (needsAttn ? 'warn' : 'ok')}"></span>
       <div class="body">
         <div class="name">${e.file.name}</div>
-        <div class="meta">${e.error ? e.error : `${e.rows.length.toLocaleString('id-ID')} outlet · sheet "${e.sheetUsed}"${e.skippedCount ? ' · ' + e.skippedCount + ' baris dilewati (RO ID kosong)' : ''}`}</div>
-        ${colsLine ? `<div class="cols">${colsLine}</div>` : ''}
+        <div class="meta">${metaLine}</div>
+        ${!e.error ? `<button class="maplink" data-idx="${idx}">${e.mapOpen ? '▲ Tutup' : '🔧'} Sesuaikan Kolom</button>` : ''}
       </div>
       <button class="rm" data-idx="${idx}">✕</button>
     `;
+    div.appendChild(top);
+
+    if (e.mapOpen && !e.error) {
+      const mapbox = document.createElement('div');
+      mapbox.className = 'mapbox';
+      MAP_FIELDS.forEach(([field, label]) => {
+        const wrap = document.createElement('div');
+        wrap.className = 'mapfield';
+        const current = e.manualCol[field] !== undefined ? e.manualCol[field] : (e.autoCol[field] || '');
+        const options = ['<option value="">— tidak ada —</option>']
+          .concat(e.rawHeaders.map(h => `<option value="${h}" ${h === current ? 'selected' : ''}>${h}</option>`));
+        wrap.innerHTML = `<label>${label}</label><select data-idx="${idx}" data-field="${field}">${options.join('')}</select>`;
+        mapbox.appendChild(wrap);
+      });
+      div.appendChild(mapbox);
+    }
+
     fileListEl.appendChild(div);
   });
-  fileListEl.querySelectorAll('.rm').forEach(btn => {
-    btn.addEventListener('click', () => removeEntry(parseInt(btn.dataset.idx)));
-  });
 
-  const validEntries = entries.filter(e => !e.error);
+  fileListEl.querySelectorAll('.rm').forEach(btn => btn.addEventListener('click', () => removeEntry(parseInt(btn.dataset.idx))));
+  fileListEl.querySelectorAll('.maplink').forEach(btn => btn.addEventListener('click', () => toggleMap(parseInt(btn.dataset.idx))));
+  fileListEl.querySelectorAll('.mapfield select').forEach(sel => sel.addEventListener('change', () => updateMapping(parseInt(sel.dataset.idx), sel.dataset.field, sel.value)));
+
+  const validEntries = entries.filter(e => !e.error && e.rows.length > 0);
   const totalRows = validEntries.reduce((s, e) => s + e.rows.length, 0);
 
   warnBox.innerHTML = '';
+  const pendingCount = entries.filter(e => !e.error && !(e.autoCol.outletId || e.manualCol.outletId)).length;
+  if (pendingCount > 0) {
+    warnBox.innerHTML += `<div class="warn">⚠️ Ada ${pendingCount} file yang RO ID-nya belum terdeteksi — buka "Sesuaikan Kolom" pada file tersebut dan pilih kolom yang benar secara manual.</div>`;
+  }
   const noFreqCount = validEntries.reduce((s, e) => s + e.rows.filter(r => r['Visit Schedule'] === '').length, 0);
   if (noFreqCount > 0) {
-    warnBox.innerHTML += `<div class="warn">⚠️ Ada ${noFreqCount.toLocaleString('id-ID')} outlet yang jadwal visitnya tidak terdeteksi (kosong di kolom "Visit Schedule" hasil normalisasi) — cek preview di bawah, kemungkinan nama kolom sumber tidak dikenali.</div>`;
+    warnBox.innerHTML += `<div class="warn">⚠️ Ada ${noFreqCount.toLocaleString('id-ID')} outlet yang jadwal visitnya tidak terdeteksi (kolom "Visit Schedule" kosong) — cek preview, atau sesuaikan kolom "Kolom Angka Freq" / "Kolom Nama Hari" manual.</div>`;
   }
-
   if (validEntries.length > 1) {
     const idCounts = {};
     validEntries.forEach(e => e.rows.forEach(r => {
@@ -283,7 +364,7 @@ function render() {
     }));
     const dupCount = Object.values(idCounts).filter(c => c > 1).length;
     if (dupCount > 0) {
-      warnBox.innerHTML += `<div class="warn">⚠️ Ada ${dupCount.toLocaleString('id-ID')} RO ID yang muncul di lebih dari satu file (kemungkinan outlet yang sama tercatat dobel). Semua baris tetap digabung apa adanya — silakan cek ulang kalau perlu dedup manual.</div>`;
+      warnBox.innerHTML += `<div class="warn">⚠️ Ada ${dupCount.toLocaleString('id-ID')} RO ID yang muncul di lebih dari satu file. Semua baris tetap digabung apa adanya — cek ulang kalau perlu dedup manual.</div>`;
     }
   }
 
@@ -322,7 +403,7 @@ function render() {
 }
 
 mergeBtn.addEventListener('click', () => {
-  const validEntries = entries.filter(e => !e.error);
+  const validEntries = entries.filter(e => !e.error && e.rows.length > 0);
   if (!validEntries.length) return;
 
   const merged = [];
