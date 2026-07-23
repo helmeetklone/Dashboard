@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RO Visit Group — Merge Tool</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --bg:#0B1120; --card:#141B2E; --cardAlt:#1B2438; --border:#263049;
+    --text:#F1F5F9; --muted:#94A3B8; --accent:#6366F1; --accent2:#22D3EE;
+    --green:#10B981; --red:#EF4444; --orange:#F59E0B;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; min-height:100vh; background:
+      radial-gradient(circle at 15% 0%, rgba(99,102,241,0.12), transparent 40%),
+      radial-gradient(circle at 100% 100%, rgba(34,211,238,0.08), transparent 45%),
+      var(--bg);
+    color:var(--text); font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+    padding:32px 20px 60px;
+  }
+  .wrap{max-width:820px;margin:0 auto;}
+  .kicker{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent2);margin-bottom:8px;}
+  h1{font-size:26px;margin:0 0 6px;font-weight:800;}
+  .sub{color:var(--muted);font-size:14px;margin-bottom:28px;line-height:1.6;max-width:640px;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:22px;margin-bottom:18px;}
+  .drop{
+    border:2px dashed var(--border); border-radius:14px; padding:36px 20px; text-align:center;
+    cursor:pointer; transition:all .15s; background:var(--cardAlt);
+  }
+  .drop.drag{border-color:var(--accent); background:rgba(99,102,241,0.08);}
+  .drop input{display:none;}
+  .drop-icon{font-size:34px;margin-bottom:8px;}
+  .drop-title{font-weight:700;font-size:14px;margin-bottom:4px;}
+  .drop-sub{font-size:12px;color:var(--muted);}
+  .filelist{margin-top:16px;}
+  .fileitem{
+    display:flex;align-items:center;gap:10px;background:var(--cardAlt);border:1px solid var(--border);
+    border-radius:10px;padding:10px 14px;margin-bottom:8px;font-size:13px;
+  }
+  .fileitem .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+  .fileitem .dot.ok{background:var(--green);}
+  .fileitem .dot.err{background:var(--red);}
+  .fileitem .name{flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .fileitem .meta{color:var(--muted);font-size:11px;flex-shrink:0;}
+  .fileitem .rm{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:2px 6px;flex-shrink:0;}
+  .fileitem .rm:hover{color:var(--red);}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin:18px 0;}
+  .stat{background:var(--cardAlt);border:1px solid var(--border);border-radius:12px;padding:14px;}
+  .stat .num{font-size:22px;font-weight:800;color:var(--accent2);}
+  .stat .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-top:2px;}
+  .warn{background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.35);color:#fbbf24;border-radius:10px;padding:10px 14px;font-size:12px;margin-top:12px;line-height:1.5;}
+  .actions{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap;}
+  button.primary{
+    background:linear-gradient(135deg,#4f46e5,#6366f1); color:#fff; border:none; border-radius:10px;
+    padding:12px 22px; font-weight:700; font-size:14px; cursor:pointer; display:flex; align-items:center; gap:8px;
+  }
+  button.primary:disabled{opacity:.4;cursor:not-allowed;}
+  button.secondary{
+    background:var(--cardAlt); color:var(--muted); border:1px solid var(--border); border-radius:10px;
+    padding:12px 18px; font-weight:700; font-size:13px; cursor:pointer;
+  }
+  .preview{margin-top:18px; max-height:280px; overflow:auto; border:1px solid var(--border); border-radius:10px;}
+  table{width:100%; border-collapse:collapse; font-size:11.5px;}
+  th{background:var(--cardAlt); color:var(--muted); text-align:left; padding:8px 10px; position:sticky; top:0; font-weight:700; white-space:nowrap;}
+  td{padding:7px 10px; border-top:1px solid var(--border); white-space:nowrap; color:var(--text);}
+  tr:nth-child(even) td{background:rgba(255,255,255,0.015);}
+  .foot{color:var(--muted); font-size:11px; margin-top:20px; text-align:center;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="kicker">XLSMART · Data Utility</div>
+  <h1>🗂 Gabung File Jadwal RO (per Micro Cluster)</h1>
+  <div class="sub">Upload semua file Visit Group per micro-cluster sekaligus (boleh drag &amp; drop banyak file). Tools ini otomatis menggabungkan semuanya jadi satu file Excel, siap diupload ke dashboard lewat "Ganti Berkas".</div>
+
+  <div class="card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+      <label style="font-size:13px;font-weight:700;color:var(--text);">📄 Mode baca sheet</label>
+      <select id="sheetMode" style="background:var(--cardAlt);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 10px;font-size:13px;font-weight:700;">
+        <option value="auto">Otomatis (cari sheet "Assignment")</option>
+        <option value="manual">Manual — pakai nomor sheet</option>
+      </select>
+      <input type="number" id="sheetIndex" value="3" min="1" style="width:60px;background:var(--cardAlt);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 10px;font-size:13px;font-weight:700;text-align:center;display:none;" />
+      <span style="font-size:12px;color:var(--muted);">Mode otomatis mencari sheet yang namanya mengandung "Assignment" (fallback ke sheet dengan kolom Outlet ID terbanyak)</span>
+    </div>
+    <div class="drop" id="drop">
+      <input type="file" id="fileInput" multiple accept=".xlsx,.xls" />
+      <div class="drop-icon">📥</div>
+      <div class="drop-title">Klik atau drag file .xlsx / .xls ke sini</div>
+      <div class="drop-sub">Bisa pilih banyak file sekaligus — satu per micro cluster</div>
+    </div>
+
+    <div class="filelist" id="fileList"></div>
+    <div id="warnBox"></div>
+
+    <div class="stats" id="stats" style="display:none;"></div>
+
+    <div class="actions">
+      <button class="primary" id="mergeBtn" disabled>⬇ Gabung &amp; Download Excel</button>
+      <button class="secondary" id="clearBtn">Hapus Semua</button>
+    </div>
+
+    <div class="preview" id="preview" style="display:none;"></div>
+  </div>
+
+  <div class="foot">Diproses langsung di browser kamu — file tidak diupload ke server manapun.</div>
+</div>
+
+<script>
+const dropEl = document.getElementById('drop');
+const fileInput = document.getElementById('fileInput');
+const fileListEl = document.getElementById('fileList');
+const statsEl = document.getElementById('stats');
+const warnBox = document.getElementById('warnBox');
+const mergeBtn = document.getElementById('mergeBtn');
+const clearBtn = document.getElementById('clearBtn');
+const previewEl = document.getElementById('preview');
+
+let entries = []; // {file, rows, headers, error}
+
+dropEl.addEventListener('click', () => fileInput.click());
+dropEl.addEventListener('dragover', e => { e.preventDefault(); dropEl.classList.add('drag'); });
+dropEl.addEventListener('dragleave', () => dropEl.classList.remove('drag'));
+dropEl.addEventListener('drop', e => {
+  e.preventDefault(); dropEl.classList.remove('drag');
+  handleFiles(e.dataTransfer.files);
+});
+fileInput.addEventListener('change', e => { handleFiles(e.target.files); fileInput.value=''; });
+clearBtn.addEventListener('click', () => { entries = []; render(); });
+
+const sheetModeSelect = document.getElementById('sheetMode');
+const sheetIndexInput = document.getElementById('sheetIndex');
+sheetModeSelect.addEventListener('change', () => {
+  sheetIndexInput.style.display = sheetModeSelect.value === 'manual' ? 'inline-block' : 'none';
+  reparseAll();
+});
+sheetIndexInput.addEventListener('change', () => reparseAll());
+
+function normHeader(h) { return String(h ?? '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+
+function pickAssignmentSheet(wb) {
+  const byName = wb.SheetNames.find(sn => /assignment/i.test(sn));
+  if (byName) return byName;
+  let best = null, bestRows = 0;
+  wb.SheetNames.forEach(sn => {
+    const ws = wb.Sheets[sn];
+    if (!ws || !ws['!ref']) return;
+    const rows = XLSX.utils.sheet_to_json(ws, { defval: null });
+    if (!rows.length) return;
+    const headers = Object.keys(rows[0]);
+    const hasOutletId = headers.some(h => normHeader(h).includes('outletid'));
+    if (hasOutletId && rows.length > bestRows) { best = sn; bestRows = rows.length; }
+  });
+  return best || wb.SheetNames[0];
+}
+
+async function reparseAll() {
+  const files = entries.map(e => e.file);
+  entries = [];
+  render();
+  await handleFiles(files, true);
+}
+
+async function readEntry(file) {
+  const mode = sheetModeSelect.value;
+  const entry = { file, rows: [], headers: [], error: null, sheetUsed: null };
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    let sheetName;
+    if (mode === 'manual') {
+      const sheetNum = Math.max(1, parseInt(sheetIndexInput.value) || 1);
+      if (sheetNum > wb.SheetNames.length) throw new Error(`File cuma punya ${wb.SheetNames.length} sheet (diminta sheet ke-${sheetNum})`);
+      sheetName = wb.SheetNames[sheetNum - 1];
+    } else {
+      sheetName = pickAssignmentSheet(wb);
+    }
+    entry.sheetUsed = sheetName;
+    const ws = wb.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(ws, { defval: null });
+    if (!rows.length) throw new Error(`Sheet "${sheetName}" kosong`);
+    entry.rows = rows;
+    entry.headers = Object.keys(rows[0]);
+  } catch (err) {
+    entry.error = err.message || 'Gagal dibaca';
+  }
+  return entry;
+}
+
+async function handleFiles(fileList, skipDedup) {
+  const files = Array.from(fileList).filter(f => /\.(xlsx|xls)$/i.test(f.name));
+  for (const file of files) {
+    if (!skipDedup && entries.some(e => e.file.name === file.name && e.file.size === file.size)) continue;
+    const entry = await readEntry(file);
+    entries.push(entry);
+  }
+  render();
+}
+
+function removeEntry(idx) {
+  entries.splice(idx, 1);
+  render();
+}
+
+function render() {
+  fileListEl.innerHTML = '';
+  entries.forEach((e, idx) => {
+    const div = document.createElement('div');
+    div.className = 'fileitem';
+    div.innerHTML = `
+      <span class="dot ${e.error ? 'err' : 'ok'}"></span>
+      <span class="name">${e.file.name}</span>
+      <span class="meta">${e.error ? e.error : e.rows.length.toLocaleString('id-ID') + ' baris · sheet "' + e.sheetUsed + '"'}</span>
+      <button class="rm" data-idx="${idx}">✕</button>
+    `;
+    fileListEl.appendChild(div);
+  });
+  fileListEl.querySelectorAll('.rm').forEach(btn => {
+    btn.addEventListener('click', () => removeEntry(parseInt(btn.dataset.idx)));
+  });
+
+  const validEntries = entries.filter(e => !e.error);
+  const totalRows = validEntries.reduce((s, e) => s + e.rows.length, 0);
+
+  // Header consistency check
+  const headerSets = validEntries.map(e => e.headers.slice().sort().join('|'));
+  const uniqueHeaderSigs = [...new Set(headerSets)];
+  warnBox.innerHTML = '';
+  if (uniqueHeaderSigs.length > 1) {
+    warnBox.innerHTML = `<div class="warn">⚠️ Kolom di beberapa file tidak identik satu sama lain. Tools ini tetap akan menggabungkan semuanya (kolom yang tidak ada di suatu file akan dikosongkan) — cek hasil preview di bawah sebelum download.</div>`;
+  }
+
+  // Duplicate Outlet ID check across files
+  if (validEntries.length > 1) {
+    const idCounts = {};
+    validEntries.forEach(e => e.rows.forEach(r => {
+      const id = String(r['Outlet ID'] ?? '').trim();
+      if (!id) return;
+      idCounts[id] = (idCounts[id] || 0) + 1;
+    }));
+    const dupCount = Object.values(idCounts).filter(c => c > 1).length;
+    if (dupCount > 0) {
+      warnBox.innerHTML += `<div class="warn">⚠️ Ada ${dupCount.toLocaleString('id-ID')} Outlet ID yang muncul di lebih dari satu file (kemungkinan outlet yang sama tercatat dobel). Semua baris tetap digabung apa adanya — silakan cek ulang kalau perlu dedup manual.</div>`;
+    }
+  }
+
+  if (validEntries.length > 0) {
+    statsEl.style.display = 'grid';
+    const microClusters = new Set();
+    validEntries.forEach(e => e.rows.forEach(r => { if (r['Micro Cluster']) microClusters.add(String(r['Micro Cluster']).trim()); }));
+    statsEl.innerHTML = `
+      <div class="stat"><div class="num">${validEntries.length}</div><div class="lbl">File Valid</div></div>
+      <div class="stat"><div class="num">${totalRows.toLocaleString('id-ID')}</div><div class="lbl">Total Baris</div></div>
+      <div class="stat"><div class="num">${microClusters.size || '–'}</div><div class="lbl">Micro Cluster</div></div>
+    `;
+  } else {
+    statsEl.style.display = 'none';
+  }
+
+  mergeBtn.disabled = validEntries.length === 0;
+
+  // Preview first 15 merged rows
+  if (validEntries.length > 0) {
+    const allHeaders = [];
+    validEntries.forEach(e => e.headers.forEach(h => { if (!allHeaders.includes(h)) allHeaders.push(h); }));
+    const previewRows = [];
+    for (const e of validEntries) {
+      for (const r of e.rows) {
+        previewRows.push(r);
+        if (previewRows.length >= 15) break;
+      }
+      if (previewRows.length >= 15) break;
+    }
+    let html = '<table><thead><tr>' + allHeaders.map(h => `<th>${h}</th>`).join('') + '</tr></thead><tbody>';
+    previewRows.forEach(r => {
+      html += '<tr>' + allHeaders.map(h => `<td>${r[h] ?? ''}</td>`).join('') + '</tr>';
+    });
+    html += '</tbody></table>';
+    previewEl.innerHTML = html;
+    previewEl.style.display = 'block';
+  } else {
+    previewEl.style.display = 'none';
+  }
+}
+
+mergeBtn.addEventListener('click', () => {
+  const validEntries = entries.filter(e => !e.error);
+  if (!validEntries.length) return;
+
+  const allHeaders = [];
+  validEntries.forEach(e => e.headers.forEach(h => { if (!allHeaders.includes(h)) allHeaders.push(h); }));
+
+  const merged = [];
+  validEntries.forEach(e => e.rows.forEach(r => {
+    const row = {};
+    allHeaders.forEach(h => { row[h] = r[h] ?? null; });
+    merged.push(row);
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(merged, { header: allHeaders });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Merged RO Visit Group');
+  const ts = new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb, `RO_Visit_Group_Merged_${ts}.xlsx`);
+});
+</script>
+</body>
+</html>
