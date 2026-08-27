@@ -4,7 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   PieChart, Pie, Cell, ResponsiveContainer, LineChart, Line, LabelList } from "recharts";
 
 // Bump ini tiap ada revisi baru, biar gampang ngecek versi mana yang lagi ke-deploy
-const DASHBOARD_VERSION = "v306";
+const DASHBOARD_VERSION = "v307";
 
 // ── THEMES ───────────────────────────────────────────────────────────────────
 const DARK  = { bg:"#060d1a",card:"#0c1a2e",cardAlt:"#081422",border:"#162840",text:"#ddeeff",muted:"#5a7fa8",inputBg:"#0c1a2e",rowAlt:"rgba(255,255,255,0.02)",rowHover:"rgba(37,99,235,0.08)" };
@@ -1751,6 +1751,7 @@ function CanvasserDetailPanel({detail,onClose,t}){
         const dt=r["Actual Visit Time"]?new Date(r["Actual Visit Time"]):null;
         return{
           "#":i+1,
+          "Activity ID":r["Activity ID"]||"",
           "Tanggal":dt&&!isNaN(dt.getTime())?dt.toLocaleDateString("id-ID"):"",
           "Hari Kunjungan":r["_visitDayName"]||"",
           "Visit Ke-":r._visitSeq||"",
@@ -1773,7 +1774,7 @@ function CanvasserDetailPanel({detail,onClose,t}){
         };
       });
       const ws=XLSX.utils.json_to_sheet(data);
-      ws["!cols"]=[{wch:5},{wch:12},{wch:12},{wch:9},{wch:20},{wch:14},{wch:12},{wch:22},{wch:12},{wch:12},{wch:20},{wch:10},{wch:14},{wch:15},{wch:12},{wch:16},{wch:32},{wch:9},{wch:8},{wch:40}];
+      ws["!cols"]=[{wch:5},{wch:16},{wch:12},{wch:12},{wch:9},{wch:20},{wch:14},{wch:12},{wch:22},{wch:12},{wch:12},{wch:20},{wch:10},{wch:14},{wch:15},{wch:12},{wch:16},{wch:32},{wch:9},{wch:8},{wch:40}];
       const wb=XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb,ws,"Aktivitas");
       const safeName=`${canvasser?.name||"Detail"}_${drillLabel||""}`.replace(/[^a-zA-Z0-9_\- ]/g,"").trim().replace(/\s+/g,"_").slice(0,60);
