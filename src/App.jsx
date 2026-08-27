@@ -615,19 +615,18 @@ function processRows(rows) {
   // Gate LOLOS jika: Visit 1 jatuh di Senin/Selasa, AVA=Ya, Sell-In>0, dan tidak ada
   // anomali (Visit Status bukan Investigate/Observe). Jika gate LOLOS → kunjungan 2..7
   // di outlet & minggu yang sama dianggap wajar. Jika gate GAGAL → kunjungan 2..7
-  // berisiko tinggi sebagai fake visit.
+  // Visit ke- & hari kunjungan — posisi kronologis per canvasser+outlet+minggu (Regular Visit).
+  // Ini murni info struktural (bukan judgment), dipakai di seluruh dashboard.
   const DAY_NAMES=["Minggu","Senin","Selasa","Rabu","Kamis","Jumat","Sabtu"];
   const seqGroups={};
-  const evaluatedCanvasserSet=new Set();
   rows.forEach(r=>{
     const actType=String(r["Activity Type"]||"").trim();
-    if(actType!=="Regular Visit") return; // hanya Regular Visit yang masuk siklus gate Visit 1-7
+    if(actType!=="Regular Visit") return;
     const t=r["Actual Visit Time"]?new Date(r["Actual Visit Time"]):null;
     if(!t||isNaN(t.getTime())) return;
     const cvName=String(r["Canvasser ID"]||r["Canvasser"]||"").trim();
     const outId=r["Outlet ID"]!=null?String(r["Outlet ID"]).trim():"";
     if(!cvName||!outId) return;
-    evaluatedCanvasserSet.add(cvName);
     const d=new Date(t.getFullYear(),t.getMonth(),t.getDate());
     const dow=d.getDay(); // 0=Minggu..6=Sabtu
     const diffToMon=(dow===0?-6:1-dow);
@@ -639,45 +638,9 @@ function processRows(rows) {
   });
   Object.values(seqGroups).forEach(list=>{
     list.sort((a,b)=>a.t-b.t);
-    let anchorIdx=list.findIndex(x=>x.dow===1||x.dow===2);
-    if(anchorIdx===-1) anchorIdx=0;
-    const anchor=list[anchorIdx];
-    const avaVal=String(anchor.r["AVA Tracking?"]||"").trim().toLowerCase();
-    const avaOk=avaVal==="yes"||avaVal==="ya"||avaVal==="true"||avaVal==="1";
-    const sellQty=(parseFloat(String(anchor.r["Sell-In"]||"").replace(/[^0-9.\-]/g,""))||0)+(parseFloat(String(anchor.r["Online Sell-In"]||"").replace(/[^0-9.\-]/g,""))||0);
-    const anchorVs=String(anchor.r["_VS"]||anchor.r["Visit Status"]||"").toUpperCase();
-    const anchorAnomali=anchorVs==="INVESTIGATE"||anchorVs==="OBSERVE";
-    const anchorOnMonTue=(anchor.dow===1||anchor.dow===2);
-    const gatePass=avaOk&&sellQty>0&&!anchorAnomali&&anchorOnMonTue;
-    const failReasons=[];
-    if(!anchorOnMonTue) failReasons.push("kunjungan pertama minggu ini tidak jatuh di Senin/Selasa");
-    if(!avaOk) failReasons.push("AVA Visit 1 tidak terisi/Tidak");
-    if(sellQty<=0) failReasons.push("Sell-In Visit 1 kosong");
-    if(anchorAnomali) failReasons.push("Visit 1 terindikasi anomali ("+anchorVs+")");
-    const gateFailReason=failReasons.join(", ");
     list.forEach((x,i)=>{
-      const seq=i-anchorIdx+1;
-      x.r._visitSeq=seq;
+      x.r._visitSeq=i+1;
       x.r._visitDay=DAY_NAMES[x.dow];
-      x.r._gateStatus=gatePass?"PASS":"FAIL";
-      x.r._gateAnchorOnMonTue=anchorOnMonTue;
-      x.r._gateFailReason=gateFailReason;
-      if(seq>1&&!gatePass){
-        // Own evidence check: kalau kunjungan ini SENDIRI punya AVA=Ya & Sell-In>0,
-        // turunkan tingkat dari "Fake" jadi "Perlu Verifikasi" — bukan otomatis fake
-        // hanya karena Visit 1 gagal, tapi karena datanya sendiri lemah juga.
-        const ownAvaVal=String(x.r["AVA Tracking?"]||"").trim().toLowerCase();
-        const ownAvaOk=ownAvaVal==="yes"||ownAvaVal==="ya"||ownAvaVal==="true"||ownAvaVal==="1";
-        const ownSellQty=(parseFloat(String(x.r["Sell-In"]||"").replace(/[^0-9.\-]/g,""))||0)+(parseFloat(String(x.r["Online Sell-In"]||"").replace(/[^0-9.\-]/g,""))||0);
-        const hasOwnEvidence=ownAvaOk&&ownSellQty>0;
-        x.r._fakeVisitTier=hasOwnEvidence?"VERIFY":"FAKE";
-        x.r._isFakeVisitRisk=!hasOwnEvidence; // hitungan "fake visit" utama hanya utk tier FAKE
-        x.r._needsVerification=hasOwnEvidence;
-      } else {
-        x.r._isFakeVisitRisk=false;
-        x.r._fakeVisitTier=null;
-        x.r._needsVerification=false;
-      }
     });
   });
 
@@ -845,33 +808,6 @@ function processRows(rows) {
     reasonBreakdown:colorReasonBreakdown,
   };
 
-  let fakeVisitRiskCount=0, needsVerificationCount=0;
-  const fakeVisitCanvasserSet=new Set(), fakeVisitOutletSet=new Set();
-  const verifyCanvasserSet=new Set(), verifyOutletSet=new Set();
-  const fakeVisitBySeq={};
-  rows.forEach(r=>{
-    if(r._isFakeVisitRisk){
-      fakeVisitRiskCount++;
-      fakeVisitCanvasserSet.add(String(r["Canvasser ID"]||r["Canvasser"]||"").trim());
-      fakeVisitOutletSet.add(String(r["Outlet ID"]||"").trim());
-      const seqLabel=r._visitSeq>=7?"7+":String(r._visitSeq);
-      fakeVisitBySeq[seqLabel]=(fakeVisitBySeq[seqLabel]||0)+1;
-    } else if(r._needsVerification){
-      needsVerificationCount++;
-      verifyCanvasserSet.add(String(r["Canvasser ID"]||r["Canvasser"]||"").trim());
-      verifyOutletSet.add(String(r["Outlet ID"]||"").trim());
-    }
-  });
-  const unionRiskCanvasserSet=new Set([...fakeVisitCanvasserSet,...verifyCanvasserSet]);
-  const unionRiskOutletSet=new Set([...fakeVisitOutletSet,...verifyOutletSet]);
-  const overlapCanvasserSet=new Set([...fakeVisitCanvasserSet].filter(x=>verifyCanvasserSet.has(x)));
-  const overlapOutletSet=new Set([...fakeVisitOutletSet].filter(x=>verifyOutletSet.has(x)));
-  const onlyFakeCanvasserSet=new Set([...fakeVisitCanvasserSet].filter(x=>!verifyCanvasserSet.has(x)));
-  const onlyVerifyCanvasserSet=new Set([...verifyCanvasserSet].filter(x=>!fakeVisitCanvasserSet.has(x)));
-  const onlyFakeOutletSet=new Set([...fakeVisitOutletSet].filter(x=>!verifyOutletSet.has(x)));
-  const cleanCanvasserSet=new Set([...evaluatedCanvasserSet].filter(x=>!unionRiskCanvasserSet.has(x)));
-  const onlyVerifyOutletSet=new Set([...verifyOutletSet].filter(x=>!fakeVisitOutletSet.has(x)));
-
   const canvassers=Object.values(canvMap).map(c=>({...c,
     avgDur:c.durCnt?+(c.durSum/c.durCnt).toFixed(1):null,
     avgDis:c.disCnt?+(c.disSum/c.disCnt).toFixed(1):null,
@@ -885,42 +821,14 @@ function processRows(rows) {
     delete d.outletIdSet;
   });
   const censusData = Object.values(outMap).filter(d=>d._isCensus).sort((a,b)=>b.total-a.total);
-  const chronicOutlets = Object.values(outletProblemMap)
-    .map(o=>({id:o.id,name:o.name,cluster:o.cluster,outletType:o.outletType,total:o.total,investigate:o.investigate,observe:o.observe,
-      flagged:o.investigate+o.observe,canvasserCount:o.canvasserSet.size,flaggedSellInVisits:o.flaggedSellInVisits,flaggedSellInQty:o.flaggedSellInQty}))
-    .filter(o=>o.flagged>0)
-    .sort((a,b)=>b.flagged-a.flagged);
   return {
     total,actC,visC,durC,disC,locC,inRangeC,
     sellInQtyTotal,sellInVisitsTotal,avaTotalCount,avaYesCount,
     visitTypeData:Object.values(vtMap).sort((a,b)=>b.total-a.total),
     outletData:Object.values(outMap).filter(d=>!d._isCensus).sort((a,b)=>b.total-a.total),
     censusData,
-    chronicOutlets,
     colorChronicOutlets,
     colorSummary,
-    fakeVisitRiskCount,
-    fakeVisitCanvasserCount:fakeVisitCanvasserSet.size,
-    fakeVisitOutletCount:fakeVisitOutletSet.size,
-    fakeVisitBySeq,
-    needsVerificationCount,
-    verifyCanvasserCount:verifyCanvasserSet.size,
-    verifyOutletCount:verifyOutletSet.size,
-    totalRiskCanvasserCount:unionRiskCanvasserSet.size,
-    totalRiskOutletCount:unionRiskOutletSet.size,
-    overlapCanvasserCount:overlapCanvasserSet.size,
-    overlapOutletCount:overlapOutletSet.size,
-    onlyFakeCanvasserCount:onlyFakeCanvasserSet.size,
-    onlyVerifyCanvasserCount:onlyVerifyCanvasserSet.size,
-    onlyFakeOutletCount:onlyFakeOutletSet.size,
-    onlyVerifyOutletCount:onlyVerifyOutletSet.size,
-    onlyFakeCanvasserNames:[...onlyFakeCanvasserSet],
-    onlyVerifyCanvasserNames:[...onlyVerifyCanvasserSet],
-    overlapCanvasserNames:[...overlapCanvasserSet],
-    evaluatedCanvasserCount:evaluatedCanvasserSet.size,
-    evaluatedCanvasserNames:[...evaluatedCanvasserSet],
-    cleanCanvasserCount:cleanCanvasserSet.size,
-    cleanCanvasserNames:[...cleanCanvasserSet],
     canvassers,
     dateRange:{min:minDate,max:maxDate},
     reasonMap,
@@ -984,14 +892,6 @@ function aggregateList(dataList) {
       return Object.values(m).map(d=>{const outletCount=d.outletIdUnion.size;const{outletIdUnion,...rest}=d;return{...rest,outletCount};}).sort((a,b)=>b.total-a.total);
     })(),
     censusData:mergeArr("censusData","type"),
-    chronicOutlets:(()=>{
-      const m={};
-      dataList.forEach(d=>(d.chronicOutlets||[]).forEach(o=>{
-        if(!m[o.id]) m[o.id]={...o};
-        else { m[o.id].total+=o.total; m[o.id].investigate+=o.investigate; m[o.id].observe+=o.observe; m[o.id].flagged+=o.flagged; m[o.id].canvasserCount+=o.canvasserCount; m[o.id].flaggedSellInVisits=(m[o.id].flaggedSellInVisits||0)+(o.flaggedSellInVisits||0); m[o.id].flaggedSellInQty=(m[o.id].flaggedSellInQty||0)+(o.flaggedSellInQty||0); }
-      }));
-      return Object.values(m).sort((a,b)=>b.flagged-a.flagged);
-    })(),
     colorChronicOutlets:(()=>{
       const m={};
       dataList.forEach(d=>(d.colorChronicOutlets||[]).forEach(o=>{
@@ -1004,7 +904,6 @@ function aggregateList(dataList) {
       }));
       return Object.values(m).sort((a,b)=>b.flagged-a.flagged);
     })(),
-    fakeVisitRiskCount:dataList.reduce((s,r)=>s+(r.fakeVisitRiskCount||0),0),
     colorSummary:(()=>{
       const COLORS=["MERAH","ORANGE","KUNING","HIJAU"];
       const rowCounts={MERAH:0,ORANGE:0,KUNING:0,HIJAU:0};
@@ -1034,31 +933,6 @@ function aggregateList(dataList) {
         reasonBreakdown:Object.values(reasonMap).map(rb=>({color:rb.color,reason:rb.reason,rowCount:rb.rowCount,canvasserNames:[...rb.canvSet]})),
       };
     })(),
-    fakeVisitCanvasserCount:dataList.reduce((s,r)=>s+(r.fakeVisitCanvasserCount||0),0),
-    fakeVisitOutletCount:dataList.reduce((s,r)=>s+(r.fakeVisitOutletCount||0),0),
-    fakeVisitBySeq:(()=>{
-      const m={};
-      dataList.forEach(d=>Object.entries(d.fakeVisitBySeq||{}).forEach(([k,v])=>{m[k]=(m[k]||0)+v;}));
-      return m;
-    })(),
-    needsVerificationCount:dataList.reduce((s,r)=>s+(r.needsVerificationCount||0),0),
-    verifyCanvasserCount:dataList.reduce((s,r)=>s+(r.verifyCanvasserCount||0),0),
-    verifyOutletCount:dataList.reduce((s,r)=>s+(r.verifyOutletCount||0),0),
-    totalRiskCanvasserCount:dataList.reduce((s,r)=>s+(r.totalRiskCanvasserCount||0),0),
-    totalRiskOutletCount:dataList.reduce((s,r)=>s+(r.totalRiskOutletCount||0),0),
-    overlapCanvasserCount:dataList.reduce((s,r)=>s+(r.overlapCanvasserCount||0),0),
-    overlapOutletCount:dataList.reduce((s,r)=>s+(r.overlapOutletCount||0),0),
-    onlyFakeCanvasserCount:dataList.reduce((s,r)=>s+(r.onlyFakeCanvasserCount||0),0),
-    onlyVerifyCanvasserCount:dataList.reduce((s,r)=>s+(r.onlyVerifyCanvasserCount||0),0),
-    onlyFakeOutletCount:dataList.reduce((s,r)=>s+(r.onlyFakeOutletCount||0),0),
-    onlyVerifyOutletCount:dataList.reduce((s,r)=>s+(r.onlyVerifyOutletCount||0),0),
-    onlyFakeCanvasserNames:[...new Set(dataList.flatMap(r=>r.onlyFakeCanvasserNames||[]))],
-    onlyVerifyCanvasserNames:[...new Set(dataList.flatMap(r=>r.onlyVerifyCanvasserNames||[]))],
-    overlapCanvasserNames:[...new Set(dataList.flatMap(r=>r.overlapCanvasserNames||[]))],
-    evaluatedCanvasserCount:dataList.reduce((s,r)=>s+(r.evaluatedCanvasserCount||0),0),
-    evaluatedCanvasserNames:[...new Set(dataList.flatMap(r=>r.evaluatedCanvasserNames||[]))],
-    cleanCanvasserCount:dataList.reduce((s,r)=>s+(r.cleanCanvasserCount||0),0),
-    cleanCanvasserNames:[...new Set(dataList.flatMap(r=>r.cleanCanvasserNames||[]))],
     canvassers,
     reasonMap:(()=>{
       const merged={investigate:{},observe:{}};
@@ -1233,8 +1107,10 @@ function OutletActivityPanel({detail,onClose,t}){
     if(loc==="NOT MATCH")f.push("📌 Lokasi tidak match");
     if(inR==="no"||inR==="n")f.push("🎯 Out of range");
     if((inR==="yes"||inR==="y")&&Math.max(dIn,dOt)>DEFAULT_PARAMS.in_range_max)f.push("⚠️ Indikasi manipulasi GPS (klaim In Range, jarak aktual "+fmtDist(Math.max(dIn,dOt))+")");
-    if(r._isFakeVisitRisk)if(r._fakeVisitTier==="FAKE") f.push(`🚩 Berpotensi Fake Visit (Visit ${r._visitSeq}, Visit 1 gagal validasi: ${r._gateFailReason||"kriteria tidak terpenuhi"})`);
-    else if(r._fakeVisitTier==="VERIFY") f.push(`🔎 Perlu Verifikasi (Visit ${r._visitSeq}, Visit 1 gagal validasi, tapi kunjungan ini punya AVA & Sell-In sendiri)`);
+    if(r._colorStatus){
+      const CM={MERAH:"🔴 Merah",ORANGE:"🟠 Orange",KUNING:"🟡 Kuning",HIJAU:"🟢 Hijau"};
+      f.push(`${CM[r._colorStatus]||r._colorStatus}${r._colorReason?` — ${r._colorReason}`:""}`);
+    }
     return f.length>0?f.join(" · "):"✅ Normal";
   };
   const list=rows.slice(pg*PG,(pg+1)*PG);
@@ -1276,7 +1152,7 @@ function OutletActivityPanel({detail,onClose,t}){
                   <td style={{padding:"7px 10px",color:t.text,whiteSpace:"nowrap"}}>{fmtDate(r["Actual Visit Time"])}</td>
                   <td style={{padding:"7px 10px",whiteSpace:"nowrap"}}>
                     {r._visitSeq?(
-                      <span style={{fontSize:10,fontWeight:700,color:r._visitSeq===1?P.accent:r._fakeVisitTier==="FAKE"?P.investigate:r._fakeVisitTier==="VERIFY"?P.a2:t.muted}}>
+                      <span style={{fontSize:10,fontWeight:700,color:r._colorStatus==="MERAH"?P.investigate:r._colorStatus==="ORANGE"?P.a2:r._colorStatus==="KUNING"?"#eab308":r._colorStatus==="HIJAU"?P.a1:t.muted}}>
                         Visit {r._visitSeq} ({r._visitDay})
                       </span>
                     ):<span style={{color:t.muted}}>–</span>}
@@ -1745,8 +1621,10 @@ function CanvasserDetailPanel({detail,onClose,t}){
     // Indikasi manipulasi GPS: klaim In Range tapi jarak aktual melebihi ambang
     if((inR==="yes"||inR==="y")&&Math.max(distIn,distOut)>DEFAULT_PARAMS.in_range_max)
       f.push(`⚠️ Indikasi manipulasi GPS (klaim In Range, jarak aktual ${fmtDist(Math.max(distIn,distOut))})`);
-    if(r._isFakeVisitRisk) if(r._fakeVisitTier==="FAKE") f.push(`🚩 Berpotensi Fake Visit (Visit ${r._visitSeq}, Visit 1 gagal validasi: ${r._gateFailReason||"kriteria tidak terpenuhi"})`);
-    else if(r._fakeVisitTier==="VERIFY") f.push(`🔎 Perlu Verifikasi (Visit ${r._visitSeq}, Visit 1 gagal validasi, tapi kunjungan ini punya AVA & Sell-In sendiri)`);
+    if(r._colorStatus){
+      const CM={MERAH:"🔴 Merah",ORANGE:"🟠 Orange",KUNING:"🟡 Kuning",HIJAU:"🟢 Hijau"};
+      f.push(`${CM[r._colorStatus]||r._colorStatus}${r._colorReason?` — ${r._colorReason}`:""}`);
+    }
     return f.length>0 ? f.join(" · ") : (vs==="VALID"?"✅ Normal":"❓ "+vs);
   };
   // Get unique visit types for filter buttons
@@ -2093,7 +1971,7 @@ function CanvasserDetailPanel({detail,onClose,t}){
                   <td style={{padding:"7px 10px",color:t.text,whiteSpace:"nowrap"}}>{fmtDate(r["Actual Visit Time"])}</td>
                   <td style={{padding:"7px 10px",whiteSpace:"nowrap"}}>
                     {r._visitSeq?(
-                      <span style={{fontSize:10,fontWeight:700,color:r._visitSeq===1?P.accent:r._fakeVisitTier==="FAKE"?P.investigate:r._fakeVisitTier==="VERIFY"?P.a2:t.muted}}>
+                      <span style={{fontSize:10,fontWeight:700,color:r._colorStatus==="MERAH"?P.investigate:r._colorStatus==="ORANGE"?P.a2:r._colorStatus==="KUNING"?"#eab308":r._colorStatus==="HIJAU"?P.a1:t.muted}}>
                         Visit {r._visitSeq} ({r._visitDay})
                       </span>
                     ):<span style={{color:t.muted}}>–</span>}
@@ -3106,33 +2984,10 @@ function Dashboard({files,onReset,onAddFiles,dark,toggleDark,roMap={},onRoLoad})
     sorted._all=all;
     return sorted;
   },[clusters]);
-  // Ambil semua kunjungan yang berpotensi Fake Visit (Visit 2+ dengan gate Visit 1 gagal), lintas cluster
-  const getFakeVisitRiskRows = useCallback(() => {
-    let all=[];
-    clusters.forEach(c=>{ all=all.concat((c.rawRows||[]).filter(r=>r._isFakeVisitRisk)); });
-    return all.sort((a,b)=>new Date(a["Actual Visit Time"]||0)-new Date(b["Actual Visit Time"]||0));
-  },[clusters]);
-  const getVerifyRows = useCallback(() => {
-    let all=[];
-    clusters.forEach(c=>{ all=all.concat((c.rawRows||[]).filter(r=>r._needsVerification)); });
-    return all.sort((a,b)=>new Date(a["Actual Visit Time"]||0)-new Date(b["Actual Visit Time"]||0));
-  },[clusters]);
   // Ambil semua kunjungan (fake + verify) milik sekumpulan canvasser tertentu (dipakai utk 3 bucket eksklusif)
   const getRowsForColor = useCallback((color) => {
     let all=[];
     clusters.forEach(c=>{ all=all.concat((c.rawRows||[]).filter(r=>r._colorStatus===color)); });
-    return all.sort((a,b)=>new Date(a["Actual Visit Time"]||0)-new Date(b["Actual Visit Time"]||0));
-  },[clusters]);
-  const getRowsForCanvasserNames = useCallback((names) => {
-    const nameSet=new Set(names||[]);
-    let all=[];
-    clusters.forEach(c=>{ all=all.concat((c.rawRows||[]).filter(r=>(r._isFakeVisitRisk||r._needsVerification)&&nameSet.has(String(r["Canvasser ID"]||r["Canvasser"]||"").trim()))); });
-    return all.sort((a,b)=>new Date(a["Actual Visit Time"]||0)-new Date(b["Actual Visit Time"]||0));
-  },[clusters]);
-  const getCleanCycleRows = useCallback((names) => {
-    const nameSet=new Set(names||[]);
-    let all=[];
-    clusters.forEach(c=>{ all=all.concat((c.rawRows||[]).filter(r=>r._visitSeq!=null&&nameSet.has(String(r["Canvasser ID"]||r["Canvasser"]||"").trim()))); });
     return all.sort((a,b)=>new Date(a["Actual Visit Time"]||0)-new Date(b["Actual Visit Time"]||0));
   },[clusters]);
   const getAllRowsForCanvasserNames = useCallback((names) => {
