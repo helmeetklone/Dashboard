@@ -4,7 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   PieChart, Pie, Cell, ResponsiveContainer, LineChart, Line, LabelList } from "recharts";
 
 // Bump ini tiap ada revisi baru, biar gampang ngecek versi mana yang lagi ke-deploy
-const DASHBOARD_VERSION = "v303";
+const DASHBOARD_VERSION = "v306";
 
 // ── THEMES ───────────────────────────────────────────────────────────────────
 const DARK  = { bg:"#060d1a",card:"#0c1a2e",cardAlt:"#081422",border:"#162840",text:"#ddeeff",muted:"#5a7fa8",inputBg:"#0c1a2e",rowAlt:"rgba(255,255,255,0.02)",rowHover:"rgba(37,99,235,0.08)" };
@@ -644,7 +644,36 @@ function processRows(rows) {
     });
   });
 
-  // ── Status Merah/Orange/Kuning/Hijau — murni dari Regular Visit yang BENERAN ada ──
+  // ── Impossible Move — kecepatan perjalanan antar check-in yang mustahil secara fisik ──
+  // Semua tipe visit (bukan cuma Regular Visit) — dihitung per canvasser, urut kronologis
+  // check-in ke check-in berikutnya (lintas outlet). Threshold sama kayak Findings: ≥150 km/jam & jarak ≥5km.
+  {
+    const byCanvMove={};
+    rows.forEach(r=>{
+      const nm=String(r["Canvasser ID"]||r["Canvasser"]||"").trim();
+      const t=r["Actual Visit Time"]?new Date(r["Actual Visit Time"]):null;
+      const lat=parseFloat(r["Check-In Latitude"]), lon=parseFloat(r["Check-In Longitude"]);
+      if(!nm||!t||isNaN(t.getTime())||isNaN(lat)||isNaN(lon)) return;
+      if(!byCanvMove[nm]) byCanvMove[nm]=[];
+      byCanvMove[nm].push({r,t,lat,lon});
+    });
+    Object.values(byCanvMove).forEach(list=>{
+      list.sort((a,b)=>a.t-b.t);
+      for(let i=1;i<list.length;i++){
+        const dtH=(list[i].t-list[i-1].t)/3600000;
+        if(dtH<=0||dtH>3) continue; // beda hari / gap kejauhan, skip
+        const distKm=haversineM(list[i-1].lat,list[i-1].lon,list[i].lat,list[i].lon)/1000;
+        const speed=distKm/dtH;
+        if(speed>=150&&distKm>=5){
+          list[i].r._impossibleMove=true;
+          list[i].r._impossibleMoveInfo=`${distKm.toFixed(1)}km dalam ${(dtH*60).toFixed(0)} menit (≈${Math.round(speed)} km/jam) dari outlet sebelumnya`;
+          list[i].r._impossibleMoveFromOutlet=list[i-1].r["Outlet"]||list[i-1].r["Outlet ID"]||"?";
+        }
+      }
+    });
+  }
+
+
   // Per canvasser+outlet+minggu: dihitung dari SEMUA baris Regular Visit yang ada minggu itu,
   // berapapun jumlahnya (1, 2, 3, dst) — TIDAK di-override jadi Merah/Kuning cuma karena
   // jumlahnya kurang dari jadwal RO. Alasannya: CVS biasanya ngelakuin ke-5 kriteria
@@ -1089,6 +1118,7 @@ function OutletActivityPanel({detail,onClose,t}){
   const fmtDur=v=>{const n=parseFloat(v);if(isNaN(n))return"–";if(n>=60)return(n/60).toFixed(1)+"j";if(n>=1)return n.toFixed(1)+"mnt";return Math.round(n*60)+"det";};
   const vsColor=v=>{const u=String(v||"").toUpperCase();return u==="VALID"?P.valid:u==="OBSERVE"?P.observe:u==="INVESTIGATE"?P.investigate:P.incomplete;};
   const getReason=r=>{
+    if(String(r["_CAS1"]||"")==="A1 - NORMAL")return"✅ Normal";
     const vs=String(r["_VS"]||r["Visit Status"]||"").toUpperCase();
     const dIn=parseFloat(r["Distance Check In (Meter)"])||0;
     const dOt=parseFloat(r["Distance Check Out (Meter)"])||0;
@@ -1107,6 +1137,7 @@ function OutletActivityPanel({detail,onClose,t}){
     if(loc==="NOT MATCH")f.push("📌 Lokasi tidak match");
     if(inR==="no"||inR==="n")f.push("🎯 Out of range");
     if((inR==="yes"||inR==="y")&&Math.max(dIn,dOt)>DEFAULT_PARAMS.in_range_max)f.push("⚠️ Indikasi manipulasi GPS (klaim In Range, jarak aktual "+fmtDist(Math.max(dIn,dOt))+")");
+    if(r._impossibleMove)f.push(`🚀 Impossible Move (${r._impossibleMoveInfo})`);
     if(r._colorStatus){
       const CM={MERAH:"🔴 Merah",ORANGE:"🟠 Orange",KUNING:"🟡 Kuning",HIJAU:"🟢 Hijau"};
       f.push(`${CM[r._colorStatus]||r._colorStatus}${r._colorReason?` — ${r._colorReason}`:""}`);
@@ -1597,6 +1628,7 @@ function CanvasserDetailPanel({detail,onClose,t}){
   const fmtDur=v=>{const n=parseFloat(v);if(isNaN(n))return"–";if(n>=60)return(n/60).toFixed(1)+"j";if(n>=1)return n.toFixed(1)+"mnt";return Math.round(n*60)+"det";};
   const vsColor=vs=>{const u=String(vs||"").toUpperCase();return u==="VALID"?P.valid:u==="OBSERVE"?P.observe:u==="INVESTIGATE"?P.investigate:u==="INCOMPLETE"?P.incomplete:"#888";};
   const reason=r=>{
+    if(String(r["_CAS1"]||"")==="A1 - NORMAL")return"✅ Normal";
     const vs    = String(r["Visit Status"]||"").toUpperCase();
     const distIn= parseFloat(r["Distance Check In (Meter)"])||0;
     const distOut=parseFloat(r["Distance Check Out (Meter)"])||0;
@@ -1621,6 +1653,7 @@ function CanvasserDetailPanel({detail,onClose,t}){
     // Indikasi manipulasi GPS: klaim In Range tapi jarak aktual melebihi ambang
     if((inR==="yes"||inR==="y")&&Math.max(distIn,distOut)>DEFAULT_PARAMS.in_range_max)
       f.push(`⚠️ Indikasi manipulasi GPS (klaim In Range, jarak aktual ${fmtDist(Math.max(distIn,distOut))})`);
+    if(r._impossibleMove) f.push(`🚀 Impossible Move (${r._impossibleMoveInfo})`);
     if(r._colorStatus){
       const CM={MERAH:"🔴 Merah",ORANGE:"🟠 Orange",KUNING:"🟡 Kuning",HIJAU:"🟢 Hijau"};
       f.push(`${CM[r._colorStatus]||r._colorStatus}${r._colorReason?` — ${r._colorReason}`:""}`);
@@ -1733,13 +1766,14 @@ function CanvasserDetailPanel({detail,onClose,t}){
           "Jarak Check-Out (m)":distOut||"",
           "Durasi (menit)":r["_DUR_MIN"]||r["Duration (Minute)"]||"",
           "Kunjungan/Minggu (semua tipe)":r["_weeklyVisitCount"]||"",
+          "Impossible Move":r["_impossibleMove"]?`Ya — ${r["_impossibleMoveInfo"]}`:"Tidak",
           "Sell-In":sellQty||"",
           "AVA":avaYes?"Ya":"Tidak",
           "Alasan":typeof reason==="function"?reason(r):"",
         };
       });
       const ws=XLSX.utils.json_to_sheet(data);
-      ws["!cols"]=[{wch:5},{wch:12},{wch:12},{wch:9},{wch:20},{wch:14},{wch:12},{wch:22},{wch:12},{wch:12},{wch:20},{wch:10},{wch:14},{wch:15},{wch:12},{wch:16},{wch:9},{wch:8},{wch:40}];
+      ws["!cols"]=[{wch:5},{wch:12},{wch:12},{wch:9},{wch:20},{wch:14},{wch:12},{wch:22},{wch:12},{wch:12},{wch:20},{wch:10},{wch:14},{wch:15},{wch:12},{wch:16},{wch:32},{wch:9},{wch:8},{wch:40}];
       const wb=XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb,ws,"Aktivitas");
       const safeName=`${canvasser?.name||"Detail"}_${drillLabel||""}`.replace(/[^a-zA-Z0-9_\- ]/g,"").trim().replace(/\s+/g,"_").slice(0,60);
@@ -1953,7 +1987,7 @@ function CanvasserDetailPanel({detail,onClose,t}){
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
             <thead style={{position:"sticky",top:0,background:t.card,zIndex:1}}>
               <tr style={{background:t.cardAlt}}>
-                {["#","Tanggal","Visit Ke-","Canvasser","Visit Type","Outlet ID","Outlet","Status","In Range","Jarak Check-In*","Jarak Check-Out*","Durasi","Hari Kunjungan","Kunjungan/Minggu","Sell-In","AVA","Alasan"].map(h=>(
+                {["#","Tanggal","Visit Ke-","Canvasser","Visit Type","Outlet ID","Outlet","Status","In Range","Jarak Check-In*","Jarak Check-Out*","Durasi","Hari Kunjungan","Kunjungan/Minggu","Impossible Move","Sell-In","AVA","Alasan"].map(h=>(
                   <th key={h} style={{padding:"9px 12px",textAlign:"left",fontSize:11,fontWeight:700,color:t.muted,whiteSpace:"nowrap",borderBottom:`1px solid ${t.border}`}}>{h}</th>
                 ))}
               </tr>
@@ -1998,6 +2032,11 @@ function CanvasserDetailPanel({detail,onClose,t}){
                   </td>
                   <td style={{padding:"7px 10px",color:t.muted,whiteSpace:"nowrap"}}>{r["_visitDayName"]||"–"}</td>
                   <td style={{padding:"7px 10px",color:t.muted,textAlign:"center"}}>{r["_weeklyVisitCount"]||"–"}</td>
+                  <td style={{padding:"7px 10px"}}>
+                    {r["_impossibleMove"]?(
+                      <span title={r["_impossibleMoveInfo"]} style={{background:P.investigate+"22",color:P.investigate,padding:"2px 8px",borderRadius:999,fontSize:10,fontWeight:700,whiteSpace:"nowrap"}}>🚀 Ya</span>
+                    ):<span style={{color:t.muted}}>–</span>}
+                  </td>
                   <td style={{padding:"7px 10px",color:"#10b981",fontWeight:700}}>
                     {(()=>{const qty=(parseFloat(String(r["Sell-In"]||"").replace(/[^0-9.\-]/g,""))||0)+(parseFloat(String(r["Online Sell-In"]||"").replace(/[^0-9.\-]/g,""))||0);return qty>0?qty.toLocaleString():<span style={{color:t.muted,fontWeight:400}}>–</span>;})()}
                   </td>
